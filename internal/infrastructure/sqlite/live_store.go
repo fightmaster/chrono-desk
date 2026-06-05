@@ -89,7 +89,7 @@ type LivePass struct {
 // ListRecentPasses feeds the live screen: latest reads, who they belong to
 // and whether they produced a result.
 func (s *Store) ListRecentPasses(ctx context.Context, eventID string, limit int) ([]LivePass, error) {
-	if limit <= 0 || limit > 200 {
+	if limit <= 0 || limit > 1000 {
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `

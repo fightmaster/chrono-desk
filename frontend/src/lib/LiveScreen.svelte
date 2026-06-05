@@ -10,6 +10,7 @@
   let status = {running: false, ips: [], port: ''}
   let port = '5084'
   let feed = []
+  let feedLimit = 40
   let error = ''
   let timer = null
 
@@ -26,11 +27,16 @@
   async function refresh() {
     try {
       status = await call('GET', `/api/events/${eventId}/live/status`)
-      feed = await call('GET', `/api/events/${eventId}/live/feed?limit=40`)
+      feed = await call('GET', `/api/events/${eventId}/live/feed?limit=${feedLimit}`)
       if (status.port) port = status.port
     } catch (e) {
       error = e.message
     }
+  }
+
+  async function loadMore() {
+    feedLimit = Math.min(feedLimit + 60, 1000)
+    await refresh()
   }
 
   onMount(() => {
@@ -148,6 +154,10 @@
   </table>
   {#if !feed.length}
     <p class="dim center">Прочтений пока нет — лента обновляется каждые 2 секунды</p>
+  {:else if feed.length >= feedLimit && feedLimit < 1000}
+    <p class="center">
+      <button class="btn" on:click={loadMore}>Загрузить ещё (показано {feed.length})</button>
+    </p>
   {/if}
 </section>
 
