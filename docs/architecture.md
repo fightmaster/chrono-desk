@@ -10,8 +10,9 @@ temporary registration fixes — without internet access.
 
 - Bidirectional sync / conflict resolution. The site is the source of truth; the desktop
   is a helper. Priority flow: site changes → re-export → re-import → recount.
-- Ranking parity for every run5 race format. v1 covers FixedDistance-style ranking
-  (sort by clean time); other formats follow.
+- Ranking parity for every run5 race format at once. v1 implements FixedDistance plus
+  both category-ranking strategies; TimeLimited and Run5Stopwatch follow the same spec
+  (see `docs/ranking.md`).
 - Replacing rfid-hub on site. v1 ingests logs from flash-drive CSV only; live TCP ingest
   arrives in v0.2.
 
@@ -43,8 +44,10 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    checkpoint eligibility (since / since_offset_seconds / sleep_after_prev_seconds /
    sort order), result insertion and start/finish/clean-time updates — behind a clean
    `Repository` interface with table-driven tests. chrono-desk ports it (Go → Go) and
-   backs it with SQLite instead of MySQL. Ranking/materialization is NOT in rfid-sync
-   (the site does it); chrono-desk implements its own ranking for protocol display.
+   backs it with SQLite instead of MySQL. run5's `PushResult`/`RecountRfid` (PHP) stay
+   the battle-tested behavioral reference — both implementations must agree.
+   **Ranking/materialization is NOT in rfid-sync** (the site does it); it is ported from
+   run5 PHP — full spec and source paths in `docs/ranking.md`.
 3. **HTTP API instead of Wails bindings.** Gives LAN access for judges' tablets later,
    headless mode for free, and keeps the frontend decoupled.
 4. **Idempotency contract.** `rfid_logs.id = md5(board + epc + timeMillis + ant)`
@@ -83,6 +86,20 @@ SQLite `Publisher`) ──▶ rfid_logs → incremental processing → live stan
   passed checkpoint.
 - START sets `member.start_time`; FINISH sets `member.finish_time` and computes
   `clean_time` (`HH:MM:SS.mmm`).
+
+## Build & platforms
+
+- **Development machine: Ubuntu.** Wails on Linux needs `libwebkit2gtk-4.1-dev`; build
+  and dev runs require the `-tags webkit2_41` flag (Ubuntu 24.04+ ships webkit2gtk 4.1,
+  not 4.0).
+- **Competition machine: an old MacBook.** Wails v2 requires macOS 10.13+; confirm the
+  machine's macOS version and CPU (Intel → `darwin/amd64`, or build `darwin/universal`).
+- **macOS builds cannot be cross-compiled from Linux** (CGO + Apple frameworks). Two
+  paths: GitHub Actions macOS runners (free tier is enough for release builds) or
+  building on the MacBook itself. Windows builds: `windows-latest` runner or
+  cross-compile from a host with the toolchain.
+- Resilience fallback: because the UI talks to an embedded HTTP API, the core can run
+  headless with the UI in a regular browser if the webview misbehaves on old macOS.
 
 ## Testing strategy
 

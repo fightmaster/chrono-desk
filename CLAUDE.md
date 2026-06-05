@@ -17,8 +17,12 @@ is the next step; update this file as code lands.
 ## Toolchain & commands
 
 - Go 1.26+, Wails CLI v2.11, Node 22. SQLite via `modernc.org/sqlite` — **pure Go, keep
-  CGO disabled**; do not introduce CGO-dependent SQLite drivers.
-- `wails dev` — dev mode with hot reload; `wails build` — production binary.
+  CGO-free**; do not introduce CGO-dependent SQLite drivers.
+- Dev machine is Ubuntu: requires `libwebkit2gtk-4.1-dev` and the `-tags webkit2_41`
+  build flag. Target competition machine is an old MacBook; macOS builds happen in
+  GitHub Actions or on the Mac itself (no darwin cross-compile from Linux).
+- `wails dev -tags webkit2_41` — dev mode with hot reload;
+  `wails build -tags webkit2_41` — production Linux binary.
 - `go test ./...` — full suite; single test: `go test -run TestName ./path/to/pkg`.
 - Quality gate before finishing any Go change (same as rfid-hub/rfid-sync): `gofmt`,
   `go vet ./...`, `staticcheck ./...`, `govulncheck ./...`, `go test ./...`; add
@@ -59,7 +63,10 @@ RaceTorchApp) → `internal/service` (import/recount/ranking/excel) →
   (internal packages aren't importable cross-module), implement a SQLite `Publisher`.
 - `~/projects/run5` — Laravel site; data model in `app/Models`, derivation reference in
   `app/Services/PushResult.php` + `RecountRfid.php`, protocol columns in
-  `RaceResultsExportRowBuilder`. UI language is Russian, code/identifiers English.
+  `RaceResultsExportRowBuilder`. **The ranking system is ported from here** (format
+  strategies in `app/Results/Format/`, place assignment in `app/Results/Services/`) —
+  porting spec with exact semantics: `docs/ranking.md`. UI language is Russian,
+  code/identifiers English.
 - `~/GolandProjects/RaceTorchApp` — Wails v2 reference implementation (layout, embedded
   HTTP API, sqlite store, multi-platform build files).
 
