@@ -87,6 +87,45 @@ func TestFeibotCsvImport(t *testing.T) {
 	}
 }
 
+// Historical site data contains ids that pre-date the md5 formula. The flash
+// import must dedup those by content (epc|time|ant per board), like run5's
+// loadExistingKeys — the id PK alone is not enough.
+func TestFeibotCsvImportDedupsLegacyIDsByContent(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	if err := store.UpsertEvent(ctx, domain.Event{ID: "ev1", Name: "E"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The same physical read already stored under a legacy (non-formula) id —
+	// e.g. imported from a run5 event export.
+	legacy := domain.RfidLog{
+		ID: "legacy-id-not-md5", EventID: "ev1",
+		TimeMs: 1780650000123, Ant: 1, EPC: "AABB01", Board: "Feibot:U659",
+	}
+	if err := store.UpsertRfidLogs(ctx, []domain.RfidLog{legacy}); err != nil {
+		t.Fatal(err)
+	}
+
+	csv := "AABB01:2026-06-05_12:00:00.123,port=1,rssi=-60\n" + // same content, md5 id ≠ legacy id
+		"AABB02:2026-06-05_12:01:00.000,port=2,rssi=-55\n" // genuinely new
+	res, err := NewFeibotCsvImporter(store).Import(ctx, strings.NewReader(csv), "ev1", "U659", "Europe/Moscow")
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if res.Inserted != 1 || res.Duplicates != 1 {
+		t.Errorf("inserted=%d duplicates=%d, want 1/1 (content dedup against legacy id)", res.Inserted, res.Duplicates)
+	}
+
+	var total int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM rfid_logs`).Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 {
+		t.Errorf("total logs = %d, want 2 (no duplicate of the legacy row)", total)
+	}
+}
+
 func TestRfidLogIDFormula(t *testing.T) {
 	got := RfidLogID("Feibot:U659", "AABB01", 1780650000123, 1)
 	if got != knownLogID {

@@ -92,13 +92,36 @@ func (i *FeibotCsvImporter) Import(ctx context.Context, r io.Reader, eventID, de
 		return res, fmt.Errorf("read csv: %w", err)
 	}
 
-	inserted, err := i.store.InsertRfidLogs(ctx, logs)
+	// Content-level dedup against rows already stored for this board, ported
+	// from run5's loadExistingKeys: historical site data contains legacy ids
+	// that do not follow the md5 formula, so the id PK alone cannot dedup a
+	// flash drive against an event export.
+	existing, err := i.store.ExistingRfidLogKeys(ctx, eventID, board)
+	if err != nil {
+		return res, err
+	}
+	fresh := logs[:0]
+	for _, l := range logs {
+		key := contentKey(l.EPC, l.TimeMs, l.Ant)
+		if existing[key] {
+			res.Duplicates++
+			continue
+		}
+		existing[key] = true
+		fresh = append(fresh, l)
+	}
+
+	inserted, err := i.store.InsertRfidLogs(ctx, fresh)
 	if err != nil {
 		return res, err
 	}
 	res.Inserted = int(inserted)
-	res.Duplicates = len(logs) - res.Inserted
+	res.Duplicates += len(fresh) - res.Inserted
 	return res, nil
+}
+
+func contentKey(epc string, timeMs int64, ant int) string {
+	return epc + "|" + strconv.FormatInt(timeMs, 10) + "|" + strconv.Itoa(ant)
 }
 
 func parseFeibotLine(line string, loc *time.Location, board, eventID string) (domain.RfidLog, error) {

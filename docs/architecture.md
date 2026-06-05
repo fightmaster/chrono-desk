@@ -57,6 +57,10 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    `rfid-hub/internal/tcp/adapters.go` (`parseRFID`); run5 `app/Models/RfidLog.php` must
    match byte-for-byte. Logs collected by chrono-desk can therefore be uploaded to the
    site (and vice versa) without duplicates.
+   **Caveat (discovered 2026-06-06):** historical site data contains legacy ids that
+   pre-date this formula (~57% of event 621632's logs), so the id PK alone cannot dedup
+   a flash drive against an event export — the Feibot CSV importer additionally dedups
+   by content key `epc|time_ms|ant` per board, exactly like run5's `loadExistingKeys`.
 5. **Times are unix milliseconds everywhere internally.** Feibot flash-drive CSV carries
    local wall-clock time without zone — the import dialog requires an explicit event
    timezone (defaulted from the event export).

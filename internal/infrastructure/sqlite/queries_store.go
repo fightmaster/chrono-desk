@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 )
@@ -86,4 +87,28 @@ func (s *Store) ListCategories(ctx context.Context) (map[string]domain.Category,
 		categories[c.ID] = c
 	}
 	return categories, rows.Err()
+}
+
+// ExistingRfidLogKeys returns the content keys (epc|time_ms|ant) of logs
+// already stored for a board — the flash-import dedup set (run5's
+// loadExistingKeys analog; legacy rows may carry non-formula ids).
+func (s *Store) ExistingRfidLogKeys(ctx context.Context, eventID, board string) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT epc, time_ms, ant FROM rfid_logs WHERE event_id = ? AND board = ?`, eventID, board)
+	if err != nil {
+		return nil, fmt.Errorf("existing log keys: %w", err)
+	}
+	defer rows.Close()
+
+	keys := make(map[string]bool)
+	for rows.Next() {
+		var epc string
+		var timeMs int64
+		var ant int
+		if err := rows.Scan(&epc, &timeMs, &ant); err != nil {
+			return nil, err
+		}
+		keys[epc+"|"+strconv.FormatInt(timeMs, 10)+"|"+strconv.Itoa(ant)] = true
+	}
+	return keys, rows.Err()
 }
