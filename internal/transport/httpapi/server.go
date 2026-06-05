@@ -60,6 +60,8 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("GET /api/events/{id}/members", s.handleListMembers)
 	mux.HandleFunc("POST /api/events/{id}/checkpoints", s.handleCreateCheckpoint)
 	mux.HandleFunc("DELETE /api/events/{id}/checkpoints/{cpID}", s.handleDeleteCheckpoint)
+	mux.HandleFunc("POST /api/events/{id}/backup", s.handleBackup)
+	mux.HandleFunc("POST /api/events/{id}/export-json", s.handleExportJSON)
 
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
@@ -421,6 +423,47 @@ func (s *Server) handleDeleteCheckpoint(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// handleBackup snapshots the event database (.chrono with results and the
+// edit journal) into Downloads.
+func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	dir, err := service.DownloadsDir()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	path, err := service.SnapshotEvent(r.Context(), store, r.PathValue("id"), dir)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": path})
+}
+
+// handleExportJSON writes the contract-format JSON backup into Downloads.
+func (s *Server) handleExportJSON(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	data, name, err := service.BuildEventExport(r.Context(), store, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	path, err := service.SaveToDownloads(name, data)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": path})
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {

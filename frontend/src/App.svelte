@@ -170,6 +170,34 @@
     }
   }
 
+  async function backupEvent() {
+    if (!currentEvent) return
+    error = ''
+    busy = 'Бэкап события…'
+    try {
+      const res = await call('POST', `/api/events/${currentEvent.id}/backup`)
+      alert(`Бэкап сохранён: ${res.path}`)
+    } catch (err) {
+      error = `Бэкап: ${err.message}`
+    } finally {
+      busy = ''
+    }
+  }
+
+  async function exportEventJson() {
+    if (!currentEvent) return
+    error = ''
+    busy = 'Экспорт события…'
+    try {
+      const res = await call('POST', `/api/events/${currentEvent.id}/export-json`)
+      alert(`Экспорт сохранён: ${res.path}`)
+    } catch (err) {
+      error = `Экспорт JSON: ${err.message}`
+    } finally {
+      busy = ''
+    }
+  }
+
   async function exportExcel() {
     if (!currentEvent || !currentRace) return
     error = ''
@@ -265,6 +293,10 @@
         {#if currentRace}
           <button class="btn" on:click={exportExcel}>Excel</button>
         {/if}
+        <button class="btn" title="Полная копия события (.chrono): результаты, журнал правок. Восстановление — положить файл в папку событий"
+                on:click={backupEvent}>Бэкап</button>
+        <button class="btn" title="JSON в формате экспорта: импортируется на другом chrono-desk"
+                on:click={exportEventJson}>Экспорт JSON</button>
       </div>
 
       <div class="races">

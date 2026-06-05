@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 )
@@ -225,4 +226,80 @@ func (s *Store) DeleteCheckpointCascade(ctx context.Context, id string) error {
 		return fmt.Errorf("delete checkpoint: %w", err)
 	}
 	return tx.Commit()
+}
+
+func (s *Store) ListLaps(ctx context.Context) ([]domain.Lap, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, slug, description FROM laps ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list laps: %w", err)
+	}
+	defer rows.Close()
+
+	var laps []domain.Lap
+	for rows.Next() {
+		var l domain.Lap
+		if err := rows.Scan(&l.ID, &l.Name, &l.Slug, &l.Description); err != nil {
+			return nil, err
+		}
+		laps = append(laps, l)
+	}
+	return laps, rows.Err()
+}
+
+func (s *Store) ListMembersFullByEvent(ctx context.Context, eventID string) ([]domain.Member, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
+			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time
+		FROM members WHERE event_id = ? ORDER BY id`, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("list event members full: %w", err)
+	}
+	defer rows.Close()
+
+	var members []domain.Member
+	for rows.Next() {
+		var m domain.Member
+		var status int
+		if err := rows.Scan(&m.ID, &m.EventID, &m.RaceID, &m.CategoryID, &m.Number, &m.EPC, &m.RFID,
+			&m.FirstName, &m.LastName, &m.Gender, &m.DOB, &m.City, &m.Team, &status,
+			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime); err != nil {
+			return nil, err
+		}
+		m.Status = domain.MemberStatus(status)
+		members = append(members, m)
+	}
+	return members, rows.Err()
+}
+
+func (s *Store) ListCheckpointsFullByEvent(ctx context.Context, eventID string) ([]domain.Checkpoint, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, event_id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds
+		FROM checkpoints WHERE event_id = ? ORDER BY race_id, sort`, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("list event checkpoints: %w", err)
+	}
+	defer rows.Close()
+
+	var checkpoints []domain.Checkpoint
+	for rows.Next() {
+		var cp domain.Checkpoint
+		var cpType int
+		if err := rows.Scan(&cp.ID, &cp.EventID, &cp.RaceID, &cp.Name, &cpType, &cp.Sort, &cp.Board,
+			&cp.SinceMs, &cp.SinceOffsetSeconds, &cp.SleepAfterPrevSeconds); err != nil {
+			return nil, err
+		}
+		cp.Type = domain.CheckpointType(cpType)
+		checkpoints = append(checkpoints, cp)
+	}
+	return checkpoints, rows.Err()
+}
+
+// SnapshotTo writes a consistent copy of the live database (VACUUM INTO works
+// safely alongside WAL) — the .chrono backup primitive.
+func (s *Store) SnapshotTo(ctx context.Context, path string) error {
+	escaped := strings.ReplaceAll(path, "'", "''")
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("VACUUM INTO '%s'", escaped)); err != nil {
+		return fmt.Errorf("snapshot to %s: %w", path, err)
+	}
+	return nil
 }

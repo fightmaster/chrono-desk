@@ -6,15 +6,25 @@ import (
 	"path/filepath"
 )
 
-// SaveToDownloads writes data into the user's Downloads directory (falling
-// back to the home directory, then CWD) and returns the absolute path.
-func SaveToDownloads(name string, data []byte) (string, error) {
+// DownloadsDir resolves the user's Downloads directory, falling back to the
+// home directory, then CWD.
+func DownloadsDir() (string, error) {
 	dir := "."
 	if home, err := os.UserHomeDir(); err == nil {
 		dir = home
 		if downloads := filepath.Join(home, "Downloads"); isDir(downloads) {
 			dir = downloads
 		}
+	}
+	return dir, nil
+}
+
+// SaveToDownloads writes data into the user's Downloads directory and returns
+// the absolute path.
+func SaveToDownloads(name string, data []byte) (string, error) {
+	dir, err := DownloadsDir()
+	if err != nil {
+		return "", err
 	}
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
