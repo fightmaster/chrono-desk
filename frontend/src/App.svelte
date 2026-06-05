@@ -5,6 +5,7 @@
   import CheckpointEditor from './lib/CheckpointEditor.svelte'
   import JudgePanel from './lib/JudgePanel.svelte'
   import EditsLog from './lib/EditsLog.svelte'
+  import AddMemberForm from './lib/AddMemberForm.svelte'
 
   let error = ''
   let busy = ''
@@ -12,6 +13,7 @@
   let events = []
   let currentEvent = null
   let races = []
+  let categories = []
   let currentRace = null
   let protocol = null
   let judgeMemberId = null
@@ -41,6 +43,7 @@
     judgeMemberId = null
     csvTimezone = ev.timezone || 'Europe/Moscow'
     await loadRaces()
+    categories = await call('GET', `/api/events/${ev.id}/categories`)
     if (races.length === 1) await openRace(races[0])
   }
 
@@ -227,6 +230,8 @@
           <button class="btn race" class:active={currentRace && currentRace.id === race.id}
                   on:click={() => openRace(race)}>{race.name}</button>
         {/each}
+        <AddMemberForm eventId={currentEvent.id} {races} {categories}
+                       defaultRaceId={currentRace?.id ?? ''} on:changed={onEdited}/>
       </div>
 
       <EditsLog bind:this={editsLog} eventId={currentEvent.id}/>
@@ -244,7 +249,7 @@
       {/if}
 
       {#if judgeMemberId}
-        <JudgePanel eventId={currentEvent.id} memberId={judgeMemberId}
+        <JudgePanel eventId={currentEvent.id} memberId={judgeMemberId} {races} {categories}
                     on:changed={onEdited} on:close={() => judgeMemberId = null}/>
       {/if}
 

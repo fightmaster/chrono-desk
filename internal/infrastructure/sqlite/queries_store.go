@@ -146,3 +146,20 @@ func (s *Store) ListCheckpointsByEvent(ctx context.Context, eventID string) ([]C
 	}
 	return out, rows.Err()
 }
+
+func (s *Store) GetMember(ctx context.Context, memberID string) (domain.Member, error) {
+	var m domain.Member
+	var status int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
+			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time
+		FROM members WHERE id = ?`, memberID).
+		Scan(&m.ID, &m.EventID, &m.RaceID, &m.CategoryID, &m.Number, &m.EPC, &m.RFID,
+			&m.FirstName, &m.LastName, &m.Gender, &m.DOB, &m.City, &m.Team, &status,
+			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime)
+	if err != nil {
+		return domain.Member{}, fmt.Errorf("get member %s: %w", memberID, err)
+	}
+	m.Status = domain.MemberStatus(status)
+	return m, nil
+}

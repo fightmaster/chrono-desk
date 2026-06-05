@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sort"
 	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
@@ -53,6 +54,9 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("GET /api/events/{id}/edits", s.handleListEdits)
 	mux.HandleFunc("GET /api/events/{id}/checkpoints", s.handleListCheckpoints)
 	mux.HandleFunc("GET /api/events/{id}/members/{memberID}/passes", s.handleMemberPasses)
+	mux.HandleFunc("POST /api/events/{id}/members", s.handleCreateMember)
+	mux.HandleFunc("GET /api/events/{id}/members/{memberID}", s.handleGetMember)
+	mux.HandleFunc("GET /api/events/{id}/categories", s.handleListCategories)
 
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
@@ -301,6 +305,70 @@ func (s *Server) handleMemberPasses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, passes)
+}
+
+func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req service.CreateMemberRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		s.fail(w, err)
+		return
+	}
+	memberID, res, err := service.CreateMember(r.Context(), store, r.PathValue("id"), req)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"member_id":      memberID,
+		"recount_needed": res.RecountNeeded,
+	})
+}
+
+func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	m, err := store.GetMember(r.Context(), r.PathValue("memberID"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": m.ID, "race_id": m.RaceID, "category_id": m.CategoryID,
+		"number": m.Number, "epc": m.EPC,
+		"first_name": m.FirstName, "last_name": m.LastName,
+		"gender": m.Gender, "team": m.Team, "city": m.City,
+	})
+}
+
+func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	categories, err := store.ListCategories(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	type catJSON struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	out := make([]catJSON, 0, len(categories))
+	for _, c := range categories {
+		out = append(out, catJSON{ID: c.ID, Name: c.Name})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {

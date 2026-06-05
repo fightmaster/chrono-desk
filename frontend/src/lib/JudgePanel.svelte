@@ -4,6 +4,8 @@
 
   export let eventId
   export let memberId
+  export let races = []
+  export let categories = []
 
   const dispatch = createEventDispatcher()
   const statuses = [
@@ -14,10 +16,12 @@
   ]
 
   let data = null
+  let member = null // registration fields from the protocol/member row
   let error = ''
 
   async function load() {
     data = await call('GET', `/api/events/${eventId}/members/${memberId}/passes`)
+    member = await call('GET', `/api/events/${eventId}/members/${memberId}`)
   }
 
   $: eventId && memberId && load()
@@ -65,6 +69,43 @@
         · Чистое: {data.clean_time ?? '—'}</span>
     </div>
 
+    {#if member}
+      <details class="reg">
+        <summary>Регистрационные данные</summary>
+        <div class="controls">
+          <label>Фамилия
+            <input value={member.last_name}
+                   on:change={e => edit('last_name', e.target.value || null)}/>
+          </label>
+          <label>Имя
+            <input value={member.first_name}
+                   on:change={e => edit('first_name', e.target.value || null)}/>
+          </label>
+          <label>Номер
+            <input type="number" value={member.number ?? ''}
+                   on:change={e => edit('number', e.target.value === '' ? null : Number(e.target.value))}/>
+          </label>
+          <label>Метка (EPC)
+            <input value={member.epc ?? ''}
+                   on:change={e => edit('epc', e.target.value ? e.target.value.toUpperCase() : null)}/>
+          </label>
+          <label>Группа
+            <select value={member.category_id ?? ''}
+                    on:change={e => edit('category_id', e.target.value || null)}>
+              <option value="">—</option>
+              {#each categories as c}<option value={c.id}>{c.name}</option>{/each}
+            </select>
+          </label>
+          <label>Гонка
+            <select value={member.race_id}
+                    on:change={e => edit('race_id', e.target.value)}>
+              {#each races as r}<option value={r.id}>{r.name}</option>{/each}
+            </select>
+          </label>
+        </div>
+      </details>
+    {/if}
+
     <h4>Отсечки ({data.passes.length})</h4>
     <table>
       <thead>
@@ -111,4 +152,6 @@
   .btn.small { padding: 0.1rem 0.5rem; font-size: 0.8rem; background: #2d3748; border: 1px solid #4a5568; border-radius: 3px; color: inherit; cursor: pointer; }
   .hint { color: #9aa5b1; font-size: 0.85rem; }
   .error { color: #e57373; }
+  .reg { margin: 0.5rem 0; }
+  .reg summary { cursor: pointer; color: #9aa5b1; font-size: 0.9rem; }
 </style>
