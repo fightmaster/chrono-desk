@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "exported_at": "2026-06-05T12:00:00+03:00",
+  "timezone": "Europe/Moscow",
+  "event": {
+    "id": "ev-100",
+    "name": "Test Marathon",
+    "slug": "test-marathon",
+    "date": "2026-06-07"
+  },
+  "laps": [
+    {"id": "lap-1", "name": "City loop", "slug": "city-loop", "description": ""}
+  ],
+  "races": [
+    {
+      "id": "race-10k",
+      "event_id": "ev-100",
+      "name": "10 km",
+      "date": "2026-06-07",
+      "started_at": "2026-06-07T09:00:00+03:00",
+      "lap_id": "lap-1",
+      "format": "FixedDistance",
+      "time_limit_seconds": null,
+      "category_excludes_top_by_gender": true
+    }
+  ],
+  "categories": [
+    {"id": "cat-m18", "name": "M18-39", "min": 18, "max": 39, "gender": "male"}
+  ],
+  "checkpoints": [
+    {
+      "id": "cp-start",
+      "event_id": "ev-100",
+      "race_id": "race-10k",
+      "name": "Start",
+      "type": 1,
+      "sort": 1,
+      "board": "Feibot:U100",
+      "since": null,
+      "since_offset_seconds": null,
+      "sleep_after_prev_seconds": null
+    },
+    {
+      "id": "cp-finish",
+      "event_id": "ev-100",
+      "race_id": "race-10k",
+      "name": "Finish",
+      "type": 3,
+      "sort": 2,
+      "board": "Feibot:U659",
+      "since": "2026-06-07T09:10:00+03:00",
+      "since_offset_seconds": null,
+      "sleep_after_prev_seconds": 60
+    }
+  ],
+  "members": [
+    {
+      "id": "mem-1",
+      "event_id": "ev-100",
+      "race_id": "race-10k",
+      "category_id": "cat-m18",
+      "number": 101,
+      "epc": "E280AAA",
+      "rfid": null,
+      "first_name": "Ivan",
+      "last_name": "Petrov",
+      "gender": "male",
+      "dob": "1990-05-01",
+      "city": "Moscow",
+      "team": null,
+      "status": 0,
+      "start_time": null,
+      "finish_time": null,
+      "clean_time": null
+    },
+    {
+      "id": "mem-2",
+      "event_id": "ev-100",
+      "race_id": "race-10k",
+      "category_id": null,
+      "number": 102,
+      "epc": "E280BBB",
+      "rfid": null,
+      "first_name": "Anna",
+      "last_name": "Ivanova",
+      "gender": "female",
+      "dob": null,
+      "city": null,
+      "team": null,
+      "status": 1,
+      "start_time": null,
+      "finish_time": null,
+      "clean_time": null
+    }
+  ],
+  "rfid_logs": [
+    {
+      "id": "log-active",
+      "event_id": "ev-100",
+      "status": 0,
+      "number": 0,
+      "time": 1780812600000,
+      "ant": 1,
+      "epc": "E280AAA",
+      "rssi": -60,
+      "board": "Feibot:U659",
+      "disabled_at": null
+    },
+    {
+      "id": "log-disabled",
+      "event_id": "ev-100",
+      "status": 0,
+      "number": 0,
+      "time": 1780812660000,
+      "ant": 1,
+      "epc": "E280BBB",
+      "rssi": -58,
+      "board": "Feibot:U659",
+      "disabled_at": "2026-06-07T10:00:00+03:00"
+    }
+  ]
+}
