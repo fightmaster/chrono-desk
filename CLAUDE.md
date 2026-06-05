@@ -15,10 +15,13 @@ import contract.
 (`internal/processor` + flow tests), recount service, event-export JSON importer,
 Feibot CSV importer (byte-identical md5 ids), FixedDistance ranking with both category
 strategies, REST API (import/recount/races/protocol) and the Svelte results UI.
-Next: Excel protocol export, golden tests on a real event from the local run5 DB,
-TimeLimited/Run5Stopwatch formats, run5 `event:export` artisan command (site side),
-v0.2 live TCP ingest. rfid-sync is implementing member_results materialization — when
-it lands, diff its semantics against `internal/ranking`. Update this file as code lands.
+TimeLimited format is ported from rfid-sync's reference implementation (d54c88b) —
+parity notes in `docs/ranking.md`. Next: Excel protocol export, golden tests on a real
+event from the local run5 DB, Run5Stopwatch format, run5 `event:export` artisan command
+(site side), v0.2 live TCP ingest. When rfid-sync's engine changes, re-diff
+`internal/processor` against `rfid-sync/internal/syncer/processor` (it is a port, not a
+shared library — rfid-sync's code lives in `internal/` and is not importable
+cross-module). Update this file as code lands.
 
 ## Toolchain & commands
 

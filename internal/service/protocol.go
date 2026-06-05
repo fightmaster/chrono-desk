@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
 	"gitlab.com/fightmaster1/chrono-desk/internal/ranking"
@@ -25,6 +26,10 @@ type ProtocolRow struct {
 	CategoryPlace *int    `json:"category_place"`
 	CleanTimeMs   *int64  `json:"clean_time_ms"`
 	CleanTime     *string `json:"clean_time"`
+
+	// TimeLimited races only.
+	LastCheckpointName *string `json:"last_checkpoint_name,omitempty"`
+	ElapsedMs          *int64  `json:"elapsed_ms,omitempty"`
 }
 
 // ProtocolResponse bundles the race header with its ranked rows.
@@ -51,7 +56,14 @@ func BuildProtocol(ctx context.Context, store *sqlite.Store, raceID string) (Pro
 		return ProtocolResponse{}, err
 	}
 
-	ranked := ranking.Protocol(race, members)
+	var lastPasses map[string]ranking.LastPass
+	if race.Format == domain.FormatTimeLimited {
+		if lastPasses, err = store.LastPassesInWindow(ctx, race, members); err != nil {
+			return ProtocolResponse{}, err
+		}
+	}
+
+	ranked := ranking.Protocol(race, members, lastPasses)
 
 	resp := ProtocolResponse{
 		RaceID:   race.ID,
@@ -77,6 +89,14 @@ func BuildProtocol(ctx context.Context, store *sqlite.Store, raceID string) (Pro
 		}
 		if r.CleanTimeMs != nil {
 			formatted := processor.FormatCleanTime(0, *r.CleanTimeMs)
+			row.CleanTime = &formatted
+		}
+		// TimeLimited: run5's compat shim renders the in-window elapsed as
+		// the member's clean time.
+		if r.ElapsedMs != nil {
+			row.ElapsedMs = r.ElapsedMs
+			row.LastCheckpointName = r.LastCheckpointName
+			formatted := processor.FormatCleanTime(0, *r.ElapsedMs)
 			row.CleanTime = &formatted
 		}
 		if r.Member.CategoryID != nil {

@@ -116,6 +116,7 @@
 
   $: top3 = protocol ? protocol.rows.filter(r => r.place && r.place <= 3) : []
   $: categoryTop = protocol ? groupCategoryTop(protocol.rows) : []
+  $: showCheckpoint = protocol ? protocol.rows.some(r => r.last_checkpoint_name) : false
 
   function groupCategoryTop(rows) {
     const byCat = new Map()
@@ -207,7 +208,9 @@
           <thead>
           <tr>
             <th>Место</th><th>Номер</th><th>Участник</th><th>Группа</th>
-            <th>Место в группе</th><th>Пол</th><th>Время</th><th>Статус</th>
+            <th>Место в группе</th><th>Пол</th>
+            {#if showCheckpoint}<th>Чекпоинт</th>{/if}
+            <th>Время</th><th>Статус</th>
           </tr>
           </thead>
           <tbody>
@@ -219,6 +222,7 @@
               <td>{r.category_name ?? ''}</td>
               <td>{r.category_place ?? ''}</td>
               <td>{r.gender_place ?? ''}</td>
+              {#if showCheckpoint}<td>{r.last_checkpoint_name ?? ''}</td>{/if}
               <td class="time">{r.clean_time ?? ''}</td>
               <td>{statusLabel(r.status)}</td>
             </tr>

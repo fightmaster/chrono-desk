@@ -19,6 +19,20 @@ type Row struct {
 	Place         *int // overall, dense over 'ok' rows
 	GenderPlace   *int
 	CategoryPlace *int
+
+	// TimeLimited extras (run5's TimeLimitedResultPayload analog).
+	LastCheckpointName *string
+	LastPassAtMs       *int64
+	ElapsedMs          *int64
+}
+
+// LastPass is a member's final result inside the time-limited window —
+// the row picked by ORDER BY time_ms DESC, id DESC (mirrors rfid-sync's
+// LoadLastPassInWindow / run5's TimeLimitedFormat).
+type LastPass struct {
+	TimeMs         int64
+	CheckpointSort *int64
+	CheckpointName *string
 }
 
 // rankRow mirrors run5's member_results semantics.
@@ -29,6 +43,11 @@ type rankRow struct {
 	rankSecondary *int64
 	rankTertiary  *int64
 	cleanTimeMs   *int64
+
+	// TimeLimited payload analog.
+	elapsedMs          *int64
+	lastPassAtMs       *int64
+	lastCheckpointName *string
 }
 
 func statusString(s domain.MemberStatus) string {
@@ -62,14 +81,55 @@ func materializeFixedDistance(m domain.Member) *rankRow {
 	return &rankRow{member: m, status: "ok", rankPrimary: &rank, cleanTimeMs: &clean}
 }
 
-// Protocol builds the ranked protocol for a FixedDistance race.
+// materializeTimeLimited ports TimeLimitedFormat::materialize (reference Go
+// implementation: rfid-sync's TimeLimitedMemberResult): the member's last
+// pass inside [start, start + time_limit] wins; rank_primary is the
+// checkpoint sort (a later checkpoint wins, NOT negated); rank_secondary is
+// -elapsedMs (within the same checkpoint a faster pass wins, clamped at 0).
+func materializeTimeLimited(race domain.Race, m domain.Member, pass *LastPass) *rankRow {
+	if m.Status != domain.StatusOK {
+		return &rankRow{member: m, status: statusString(m.Status)}
+	}
+	if m.StartTimeMs == nil || race.TimeLimitSeconds == nil || *race.TimeLimitSeconds <= 0 || pass == nil {
+		return nil
+	}
+	elapsed := pass.TimeMs - *m.StartTimeMs
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	rankSecondary := -elapsed
+	passAt := pass.TimeMs
+	return &rankRow{
+		member:             m,
+		status:             "ok",
+		rankPrimary:        pass.CheckpointSort,
+		rankSecondary:      &rankSecondary,
+		elapsedMs:          &elapsed,
+		lastPassAtMs:       &passAt,
+		lastCheckpointName: pass.CheckpointName,
+	}
+}
+
+// Protocol builds the ranked protocol for a race. lastPasses (keyed by
+// member id) is required for TimeLimited races and ignored otherwise.
 // Ordering ports run5's rankRows: 'ok' rows first, then rank fields
 // descending with nulls last; the sort is stable (no explicit tie-break in
 // run5 — input order is preserved). Places are dense over 'ok' rows.
-func Protocol(race domain.Race, members []domain.Member) []Row {
+func Protocol(race domain.Race, members []domain.Member, lastPasses map[string]LastPass) []Row {
 	rows := make([]*rankRow, 0, len(members))
 	for _, m := range members {
-		if r := materializeFixedDistance(m); r != nil {
+		var r *rankRow
+		switch race.Format {
+		case domain.FormatTimeLimited:
+			var pass *LastPass
+			if p, ok := lastPasses[m.ID]; ok {
+				pass = &p
+			}
+			r = materializeTimeLimited(race, m, pass)
+		default: // FixedDistance (Run5Stopwatch pending)
+			r = materializeFixedDistance(m)
+		}
+		if r != nil {
 			rows = append(rows, r)
 		}
 	}
@@ -81,7 +141,14 @@ func Protocol(race domain.Race, members []domain.Member) []Row {
 	out := make([]Row, 0, len(rows))
 	place := 0
 	for _, r := range rows {
-		row := Row{Member: r.member, Status: r.status, CleanTimeMs: r.cleanTimeMs}
+		row := Row{
+			Member:             r.member,
+			Status:             r.status,
+			CleanTimeMs:        r.cleanTimeMs,
+			ElapsedMs:          r.elapsedMs,
+			LastPassAtMs:       r.lastPassAtMs,
+			LastCheckpointName: r.lastCheckpointName,
+		}
 		if r.status == "ok" {
 			place++
 			p := place

@@ -85,8 +85,27 @@ top-3 per gender). Source: `RaceResultsPageAction::leaderboard()`.
 
 ## Porting order
 
-v0.1 implements FixedDistance + both category strategies (covers most starts);
-TimeLimited and Run5Stopwatch follow the same spec afterwards.
+v0.1 implements FixedDistance and TimeLimited + both category strategies;
+Run5Stopwatch follows the same spec later.
+
+## Parity with rfid-sync (verified 2026-06-05)
+
+rfid-sync d54c88b now materializes member_results on the live ingest path — the
+reference **Go** implementation of the format math. chrono-desk parity was verified
+against it line by line:
+
+- FixedDistance: `rank_primary = -cleanTimeMs`, negative clean → no row — identical.
+- TimeLimited: last pass in `[start, start + limit]` by `time_ms DESC, id DESC`,
+  `rank_primary = checkpoint.sort` (not negated), `rank_secondary = -elapsedMs`
+  clamped at 0 — ported into `internal/ranking` + `Store.LastPassesInWindow`.
+- Intentional difference: rfid-sync skips judge-status members (PHP owns dns/dnf/dq
+  rows) and writes only "ok"; chrono-desk's ranking renders status rows itself because
+  here it IS the protocol reader — that mirrors run5's PHP, the canonical source.
+- Intentional difference: rfid-sync requires only valid start/finish times;
+  chrono-desk (like PHP) also requires `clean_time` presence — equivalent in practice
+  since our recount always sets clean with finish.
+- `FormatCleanTime` zero-padded millis (their 2e9087e fix) — locked by a regression
+  test in `internal/processor/format_test.go`.
 
 ## Known gap in run5's ONLINE flow (discovered 2026-06-05)
 

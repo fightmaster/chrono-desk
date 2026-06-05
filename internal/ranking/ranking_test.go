@@ -35,7 +35,7 @@ func TestProtocolOrdersByCleanTimeAndAssignsPlaces(t *testing.T) {
 		{ID: "not-finished"}, // no times → absent
 	}
 
-	rows := Protocol(race, members)
+	rows := Protocol(race, members, nil)
 
 	if len(rows) != 4 {
 		t.Fatalf("rows = %d, want 4 (unfinished member absent)", len(rows))
@@ -83,7 +83,7 @@ func TestProtocolStableOrderOnEqualTimes(t *testing.T) {
 		finished("second-in", "", "", 30_000),
 	}
 
-	rows := Protocol(race, members)
+	rows := Protocol(race, members, nil)
 	if rows[0].Member.ID != "first-in" || rows[1].Member.ID != "second-in" {
 		t.Errorf("equal times must keep input order, got %s, %s", rows[0].Member.ID, rows[1].Member.ID)
 	}
@@ -97,7 +97,7 @@ func TestStandardCategoryPlaces(t *testing.T) {
 		finished("c", "male", "", 15_000), // no category → no category place
 	}
 
-	rows := Protocol(race, members)
+	rows := Protocol(race, members, nil)
 
 	got := map[string]*int{}
 	for _, r := range rows {
@@ -128,7 +128,7 @@ func TestExcludeTopByGenderCategoryPlaces(t *testing.T) {
 		finished("w2", "female", "catY", 21_000),
 	}
 
-	rows := Protocol(race, members)
+	rows := Protocol(race, members, nil)
 
 	got := map[string]*int{}
 	for _, r := range rows {
