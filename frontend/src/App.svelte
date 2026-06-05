@@ -96,6 +96,20 @@
     }
   }
 
+  async function exportExcel() {
+    if (!currentEvent || !currentRace) return
+    error = ''
+    busy = 'Экспорт в Excel…'
+    try {
+      const res = await call('POST', `/api/events/${currentEvent.id}/races/${currentRace.id}/export-xlsx`)
+      alert(`Протокол сохранён: ${res.path}`)
+    } catch (err) {
+      error = `Экспорт Excel: ${err.message}`
+    } finally {
+      busy = ''
+    }
+  }
+
   async function recount() {
     if (!currentEvent) return
     error = ''
@@ -168,6 +182,9 @@
           <input type="file" accept=".csv,.txt" on:change={importCsvFile} hidden/>
         </label>
         <button class="btn primary" on:click={recount}>Пересчитать</button>
+        {#if currentRace}
+          <button class="btn" on:click={exportExcel}>Excel</button>
+        {/if}
       </div>
 
       <div class="races">

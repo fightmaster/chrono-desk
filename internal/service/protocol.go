@@ -16,6 +16,7 @@ type ProtocolRow struct {
 	FirstName     string  `json:"first_name"`
 	LastName      string  `json:"last_name"`
 	Gender        *string `json:"gender"`
+	DOB           *string `json:"dob"`
 	Team          *string `json:"team"`
 	City          *string `json:"city"`
 	CategoryID    *string `json:"category_id"`
@@ -78,6 +79,7 @@ func BuildProtocol(ctx context.Context, store *sqlite.Store, raceID string) (Pro
 			FirstName:     r.Member.FirstName,
 			LastName:      r.Member.LastName,
 			Gender:        r.Member.Gender,
+			DOB:           r.Member.DOB,
 			Team:          r.Member.Team,
 			City:          r.Member.City,
 			CategoryID:    r.Member.CategoryID,

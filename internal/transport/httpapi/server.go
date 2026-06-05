@@ -46,6 +46,8 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("POST /api/events/{id}/recount", s.handleRecount)
 	mux.HandleFunc("GET /api/events/{id}/races", s.handleListRaces)
 	mux.HandleFunc("GET /api/events/{id}/races/{raceID}/protocol", s.handleProtocol)
+	mux.HandleFunc("GET /api/events/{id}/races/{raceID}/protocol.xlsx", s.handleProtocolXLSX)
+	mux.HandleFunc("POST /api/events/{id}/races/{raceID}/export-xlsx", s.handleExportXLSX)
 
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
@@ -187,6 +189,45 @@ func (s *Server) handleProtocol(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, protocol)
+}
+
+// handleProtocolXLSX streams the workbook — handy from a regular browser on
+// the LAN.
+func (s *Server) handleProtocolXLSX(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	data, name, err := service.BuildProtocolXLSX(r.Context(), store, r.PathValue("raceID"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	_, _ = w.Write(data)
+}
+
+// handleExportXLSX saves the workbook into the user's Downloads directory —
+// the desktop-friendly path (webviews are unreliable at file downloads).
+func (s *Server) handleExportXLSX(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	data, name, err := service.BuildProtocolXLSX(r.Context(), store, r.PathValue("raceID"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	path, err := service.SaveToDownloads(name, data)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": path})
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {

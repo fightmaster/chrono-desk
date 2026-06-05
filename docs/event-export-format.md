@@ -64,6 +64,10 @@ Core: `id`, `event_id`, `race_id`, `category_id`, `number` (bib), `epc`, `rfid`,
 `first_name`, `last_name`, `gender`, `dob`, `city`, `team`, `status`
 (MemberStatus enum: ok/DNS/DNF/DSQ)
 
+`gender` is exported as the string `"male"` / `"female"` / `null` — run5 stores an int
+(1=male, 2=female), the `event:export` command must map it. `dob` is an ISO date
+(`YYYY-MM-DD`).
+
 Times (informational; chrono-desk recomputes them on recount): `start_time`,
 `finish_time`, `clean_time`
 
