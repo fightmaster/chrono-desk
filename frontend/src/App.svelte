@@ -14,6 +14,8 @@
   let currentEvent = null
   let races = []
   let categories = []
+  let members = []
+  let memberQuery = ''
   let currentRace = null
   let protocol = null
   let judgeMemberId = null
@@ -44,7 +46,12 @@
     csvTimezone = ev.timezone || 'Europe/Moscow'
     await loadRaces()
     categories = await call('GET', `/api/events/${ev.id}/categories`)
+    await loadMembers()
     if (races.length === 1) await openRace(races[0])
+  }
+
+  async function loadMembers() {
+    members = await call('GET', `/api/events/${currentEvent.id}/members`)
   }
 
   async function loadRaces() {
@@ -63,6 +70,7 @@
       protocol = await call('GET', `/api/events/${currentEvent.id}/races/${currentRace.id}/protocol`)
     }
     if (editsLog) await editsLog.load()
+    await loadMembers()
   }
 
   async function recount() {
@@ -180,6 +188,26 @@
     return {ok: '', dns: 'DNS', dnf: 'DNF', dq: 'DSQ'}[s] ?? s
   }
 
+  $: foundMembers = memberQuery.trim() ? searchMembers(memberQuery.trim().toLowerCase()) : []
+
+  function searchMembers(q) {
+    return members.filter(m =>
+      (m.last_name && m.last_name.toLowerCase().includes(q)) ||
+      (m.first_name && m.first_name.toLowerCase().includes(q)) ||
+      (m.number !== null && String(m.number).includes(q)) ||
+      (m.epc && m.epc.toLowerCase().includes(q))
+    ).slice(0, 30)
+  }
+
+  function raceName(raceId) {
+    return races.find(r => r.id === raceId)?.name ?? raceId
+  }
+
+  function openJudge(memberId) {
+    judgeMemberId = memberId
+    memberQuery = ''
+  }
+
   $: top3 = protocol ? protocol.rows.filter(r => r.place && r.place <= 3) : []
   $: categoryTop = protocol ? groupCategoryTop(protocol.rows) : []
   $: showCheckpoint = protocol ? protocol.rows.some(r => r.last_checkpoint_name) : false
@@ -248,6 +276,26 @@
                        defaultRaceId={currentRace?.id ?? ''} on:changed={onEdited}/>
       </div>
 
+      <div class="search">
+        <input placeholder="Поиск участника: фамилия, имя, номер или метка"
+               bind:value={memberQuery}/>
+        <span class="hint">{members.length} участников в событии</span>
+      </div>
+      {#if foundMembers.length}
+        <ul class="found">
+          {#each foundMembers as m (m.id)}
+            <li>
+              <button class="link" on:click={() => openJudge(m.id)}>
+                №{m.number ?? '—'} {m.last_name} {m.first_name}
+              </button>
+              <span class="hint">{raceName(m.race_id)}{m.epc ? ` · ${m.epc}` : ''}</span>
+            </li>
+          {/each}
+        </ul>
+      {:else if memberQuery.trim()}
+        <p class="hint">Никто не найден</p>
+      {/if}
+
       <EditsLog bind:this={editsLog} eventId={currentEvent.id}/>
 
       {#if currentRace}
@@ -313,7 +361,7 @@
           <tbody>
           {#each protocol.rows as r (r.member_id)}
             <tr class:nok={r.status !== 'ok'} class:selected={judgeMemberId === r.member_id}
-                on:click={() => judgeMemberId = r.member_id}>
+                on:click={() => openJudge(r.member_id)}>
               <td>{r.place ?? '—'}</td>
               <td>{r.number ?? ''}</td>
               <td class="name">{r.last_name} {r.first_name}</td>
@@ -390,6 +438,16 @@
   }
 
   .races { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
+  .search { display: flex; gap: 1rem; align-items: center; margin: 0.7rem 0; }
+  .search input {
+    flex: 1; max-width: 26rem;
+    padding: 0.4rem 0.6rem; border-radius: 4px;
+    border: 1px solid #4a5568; background: #1a202c; color: inherit;
+  }
+  .found { list-style: none; padding: 0.3rem 0.6rem; margin: 0;
+    border: 1px solid #4a5568; border-radius: 6px; background: #232b38; }
+  .found li { padding: 0.25rem 0; }
 
   .race-start { display: flex; gap: 1rem; align-items: center; margin: 0.7rem 0; }
   .race-start label { display: flex; gap: 0.6rem; align-items: center; }

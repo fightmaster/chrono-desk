@@ -163,3 +163,66 @@ func (s *Store) GetMember(ctx context.Context, memberID string) (domain.Member, 
 	m.Status = domain.MemberStatus(status)
 	return m, nil
 }
+
+// MemberRow is the slim JSON shape for the searchable members list.
+type MemberRow struct {
+	ID         string  `json:"id"`
+	RaceID     string  `json:"race_id"`
+	Number     *int64  `json:"number"`
+	FirstName  string  `json:"first_name"`
+	LastName   string  `json:"last_name"`
+	EPC        *string `json:"epc"`
+	CategoryID *string `json:"category_id"`
+	Status     int     `json:"status"`
+}
+
+func (s *Store) ListMembersByEvent(ctx context.Context, eventID string) ([]MemberRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, race_id, number, first_name, last_name, epc, category_id, status
+		FROM members WHERE event_id = ? ORDER BY last_name, first_name`, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("list event members: %w", err)
+	}
+	defer rows.Close()
+
+	out := []MemberRow{}
+	for rows.Next() {
+		var m MemberRow
+		if err := rows.Scan(&m.ID, &m.RaceID, &m.Number, &m.FirstName, &m.LastName, &m.EPC, &m.CategoryID, &m.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetCheckpoint(ctx context.Context, id string) (CheckpointRow, error) {
+	var cp CheckpointRow
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds
+		FROM checkpoints WHERE id = ?`, id).
+		Scan(&cp.ID, &cp.RaceID, &cp.Name, &cp.Type, &cp.Sort, &cp.Board,
+			&cp.SinceMs, &cp.SinceOffsetSeconds, &cp.SleepAfterPrevSeconds)
+	if err != nil {
+		return CheckpointRow{}, fmt.Errorf("get checkpoint %s: %w", id, err)
+	}
+	return cp, nil
+}
+
+// DeleteCheckpointCascade removes the checkpoint together with the results it
+// produced (the caller recounts afterwards). No-op when already absent.
+func (s *Store) DeleteCheckpointCascade(ctx context.Context, id string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM results WHERE checkpoint_id = ?`, id); err != nil {
+		return fmt.Errorf("delete checkpoint results: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM checkpoints WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete checkpoint: %w", err)
+	}
+	return tx.Commit()
+}

@@ -57,6 +57,9 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("POST /api/events/{id}/members", s.handleCreateMember)
 	mux.HandleFunc("GET /api/events/{id}/members/{memberID}", s.handleGetMember)
 	mux.HandleFunc("GET /api/events/{id}/categories", s.handleListCategories)
+	mux.HandleFunc("GET /api/events/{id}/members", s.handleListMembers)
+	mux.HandleFunc("POST /api/events/{id}/checkpoints", s.handleCreateCheckpoint)
+	mux.HandleFunc("DELETE /api/events/{id}/checkpoints/{cpID}", s.handleDeleteCheckpoint)
 
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
@@ -371,6 +374,53 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	members, err := store.ListMembersByEvent(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, members)
+}
+
+func (s *Server) handleCreateCheckpoint(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req service.CreateCheckpointRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		s.fail(w, err)
+		return
+	}
+	id, res, err := service.CreateCheckpoint(r.Context(), store, r.PathValue("id"), req)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"checkpoint_id": id, "recount_needed": res.RecountNeeded})
+}
+
+func (s *Server) handleDeleteCheckpoint(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	res, err := service.DeleteCheckpoint(r.Context(), store, r.PathValue("id"), r.PathValue("cpID"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {

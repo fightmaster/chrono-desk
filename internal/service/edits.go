@@ -112,8 +112,16 @@ func ReapplyLocalEdits(ctx context.Context, store *sqlite.Store) (applied int, e
 		return 0, err
 	}
 	for _, c := range changes {
+		if c.Field == "_deleted" && c.Entity == "checkpoint" {
+			// Re-imports resurrect site checkpoints; re-delete what the judge
+			// removed (idempotent — no-op when already absent).
+			if err := store.DeleteCheckpointCascade(ctx, c.EntityID); err == nil {
+				applied++
+			}
+			continue
+		}
 		if len(c.Field) > 0 && c.Field[0] == '_' {
-			continue // pseudo-fields (_created): audit/sync entries, not replays
+			continue // other pseudo-fields (_created): audit/sync entries only
 		}
 		spec, value, err := validateEdit(EditRequest{
 			Entity: c.Entity, EntityID: c.EntityID, Field: c.Field, Value: json.RawMessage(c.NewValue),
