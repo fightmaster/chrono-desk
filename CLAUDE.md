@@ -11,9 +11,14 @@ protocols. The site remains the source of truth — sync is site → desktop. Re
 `docs/architecture.md` before structural changes; `docs/event-export-format.md` is the
 import contract.
 
-**Status: scaffolded.** Layered skeleton compiles, tests pass, `make build` produces a
-working Linux binary. Next: run5 event-export importer, processor port from rfid-sync,
-ranking port from run5. Update this file as code lands.
+**Status: v0.1 core works end-to-end.** Implemented: processor port from rfid-sync
+(`internal/processor` + flow tests), recount service, event-export JSON importer,
+Feibot CSV importer (byte-identical md5 ids), FixedDistance ranking with both category
+strategies, REST API (import/recount/races/protocol) and the Svelte results UI.
+Next: Excel protocol export, golden tests on a real event from the local run5 DB,
+TimeLimited/Run5Stopwatch formats, run5 `event:export` artisan command (site side),
+v0.2 live TCP ingest. rfid-sync is implementing member_results materialization — when
+it lands, diff its semantics against `internal/ranking`. Update this file as code lands.
 
 ## Toolchain & commands
 

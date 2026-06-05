@@ -35,8 +35,10 @@ chrono-desk reuses the result-derivation algorithm from rfid-sync
 
 ## Status & roadmap
 
-Scaffolded: layered skeleton (domain / sqlite store / HTTP API / Wails+Svelte shell)
-compiles, tests pass, `make build` produces a working Linux binary.
+v0.1 core works end-to-end: import a run5 event export (JSON) → import Feibot flash-drive
+CSV per reader → offline recount (engine ported from rfid-sync) → ranked protocol with
+top-3 and category podiums in the UI. Remaining for v0.1: Excel export, golden tests on a
+real event, run5 `event:export` command on the site.
 
 - **v0.1 (MVP)**: import run5 event export (JSON) · import Feibot CSV from flash drive ·
   offline recalculation · results screen + top-3 · Excel protocol export
