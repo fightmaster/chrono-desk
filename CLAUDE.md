@@ -18,9 +18,14 @@ strategies, REST API (import/recount/races/protocol) and the Svelte results UI.
 TimeLimited format is ported from rfid-sync's reference implementation (d54c88b) —
 parity notes in `docs/ranking.md`. Excel export mirrors run5's column layout. The recount
 engine is golden-tested against a real production event (8474 logs) byte-for-byte —
-`internal/service/golden_test.go` explains how to regenerate fixtures. Next:
-Run5Stopwatch format, run5 `event:export` artisan command (site side), v0.2 live TCP
-ingest. When rfid-sync's engine changes, re-diff
+`internal/service/golden_test.go` explains how to regenerate fixtures (anonymize PII!).
+Offline edits (delayed start, checkpoint tuning, judge mode: passes view / log disable /
+statuses / manual starts) are journaled in `local_changes`; **conflict policy: local
+edits win** — re-imports replay the journal on top (`ReapplyLocalEdits`). The journal is
+also the future to-site sync list. macOS Intel builds run via GitHub Actions
+(`.github/workflows/build.yml`); the remote repo must never receive real participants'
+PII. Next: Run5Stopwatch format, on-site member registration (package C), v0.2 live TCP
+ingest, log upload back to the site (v0.3). When rfid-sync's engine changes, re-diff
 `internal/processor` against `rfid-sync/internal/syncer/processor` (it is a port, not a
 shared library — rfid-sync's code lives in `internal/` and is not importable
 cross-module). Update this file as code lands.
