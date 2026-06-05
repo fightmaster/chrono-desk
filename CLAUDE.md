@@ -11,26 +11,31 @@ protocols. The site remains the source of truth — sync is site → desktop. Re
 `docs/architecture.md` before structural changes; `docs/event-export-format.md` is the
 import contract.
 
-**Status: docs-first stage.** Scaffolding (wails init, go.mod `gitlab.com/fightmaster1/chrono-desk`)
-is the next step; update this file as code lands.
+**Status: scaffolded.** Layered skeleton compiles, tests pass, `make build` produces a
+working Linux binary. Next: run5 event-export importer, processor port from rfid-sync,
+ranking port from run5. Update this file as code lands.
 
 ## Toolchain & commands
 
-- **Go pinned to 1.24** (`go 1.24` + `toolchain` in go.mod): Go 1.25+ requires macOS 12
-  and won't run on the competition MacBook (mid-2014, Big Sur 11.7). Never bump the Go
-  version without confirming the competition machine changed. Wails CLI v2.11, Node 22.
+- **Go pinned to 1.24** via `GOTOOLCHAIN=go1.24.13` in the Makefile (a go.mod
+  `toolchain` directive can't downgrade, so always build/test through `make`): Go 1.25+
+  requires macOS 12 and won't run on the competition MacBook (mid-2014, Big Sur 11.7).
+  Never bump the Go version without confirming the competition machine changed.
+  Consequences (accepted, do not "fix"): `govulncheck` reports stdlib vulns fixed only
+  in 1.25+; `modernc.org/sqlite` is capped at v1.44.0. Wails CLI v2.11, Node 22.
   SQLite via `modernc.org/sqlite` — **pure Go, keep CGO-free**; do not introduce
   CGO-dependent SQLite drivers.
 - Dev machine is Ubuntu: requires `libwebkit2gtk-4.1-dev` and the `-tags webkit2_41`
   build flag. Target competition machine is an old MacBook; macOS builds happen in
   GitHub Actions or on the Mac itself (no darwin cross-compile from Linux).
-- `wails dev -tags webkit2_41` — dev mode with hot reload;
-  `wails build -tags webkit2_41` — production Linux binary.
-- `go test ./...` — full suite; single test: `go test -run TestName ./path/to/pkg`.
-- Quality gate before finishing any Go change (same as rfid-hub/rfid-sync): `gofmt`,
-  `go vet ./...`, `staticcheck ./...`, `govulncheck ./...`, `go test ./...`; add
-  `go test -race ./...` for concurrency-sensitive changes. If a check can't run in the
-  current environment, say so explicitly instead of skipping silently.
+- `make dev` — hot reload; `make build` — production Linux binary (both pass
+  `-tags webkit2_41` and the toolchain pin).
+- `make test` — full suite; single test: `GOTOOLCHAIN=go1.24.13 go test -run TestName ./path/to/pkg`.
+- Quality gate before finishing any Go change (same as rfid-hub/rfid-sync): `make check`
+  (= gofmt, vet, staticcheck, govulncheck, test); add `make race` for
+  concurrency-sensitive changes. govulncheck's stdlib findings are the accepted Go-pin
+  consequence — report them, don't chase them. If a check can't run in the current
+  environment, say so explicitly instead of skipping silently.
 
 ## Architecture (planned layout)
 

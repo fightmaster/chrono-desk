@@ -35,7 +35,8 @@ chrono-desk reuses the result-derivation algorithm from rfid-sync
 
 ## Status & roadmap
 
-Docs-first stage; application scaffolding is next.
+Scaffolded: layered skeleton (domain / sqlite store / HTTP API / Wails+Svelte shell)
+compiles, tests pass, `make build` produces a working Linux binary.
 
 - **v0.1 (MVP)**: import run5 event export (JSON) · import Feibot CSV from flash drive ·
   offline recalculation · results screen + top-3 · Excel protocol export
@@ -46,22 +47,15 @@ Docs-first stage; application scaffolding is next.
 
 ## Development
 
-Quality gate (same as rfid-hub / rfid-sync):
+Always build through `make` — it pins `GOTOOLCHAIN=go1.24.13` (see docs/architecture.md)
+and passes the `webkit2_41` build tag for Ubuntu 24.04:
 
 ```bash
-gofmt -l .            # formatting
-go vet ./...
-staticcheck ./...
-govulncheck ./...
-go test ./...         # single test: go test -run TestName ./path/to/pkg
-go test -race ./...   # required for concurrency-sensitive changes
-```
-
-App commands (once scaffolded):
-
-```bash
-wails dev             # dev mode with hot reload
-wails build           # production binary for the current OS
+make dev              # hot reload
+make build            # production binary for the current OS
+make test             # full test suite
+make race             # race-detector pass
+make check            # full quality gate: gofmt, vet, staticcheck, govulncheck, test
 ```
 
 ## Docs

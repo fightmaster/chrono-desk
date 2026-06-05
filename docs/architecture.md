@@ -96,10 +96,16 @@ SQLite `Publisher`) ──▶ rfid_logs → incremental processing → live stan
   (the model's last official macOS). Wails v2 needs macOS 10.13+ — fine. Build target:
   `darwin/amd64`.
 - **Go toolchain is pinned to 1.24**: Go 1.25+ binaries require macOS 12 Monterey and
-  will not run on the competition MacBook (go.dev/doc/go1.25). go.mod carries
-  `go 1.24` + a `toolchain go1.24.x` directive so every machine and CI builds with the
-  same toolchain. Do not bump until the competition Mac is upgraded (e.g. OpenCore
-  Legacy Patcher → Monterey+) or replaced.
+  will not run on the competition MacBook (go.dev/doc/go1.25). The pin lives in the
+  Makefile (`GOTOOLCHAIN=go1.24.13`) because the go.mod `toolchain` directive cannot
+  downgrade below a newer locally-installed Go. Build through `make`. Do not bump until
+  the competition Mac is upgraded (e.g. OpenCore Legacy Patcher → Monterey+) or replaced.
+- **Accepted consequence of the pin**: go1.24.13 is the final 1.24 patch (out of the
+  security window), so `govulncheck` permanently reports stdlib vulnerabilities fixed
+  only in 1.25+. Accepted for an offline desktop app whose HTTP API binds to
+  localhost/LAN; do NOT "fix" by bumping Go. Re-evaluate when the Mac constraint goes.
+- Dependencies are capped by the pin too: `modernc.org/sqlite` is held at v1.44.0
+  (v1.45+ requires Go 1.25).
 - **macOS builds cannot be cross-compiled from Linux** (CGO + Apple frameworks). Two
   paths: GitHub Actions macOS runners (free tier is enough for release builds) or
   building on the MacBook itself. Windows builds: `windows-latest` runner or
