@@ -87,3 +87,17 @@ top-3 per gender). Source: `RaceResultsPageAction::leaderboard()`.
 
 v0.1 implements FixedDistance + both category strategies (covers most starts);
 TimeLimited and Run5Stopwatch follow the same spec afterwards.
+
+## Known gap in run5's ONLINE flow (discovered 2026-06-05)
+
+During a live race, rfid-sync writes `results` + member times directly to MySQL and does
+NOT materialize `member_results`; Laravel has no scheduler/observer that does it either
+(`materialize()` runs only from PHP write paths: PushResult/recount, manual entry, judge
+corrections, race edit, backfill command). Live surfaces survive via the empty-fallback
+to legacy `protocolMembers()`, but freeze on a stale snapshot once `member_results` is
+non-empty mid-race, and TimeLimited races aren't covered by the fallback at all (their
+member times are set by `materialize()` itself). Planned run5 fix: watermark-based
+scheduled materializer over new `results` rows.
+
+chrono-desk is immune by design — ranking is computed in-memory on demand, there is no
+materialized table to go stale.
