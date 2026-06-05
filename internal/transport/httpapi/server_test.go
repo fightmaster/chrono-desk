@@ -172,3 +172,30 @@ func decodeBody(t *testing.T, resp *http.Response, v any) {
 		t.Fatalf("decode: %v", err)
 	}
 }
+
+// Regression: the webview preflights non-simple methods; DELETE must be in
+// Access-Control-Allow-Methods or checkpoint deletion dies with "Load failed".
+func TestCORSAllowsDelete(t *testing.T) {
+	srv := startTestServer(t)
+
+	req, err := http.NewRequest(http.MethodOptions, srv.BaseURL()+"/api/events/x/checkpoints/y", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", "wails://wails.localhost")
+	req.Header.Set("Access-Control-Request-Method", "DELETE")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("preflight status = %d, want 204", resp.StatusCode)
+	}
+	allow := resp.Header.Get("Access-Control-Allow-Methods")
+	if !strings.Contains(allow, "DELETE") {
+		t.Fatalf("Allow-Methods = %q, must contain DELETE", allow)
+	}
+}
