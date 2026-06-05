@@ -116,6 +116,9 @@ type ImportStats struct {
 	Checkpoints int    `json:"checkpoints"`
 	Members     int    `json:"members"`
 	RfidLogs    int    `json:"rfid_logs"`
+	// LocalEditsReapplied counts journal entries replayed on top of the
+	// import (local edits win — see docs/architecture.md).
+	LocalEditsReapplied int `json:"local_edits_reapplied"`
 }
 
 // EventImporter applies a run5 event export to an event database. Re-import
@@ -233,6 +236,13 @@ func (i *EventImporter) Import(ctx context.Context, export *EventExport) (Import
 		return stats, err
 	}
 	stats.RfidLogs = len(logs)
+
+	// Conflict policy: local offline edits beat the re-imported site data.
+	applied, err := ReapplyLocalEdits(ctx, i.store)
+	if err != nil {
+		return stats, err
+	}
+	stats.LocalEditsReapplied = applied
 
 	return stats, nil
 }

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
 )
 
@@ -48,6 +49,10 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("GET /api/events/{id}/races/{raceID}/protocol", s.handleProtocol)
 	mux.HandleFunc("GET /api/events/{id}/races/{raceID}/protocol.xlsx", s.handleProtocolXLSX)
 	mux.HandleFunc("POST /api/events/{id}/races/{raceID}/export-xlsx", s.handleExportXLSX)
+	mux.HandleFunc("POST /api/events/{id}/edits", s.handleApplyEdit)
+	mux.HandleFunc("GET /api/events/{id}/edits", s.handleListEdits)
+	mux.HandleFunc("GET /api/events/{id}/checkpoints", s.handleListCheckpoints)
+	mux.HandleFunc("GET /api/events/{id}/members/{memberID}/passes", s.handleMemberPasses)
 
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
@@ -164,14 +169,18 @@ func (s *Server) handleListRaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type raceJSON struct {
-		ID     string `json:"id"`
-		Name   string `json:"name"`
-		Date   string `json:"date"`
-		Format string `json:"format"`
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Date        string `json:"date"`
+		Format      string `json:"format"`
+		StartedAtMs *int64 `json:"started_at_ms"`
 	}
 	out := make([]raceJSON, 0, len(races))
 	for _, rc := range races {
-		out = append(out, raceJSON{ID: rc.ID, Name: rc.Name, Date: rc.Date, Format: string(rc.Format)})
+		out = append(out, raceJSON{
+			ID: rc.ID, Name: rc.Name, Date: rc.Date, Format: string(rc.Format),
+			StartedAtMs: rc.StartedAtMs,
+		})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -228,6 +237,70 @@ func (s *Server) handleExportXLSX(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"path": path})
+}
+
+func (s *Server) handleApplyEdit(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req service.EditRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		s.fail(w, err)
+		return
+	}
+	res, err := service.ApplyEdit(r.Context(), store, req)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleListEdits(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	changes, err := store.ListLocalChanges(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if changes == nil {
+		changes = []sqlite.LocalChange{}
+	}
+	writeJSON(w, http.StatusOK, changes)
+}
+
+func (s *Server) handleListCheckpoints(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	checkpoints, err := store.ListCheckpointsByEvent(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, checkpoints)
+}
+
+func (s *Server) handleMemberPasses(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	passes, err := service.LoadMemberPasses(r.Context(), store, r.PathValue("memberID"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, passes)
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {

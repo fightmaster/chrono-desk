@@ -1,8 +1,11 @@
 <script>
   import {onMount} from 'svelte'
   import {APIBaseURL} from '../wailsjs/go/main/App.js'
+  import {setBase, call, msToInput, inputToMs} from './lib/api.js'
+  import CheckpointEditor from './lib/CheckpointEditor.svelte'
+  import JudgePanel from './lib/JudgePanel.svelte'
+  import EditsLog from './lib/EditsLog.svelte'
 
-  let api = ''
   let error = ''
   let busy = ''
 
@@ -11,6 +14,8 @@
   let races = []
   let currentRace = null
   let protocol = null
+  let judgeMemberId = null
+  let editsLog
 
   // forms
   let deviceCode = ''
@@ -18,24 +23,12 @@
 
   onMount(async () => {
     try {
-      api = await APIBaseURL()
+      setBase(await APIBaseURL())
       await loadEvents()
     } catch (e) {
       error = `API недоступен: ${e}`
     }
   })
-
-  async function call(method, path, body, contentType) {
-    const opts = {method}
-    if (body !== undefined) {
-      opts.body = body
-      opts.headers = {'Content-Type': contentType || 'application/json'}
-    }
-    const resp = await fetch(`${api}${path}`, opts)
-    const data = await resp.json()
-    if (!resp.ok) throw new Error(data.error || resp.status)
-    return data
-  }
 
   async function loadEvents() {
     events = await call('GET', '/api/events')
@@ -45,14 +38,67 @@
     currentEvent = ev
     currentRace = null
     protocol = null
+    judgeMemberId = null
     csvTimezone = ev.timezone || 'Europe/Moscow'
-    races = await call('GET', `/api/events/${ev.id}/races`)
+    await loadRaces()
     if (races.length === 1) await openRace(races[0])
+  }
+
+  async function loadRaces() {
+    races = await call('GET', `/api/events/${currentEvent.id}/races`)
+    if (currentRace) currentRace = races.find(r => r.id === currentRace.id) ?? null
   }
 
   async function openRace(race) {
     currentRace = race
+    judgeMemberId = null
     protocol = await call('GET', `/api/events/${currentEvent.id}/races/${race.id}/protocol`)
+  }
+
+  async function refreshProtocol() {
+    if (currentRace) {
+      protocol = await call('GET', `/api/events/${currentEvent.id}/races/${currentRace.id}/protocol`)
+    }
+    if (editsLog) await editsLog.load()
+  }
+
+  async function recount() {
+    if (!currentEvent) return
+    error = ''
+    busy = 'Пересчёт…'
+    try {
+      await call('POST', `/api/events/${currentEvent.id}/recount`)
+      await refreshProtocol()
+    } catch (err) {
+      error = `Пересчёт: ${err.message}`
+    } finally {
+      busy = ''
+    }
+  }
+
+  // Любая правка: если меняет дериватив — пересчёт, иначе просто перечитать.
+  async function onEdited(e) {
+    if (e.detail.recount) {
+      await recount()
+    } else {
+      await refreshProtocol()
+    }
+  }
+
+  async function saveRaceStart(value) {
+    error = ''
+    busy = 'Сохранение…'
+    try {
+      await call('POST', `/api/events/${currentEvent.id}/edits`, JSON.stringify({
+        entity: 'race', entity_id: currentRace.id, field: 'started_at_ms', value: inputToMs(value),
+      }))
+      await loadRaces()
+      await recount()
+    } catch (err) {
+      error = `Старт гонки: ${err.message}`
+    } finally {
+      busy = ''
+    }
   }
 
   async function importEventFile(e) {
@@ -62,6 +108,9 @@
     busy = 'Импорт события…'
     try {
       const stats = await call('POST', '/api/events/import', await file.text())
+      if (stats.local_edits_reapplied > 0) {
+        alert(`Импорт выполнен. Поверх применено локальных правок: ${stats.local_edits_reapplied}`)
+      }
       await loadEvents()
       const ev = events.find(x => x.id === stats.event_id)
       if (ev) await openEvent(ev)
@@ -105,20 +154,6 @@
       alert(`Протокол сохранён: ${res.path}`)
     } catch (err) {
       error = `Экспорт Excel: ${err.message}`
-    } finally {
-      busy = ''
-    }
-  }
-
-  async function recount() {
-    if (!currentEvent) return
-    error = ''
-    busy = 'Пересчёт…'
-    try {
-      await call('POST', `/api/events/${currentEvent.id}/recount`)
-      if (currentRace) await openRace(currentRace)
-    } catch (err) {
-      error = `Пересчёт: ${err.message}`
     } finally {
       busy = ''
     }
@@ -194,6 +229,25 @@
         {/each}
       </div>
 
+      <EditsLog bind:this={editsLog} eventId={currentEvent.id}/>
+
+      {#if currentRace}
+        <div class="race-start">
+          <label>Старт гонки «{currentRace.name}»
+            <input type="datetime-local" step="1" value={msToInput(currentRace.started_at_ms)}
+                   on:change={e => saveRaceStart(e.target.value)}/>
+          </label>
+          <span class="hint">правка времени старта запускает пересчёт</span>
+        </div>
+
+        <CheckpointEditor eventId={currentEvent.id} raceId={currentRace.id} on:changed={onEdited}/>
+      {/if}
+
+      {#if judgeMemberId}
+        <JudgePanel eventId={currentEvent.id} memberId={judgeMemberId}
+                    on:changed={onEdited} on:close={() => judgeMemberId = null}/>
+      {/if}
+
       {#if protocol}
         {#if top3.length}
           <h3>Топ-3 — {protocol.race_name}</h3>
@@ -220,7 +274,7 @@
           </div>
         {/if}
 
-        <h3>Протокол</h3>
+        <h3>Протокол <span class="hint">клик по строке — режим судьи</span></h3>
         <table>
           <thead>
           <tr>
@@ -231,8 +285,9 @@
           </tr>
           </thead>
           <tbody>
-          {#each protocol.rows as r}
-            <tr class:nok={r.status !== 'ok'}>
+          {#each protocol.rows as r (r.member_id)}
+            <tr class:nok={r.status !== 'ok'} class:selected={judgeMemberId === r.member_id}
+                on:click={() => judgeMemberId = r.member_id}>
               <td>{r.place ?? '—'}</td>
               <td>{r.number ?? ''}</td>
               <td class="name">{r.last_name} {r.first_name}</td>
@@ -267,7 +322,7 @@
 
   h1 { margin: 0; }
 
-  .hint { color: #9aa5b1; }
+  .hint { color: #9aa5b1; font-weight: normal; font-size: 0.85em; }
   .error { color: #e57373; }
   .busy { color: #ffb74d; }
 
@@ -300,7 +355,7 @@
     flex-wrap: wrap;
   }
 
-  .toolbar input {
+  .toolbar input, .race-start input {
     padding: 0.4rem 0.6rem;
     border-radius: 4px;
     border: 1px solid #4a5568;
@@ -309,6 +364,9 @@
   }
 
   .races { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
+  .race-start { display: flex; gap: 1rem; align-items: center; margin: 0.7rem 0; }
+  .race-start label { display: flex; gap: 0.6rem; align-items: center; }
 
   .events { list-style: none; padding: 0; }
   .events li { padding: 0.3rem 0; }
@@ -320,5 +378,8 @@
   th, td { padding: 0.35rem 0.6rem; border-bottom: 1px solid #2d3748; text-align: left; }
   th { color: #9aa5b1; font-weight: 600; }
   td.time { font-family: monospace; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #2a3340; }
   tr.nok { color: #718096; }
+  tr.selected { background: #2b3c52; }
 </style>

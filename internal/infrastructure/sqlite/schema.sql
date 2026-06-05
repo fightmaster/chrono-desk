@@ -105,3 +105,19 @@ CREATE TABLE IF NOT EXISTS results (
 -- One derived result per rfid log (multiple NULLs allowed for manual results).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_results_rfid_log ON results(rfid_log_id);
 CREATE INDEX IF NOT EXISTS idx_results_member_time ON results(member_id, race_id, time_ms);
+
+-- Journal of local (offline) edits. Local edits win over re-imports: after an
+-- event export is applied, the journal is replayed on top. It is also the
+-- to-sync list for pushing offline changes back to the site (v0.3) and the
+-- judge's audit trail. Values are JSON-encoded (null | number | string).
+CREATE TABLE IF NOT EXISTS local_changes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity     TEXT NOT NULL, -- race | checkpoint | member | rfid_log
+    entity_id  TEXT NOT NULL,
+    field      TEXT NOT NULL,
+    old_value  TEXT NOT NULL,
+    new_value  TEXT NOT NULL,
+    changed_at INTEGER NOT NULL -- unix ms
+);
+
+CREATE INDEX IF NOT EXISTS idx_local_changes_entity ON local_changes(entity, entity_id);

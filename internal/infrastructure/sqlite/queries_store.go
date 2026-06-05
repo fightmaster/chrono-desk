@@ -112,3 +112,37 @@ func (s *Store) ExistingRfidLogKeys(ctx context.Context, eventID, board string) 
 	}
 	return keys, rows.Err()
 }
+
+// CheckpointRow is the JSON shape for the checkpoint editor.
+type CheckpointRow struct {
+	ID                    string `json:"id"`
+	RaceID                string `json:"race_id"`
+	Name                  string `json:"name"`
+	Type                  int    `json:"type"`
+	Sort                  int64  `json:"sort"`
+	Board                 string `json:"board"`
+	SinceMs               *int64 `json:"since_ms"`
+	SinceOffsetSeconds    *int64 `json:"since_offset_seconds"`
+	SleepAfterPrevSeconds *int64 `json:"sleep_after_prev_seconds"`
+}
+
+func (s *Store) ListCheckpointsByEvent(ctx context.Context, eventID string) ([]CheckpointRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds
+		FROM checkpoints WHERE event_id = ? ORDER BY race_id, sort`, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("list checkpoints: %w", err)
+	}
+	defer rows.Close()
+
+	out := []CheckpointRow{}
+	for rows.Next() {
+		var cp CheckpointRow
+		if err := rows.Scan(&cp.ID, &cp.RaceID, &cp.Name, &cp.Type, &cp.Sort, &cp.Board,
+			&cp.SinceMs, &cp.SinceOffsetSeconds, &cp.SleepAfterPrevSeconds); err != nil {
+			return nil, err
+		}
+		out = append(out, cp)
+	}
+	return out, rows.Err()
+}
