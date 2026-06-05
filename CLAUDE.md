@@ -16,8 +16,11 @@ is the next step; update this file as code lands.
 
 ## Toolchain & commands
 
-- Go 1.26+, Wails CLI v2.11, Node 22. SQLite via `modernc.org/sqlite` — **pure Go, keep
-  CGO-free**; do not introduce CGO-dependent SQLite drivers.
+- **Go pinned to 1.24** (`go 1.24` + `toolchain` in go.mod): Go 1.25+ requires macOS 12
+  and won't run on the competition MacBook (mid-2014, Big Sur 11.7). Never bump the Go
+  version without confirming the competition machine changed. Wails CLI v2.11, Node 22.
+  SQLite via `modernc.org/sqlite` — **pure Go, keep CGO-free**; do not introduce
+  CGO-dependent SQLite drivers.
 - Dev machine is Ubuntu: requires `libwebkit2gtk-4.1-dev` and the `-tags webkit2_41`
   build flag. Target competition machine is an old MacBook; macOS builds happen in
   GitHub Actions or on the Mac itself (no darwin cross-compile from Linux).

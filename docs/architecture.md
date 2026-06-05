@@ -92,8 +92,14 @@ SQLite `Publisher`) ──▶ rfid_logs → incremental processing → live stan
 - **Development machine: Ubuntu.** Wails on Linux needs `libwebkit2gtk-4.1-dev`; build
   and dev runs require the `-tags webkit2_41` flag (Ubuntu 24.04+ ships webkit2gtk 4.1,
   not 4.0).
-- **Competition machine: an old MacBook.** Wails v2 requires macOS 10.13+; confirm the
-  machine's macOS version and CPU (Intel → `darwin/amd64`, or build `darwin/universal`).
+- **Competition machine: MacBook Pro Retina mid-2014, Intel i5, macOS 11.7 Big Sur**
+  (the model's last official macOS). Wails v2 needs macOS 10.13+ — fine. Build target:
+  `darwin/amd64`.
+- **Go toolchain is pinned to 1.24**: Go 1.25+ binaries require macOS 12 Monterey and
+  will not run on the competition MacBook (go.dev/doc/go1.25). go.mod carries
+  `go 1.24` + a `toolchain go1.24.x` directive so every machine and CI builds with the
+  same toolchain. Do not bump until the competition Mac is upgraded (e.g. OpenCore
+  Legacy Patcher → Monterey+) or replaced.
 - **macOS builds cannot be cross-compiled from Linux** (CGO + Apple frameworks). Two
   paths: GitHub Actions macOS runners (free tier is enough for release builds) or
   building on the MacBook itself. Windows builds: `windows-latest` runner or

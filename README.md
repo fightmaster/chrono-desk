@@ -26,7 +26,8 @@ chrono-desk reuses the result-derivation algorithm from rfid-sync
 
 ## Stack
 
-- Go 1.26, Wails v2, Svelte + Vite frontend (same pattern as RaceTorchApp)
+- Go 1.24 (pinned: newer Go drops macOS 11, the competition MacBook's OS), Wails v2,
+  Svelte + Vite frontend (same pattern as RaceTorchApp)
 - SQLite via `modernc.org/sqlite` (pure Go, no CGO) — one event = one portable `.db` file
 - Excel export via `excelize`
 - UI talks to the Go core through an embedded localhost HTTP API (not Wails bindings),
