@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/fightmaster1/rfid-core/ingest"
 	"gitlab.com/fightmaster1/rfid-core/tcp"
+	"gitlab.com/fightmaster1/rfid-core/telemetry"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
@@ -160,3 +161,58 @@ func assertFinish(t *testing.T, store *sqlite.Store, memberID string, want *int6
 }
 
 var _ = fmt.Sprintf
+
+// Feibot heartbeats flow into the reader-monitoring panel: battery, tag
+// counters and freshness per device.
+func TestLiveHeartbeatFeedsReaderStatus(t *testing.T) {
+	store := newTestStore(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	importFixture(t, store)
+
+	manager := NewLiveManager(log.New(io.Discard, "", 0))
+	stats := &LiveStats{}
+	metrics := telemetry.NewRegistry()
+	session := &liveSession{port: "test", stats: stats, metrics: metrics}
+	manager.sessions["ev-100"] = session
+
+	publisher := &livePublisher{
+		store:   store,
+		proc:    processor.New(sqlite.NewProcessorRepo(store), log.New(io.Discard, "", 0), false),
+		eventID: "ev-100",
+		stats:   stats,
+	}
+	pipeline := ingest.NewPipeline(publisher, 1, 16, 0)
+	defer pipeline.Close()
+
+	server, client := net.Pipe()
+	go tcp.HandleConnWithContext(ctx, server, tcp.ListenerConfig{
+		Name: "test", Adapter: tcp.FeibotAdapter{}, AckMode: tcp.AckModeOK,
+		MaxInFlight: 4, MaxLineLenBytes: 65536,
+		ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second,
+		Metrics: metrics,
+	}, pipeline)
+
+	hb := `[{"DeviceCode":"U659","DeviceType":"Feibot","batteryPercent":78,"totalTagsRead":1240,"differentTagsRead":182,"Timestamp":"2026-06-07T09:25:00.000+03:00","reader1Working":"1","reader1Power":30}]`
+	if _, err := client.Write([]byte(hb)); err != nil {
+		t.Fatal(err)
+	}
+	ack := make([]byte, 8)
+	client.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := client.Read(ack); err != nil {
+		t.Fatalf("heartbeat ack: %v", err)
+	}
+	client.Close()
+
+	status := manager.Status("ev-100")
+	if len(status.Readers) != 1 {
+		t.Fatalf("readers = %+v, want 1", status.Readers)
+	}
+	r := status.Readers[0]
+	if r.Device != "U659" || r.BatteryPercent != 78 || r.TotalTagsRead != 1240 {
+		t.Errorf("reader = %+v", r)
+	}
+	if r.Heartbeats != 1 {
+		t.Errorf("heartbeats = %d, want 1", r.Heartbeats)
+	}
+}

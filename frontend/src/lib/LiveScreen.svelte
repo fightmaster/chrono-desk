@@ -79,6 +79,17 @@
     }
   }
 
+  function readerClass(r) {
+    if (r.age_seconds > 90) return 'lost'
+    if (r.age_seconds > 30 || r.battery_percent <= 20) return 'warn'
+    return 'good'
+  }
+
+  function readerAge(r) {
+    if (r.age_seconds < 60) return `${r.age_seconds} с назад`
+    return `${Math.floor(r.age_seconds / 60)} мин назад`
+  }
+
   function passClass(p) {
     if (p.disabled_at) return 'off'
     if (!p.member_id) return 'unknown'
@@ -122,6 +133,21 @@
     <span class="dim">прочтений: {status.received ?? 0} · новых: {status.inserted ?? 0}
       · дублей: {status.duplicates ?? 0} · ошибок: {status.errors ?? 0}</span>
   </div>
+
+  {#if status.readers?.length}
+    <div class="readers">
+      {#each status.readers as r (r.device)}
+        <div class="reader {readerClass(r)}">
+          <b>{r.device}</b>
+          <span>🔋{r.battery_percent}%</span>
+          <span>{r.total_tags_read} прочтений</span>
+          <span class="age">{readerAge(r)}</span>
+        </div>
+      {/each}
+    </div>
+  {:else if status.running}
+    <p class="dim">Ожидание heartbeat от считывателей…</p>
+  {/if}
 
   <div class="manual">
     <input class="q" placeholder="Ручной финиш: номер или фамилия…" bind:value={query}/>
@@ -172,6 +198,19 @@
   .hints { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
     margin: 0.6rem 0; padding: 0.5rem 0.8rem; background: #232b38; border-radius: 6px; }
   .dim { color: #9aa5b1; }
+
+  .readers { display: flex; gap: 0.7rem; flex-wrap: wrap; margin: 0.6rem 0; }
+  .reader {
+    display: flex; gap: 0.7rem; align-items: baseline;
+    padding: 0.45rem 0.9rem; border-radius: 6px; border: 1px solid #4a5568;
+    font-size: 1rem;
+  }
+  .reader b { font-size: 1.1rem; }
+  .reader .age { color: #9aa5b1; font-size: 0.85rem; }
+  .reader.good { border-color: #2f855a; background: #1e3a2a; }
+  .reader.warn { border-color: #b7791f; background: #3a2f1e; }
+  .reader.lost { border-color: #c53030; background: #3a1e1e; }
+  .reader.lost .age { color: #fc8181; font-weight: 600; }
 
   .manual { position: relative; display: flex; gap: 0.6rem; margin: 0.6rem 0; }
   .manual .q { flex: 1; max-width: 24rem; }

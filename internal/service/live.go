@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"gitlab.com/fightmaster1/rfid-core/ingest"
 	"gitlab.com/fightmaster1/rfid-core/tcp"
+	"gitlab.com/fightmaster1/rfid-core/telemetry"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
@@ -30,23 +33,37 @@ type LiveStats struct {
 	LastReadMs atomic.Int64
 }
 
+// ReaderStatus is one Feibot device as seen through its heartbeats — the
+// "is the reader alive and charged" panel for the start crew.
+type ReaderStatus struct {
+	Device            string `json:"device"`
+	BatteryPercent    int64  `json:"battery_percent"`
+	TotalTagsRead     int64  `json:"total_tags_read"`
+	DifferentTagsRead int64  `json:"different_tags_read"`
+	Heartbeats        int64  `json:"heartbeats"`
+	LastSeenUnix      int64  `json:"last_seen_unix"`
+	AgeSeconds        int64  `json:"age_seconds"`
+}
+
 // LiveStatus is the JSON snapshot for the UI.
 type LiveStatus struct {
-	Running    bool     `json:"running"`
-	Port       string   `json:"port"`
-	IPs        []string `json:"ips"`
-	Received   int64    `json:"received"`
-	Inserted   int64    `json:"inserted"`
-	Duplicates int64    `json:"duplicates"`
-	Errors     int64    `json:"errors"`
-	LastReadMs int64    `json:"last_read_ms"`
-	LastError  string   `json:"last_error"`
+	Running    bool           `json:"running"`
+	Port       string         `json:"port"`
+	IPs        []string       `json:"ips"`
+	Received   int64          `json:"received"`
+	Inserted   int64          `json:"inserted"`
+	Duplicates int64          `json:"duplicates"`
+	Errors     int64          `json:"errors"`
+	LastReadMs int64          `json:"last_read_ms"`
+	LastError  string         `json:"last_error"`
+	Readers    []ReaderStatus `json:"readers"`
 }
 
 type liveSession struct {
-	port   string
-	cancel context.CancelFunc
-	stats  *LiveStats
+	port    string
+	cancel  context.CancelFunc
+	stats   *LiveStats
+	metrics *telemetry.Registry
 
 	mu       sync.Mutex
 	lastErr  string
@@ -82,7 +99,11 @@ func (m *LiveManager) Start(store *sqlite.Store, eventID, port string) error {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	session := &liveSession{port: port, cancel: cancel, stats: &LiveStats{}}
+	session := &liveSession{
+		port: port, cancel: cancel,
+		stats:   &LiveStats{},
+		metrics: telemetry.NewRegistry(),
+	}
 	m.sessions[eventID] = session
 
 	publisher := &livePublisher{
@@ -102,6 +123,7 @@ func (m *LiveManager) Start(store *sqlite.Store, eventID, port string) error {
 			Adapter:     tcp.FeibotAdapter{},
 			AckMode:     tcp.AckModeOK,
 			MaxInFlight: 64,
+			Metrics:     session.metrics, // Feibot heartbeats → reader monitoring
 		}, pipeline)
 		session.finish(err)
 		if err != nil {
@@ -136,6 +158,22 @@ func (m *LiveManager) Status(eventID string) LiveStatus {
 	status.Errors = s.stats.Errors.Load()
 	status.LastReadMs = s.stats.LastReadMs.Load()
 	status.LastError = s.lastError()
+
+	now := time.Now().Unix()
+	for _, hb := range s.metrics.FeibotSnapshots() {
+		status.Readers = append(status.Readers, ReaderStatus{
+			Device:            hb.DeviceCode,
+			BatteryPercent:    hb.BatteryPercent,
+			TotalTagsRead:     hb.TotalTagsRead,
+			DifferentTagsRead: hb.DifferentTagsRead,
+			Heartbeats:        hb.HeartbeatTotal,
+			LastSeenUnix:      hb.LastHeartbeatUnix,
+			AgeSeconds:        max(0, now-hb.LastHeartbeatUnix),
+		})
+	}
+	sort.Slice(status.Readers, func(i, j int) bool {
+		return status.Readers[i].Device < status.Readers[j].Device
+	})
 	return status
 }
 
