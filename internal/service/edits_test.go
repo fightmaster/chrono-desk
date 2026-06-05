@@ -146,3 +146,50 @@ func TestMemberPassesView(t *testing.T) {
 		t.Errorf("pass = %+v (no recount ran — no result expected)", p)
 	}
 }
+
+// The run5 "top-3 excluded from categories" race setting is editable offline
+// and takes effect without a recount (ranking-only).
+func TestToggleExcludeTopByGender(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store) // race-10k has the flag ON in the fixture
+
+	// Finished member with a category: winner of the race.
+	start, finish := int64(1_000_000), int64(1_900_000)
+	clean := "x"
+	m, err := store.GetMember(ctx, "mem-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.StartTimeMs, m.FinishTimeMs, m.CleanTime = &start, &finish, &clean
+	if err := store.UpsertMember(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+
+	protocol, err := BuildProtocol(ctx, store, "race-10k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if protocol.Rows[0].CategoryPlace != nil {
+		t.Fatalf("flag ON: winner must be excluded from category standings, got %v", *protocol.Rows[0].CategoryPlace)
+	}
+
+	res, err := ApplyEdit(ctx, store, EditRequest{
+		Entity: "race", EntityID: "race-10k",
+		Field: "category_excludes_top_by_gender", Value: json.RawMessage(`0`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RecountNeeded {
+		t.Error("ranking-only flag must not demand a recount")
+	}
+
+	protocol, err = BuildProtocol(ctx, store, "race-10k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if protocol.Rows[0].CategoryPlace == nil || *protocol.Rows[0].CategoryPlace != 1 {
+		t.Fatalf("flag OFF: winner must take category gold, got %v", protocol.Rows[0].CategoryPlace)
+	}
+}

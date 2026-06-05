@@ -32,6 +32,9 @@ var editWhitelist = map[string]map[string]editableField{
 	"race": {
 		"started_at_ms": {table: "races", kind: kindInt, recountNeeded: true},
 		"name":          {table: "races", kind: kindText},
+		// 0/1: exclude the overall top-3 per gender from category standings
+		// (run5's ExcludeTopByGender strategy). Ranking-only — no recount.
+		"category_excludes_top_by_gender": {table: "races", kind: kindInt},
 	},
 	"checkpoint": {
 		"since_ms":                 {table: "checkpoints", kind: kindInt, recountNeeded: true},

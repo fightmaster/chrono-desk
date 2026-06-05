@@ -173,17 +173,19 @@ func (s *Server) handleListRaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type raceJSON struct {
-		ID          string `json:"id"`
-		Name        string `json:"name"`
-		Date        string `json:"date"`
-		Format      string `json:"format"`
-		StartedAtMs *int64 `json:"started_at_ms"`
+		ID                          string `json:"id"`
+		Name                        string `json:"name"`
+		Date                        string `json:"date"`
+		Format                      string `json:"format"`
+		StartedAtMs                 *int64 `json:"started_at_ms"`
+		CategoryExcludesTopByGender bool   `json:"category_excludes_top_by_gender"`
 	}
 	out := make([]raceJSON, 0, len(races))
 	for _, rc := range races {
 		out = append(out, raceJSON{
 			ID: rc.ID, Name: rc.Name, Date: rc.Date, Format: string(rc.Format),
-			StartedAtMs: rc.StartedAtMs,
+			StartedAtMs:                 rc.StartedAtMs,
+			CategoryExcludesTopByGender: rc.CategoryExcludesTopByGender,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

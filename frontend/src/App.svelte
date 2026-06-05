@@ -88,6 +88,20 @@
     }
   }
 
+  async function saveRaceFlag(checked) {
+    error = ''
+    try {
+      await call('POST', `/api/events/${currentEvent.id}/edits`, JSON.stringify({
+        entity: 'race', entity_id: currentRace.id,
+        field: 'category_excludes_top_by_gender', value: checked ? 1 : 0,
+      }))
+      await loadRaces()
+      await refreshProtocol()
+    } catch (err) {
+      error = `Настройка групп: ${err.message}`
+    }
+  }
+
   async function saveRaceStart(value) {
     error = ''
     busy = 'Сохранение…'
@@ -243,6 +257,13 @@
                    on:change={e => saveRaceStart(e.target.value)}/>
           </label>
           <span class="hint">правка времени старта запускает пересчёт</span>
+        </div>
+        <div class="race-start">
+          <label class="check">
+            <input type="checkbox" checked={currentRace.category_excludes_top_by_gender}
+                   on:change={e => saveRaceFlag(e.target.checked)}/>
+            Топ-3 абсолюта (М/Ж) не занимает места в группах
+          </label>
         </div>
 
         <CheckpointEditor eventId={currentEvent.id} raceId={currentRace.id} on:changed={onEdited}/>
