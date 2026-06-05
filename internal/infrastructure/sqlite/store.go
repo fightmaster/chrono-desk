@@ -30,9 +30,9 @@ func (s *Store) DB() *sql.DB { return s.db }
 
 func (s *Store) UpsertEvent(ctx context.Context, e domain.Event) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO events (id, name, slug, date) VALUES (?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, slug=excluded.slug, date=excluded.date`,
-		e.ID, e.Name, e.Slug, e.Date)
+		INSERT INTO events (id, name, slug, date, timezone) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, slug=excluded.slug, date=excluded.date, timezone=excluded.timezone`,
+		e.ID, e.Name, e.Slug, e.Date, e.Timezone)
 	if err != nil {
 		return fmt.Errorf("upsert event %s: %w", e.ID, err)
 	}
@@ -42,8 +42,8 @@ func (s *Store) UpsertEvent(ctx context.Context, e domain.Event) error {
 func (s *Store) GetEvent(ctx context.Context, id string) (domain.Event, error) {
 	var e domain.Event
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, slug, date FROM events WHERE id = ?`, id).
-		Scan(&e.ID, &e.Name, &e.Slug, &e.Date)
+		`SELECT id, name, slug, date, timezone FROM events WHERE id = ?`, id).
+		Scan(&e.ID, &e.Name, &e.Slug, &e.Date, &e.Timezone)
 	if err != nil {
 		return domain.Event{}, fmt.Errorf("get event %s: %w", id, err)
 	}

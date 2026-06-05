@@ -2,10 +2,11 @@
 -- docs/event-export-format.md. All *_ms columns are unix milliseconds.
 
 CREATE TABLE IF NOT EXISTS events (
-    id   TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    slug TEXT NOT NULL DEFAULT '',
-    date TEXT NOT NULL DEFAULT ''
+    id       TEXT PRIMARY KEY,
+    name     TEXT NOT NULL,
+    slug     TEXT NOT NULL DEFAULT '',
+    date     TEXT NOT NULL DEFAULT '',
+    timezone TEXT NOT NULL DEFAULT '' -- IANA zone from the export; default for Feibot CSV import
 );
 
 CREATE TABLE IF NOT EXISTS laps (

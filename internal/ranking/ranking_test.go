@@ -6,7 +6,6 @@ import (
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 )
 
-func ptr(v int64) *int64    { return &v }
 func sptr(v string) *string { return &v }
 
 // finished builds a finished FixedDistance member.

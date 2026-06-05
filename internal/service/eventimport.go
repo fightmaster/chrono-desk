@@ -148,6 +148,7 @@ func (i *EventImporter) Import(ctx context.Context, export *EventExport) (Import
 
 	if err := i.store.UpsertEvent(ctx, domain.Event{
 		ID: export.Event.ID, Name: export.Event.Name, Slug: export.Event.Slug, Date: export.Event.Date,
+		Timezone: export.Timezone,
 	}); err != nil {
 		return stats, err
 	}

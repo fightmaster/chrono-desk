@@ -2,43 +2,302 @@
   import {onMount} from 'svelte'
   import {APIBaseURL} from '../wailsjs/go/main/App.js'
 
-  let apiBase = ''
-  let apiStatus = 'подключение…'
+  let api = ''
+  let error = ''
+  let busy = ''
+
+  let events = []
+  let currentEvent = null
+  let races = []
+  let currentRace = null
+  let protocol = null
+
+  // forms
+  let deviceCode = ''
+  let csvTimezone = ''
 
   onMount(async () => {
     try {
-      apiBase = await APIBaseURL()
-      const resp = await fetch(`${apiBase}/health`)
-      const body = await resp.json()
-      apiStatus = body.status === 'ok' ? 'онлайн' : `ошибка: ${resp.status}`
-    } catch (err) {
-      apiStatus = `недоступен (${err})`
+      api = await APIBaseURL()
+      await loadEvents()
+    } catch (e) {
+      error = `API недоступен: ${e}`
     }
   })
+
+  async function call(method, path, body, contentType) {
+    const opts = {method}
+    if (body !== undefined) {
+      opts.body = body
+      opts.headers = {'Content-Type': contentType || 'application/json'}
+    }
+    const resp = await fetch(`${api}${path}`, opts)
+    const data = await resp.json()
+    if (!resp.ok) throw new Error(data.error || resp.status)
+    return data
+  }
+
+  async function loadEvents() {
+    events = await call('GET', '/api/events')
+  }
+
+  async function openEvent(ev) {
+    currentEvent = ev
+    currentRace = null
+    protocol = null
+    csvTimezone = ev.timezone || 'Europe/Moscow'
+    races = await call('GET', `/api/events/${ev.id}/races`)
+    if (races.length === 1) await openRace(races[0])
+  }
+
+  async function openRace(race) {
+    currentRace = race
+    protocol = await call('GET', `/api/events/${currentEvent.id}/races/${race.id}/protocol`)
+  }
+
+  async function importEventFile(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    error = ''
+    busy = 'Импорт события…'
+    try {
+      const stats = await call('POST', '/api/events/import', await file.text())
+      await loadEvents()
+      const ev = events.find(x => x.id === stats.event_id)
+      if (ev) await openEvent(ev)
+    } catch (err) {
+      error = `Импорт события: ${err.message}`
+    } finally {
+      busy = ''
+      e.target.value = ''
+    }
+  }
+
+  async function importCsvFile(e) {
+    const file = e.target.files[0]
+    if (!file || !currentEvent) return
+    if (!deviceCode) {
+      error = 'Укажите код считывателя (например, U659)'
+      e.target.value = ''
+      return
+    }
+    error = ''
+    busy = 'Импорт rfid-логов…'
+    try {
+      const q = `device=${encodeURIComponent(deviceCode)}&tz=${encodeURIComponent(csvTimezone)}`
+      const res = await call('POST', `/api/events/${currentEvent.id}/rfid-import?${q}`, await file.text(), 'text/csv')
+      busy = ''
+      alert(`Строк: ${res.parsed}, новых: ${res.inserted}, дублей: ${res.duplicates}, ошибок: ${res.errors.length}`)
+    } catch (err) {
+      error = `Импорт CSV: ${err.message}`
+    } finally {
+      busy = ''
+      e.target.value = ''
+    }
+  }
+
+  async function recount() {
+    if (!currentEvent) return
+    error = ''
+    busy = 'Пересчёт…'
+    try {
+      await call('POST', `/api/events/${currentEvent.id}/recount`)
+      if (currentRace) await openRace(currentRace)
+    } catch (err) {
+      error = `Пересчёт: ${err.message}`
+    } finally {
+      busy = ''
+    }
+  }
+
+  function statusLabel(s) {
+    return {ok: '', dns: 'DNS', dnf: 'DNF', dq: 'DSQ'}[s] ?? s
+  }
+
+  $: top3 = protocol ? protocol.rows.filter(r => r.place && r.place <= 3) : []
+  $: categoryTop = protocol ? groupCategoryTop(protocol.rows) : []
+
+  function groupCategoryTop(rows) {
+    const byCat = new Map()
+    for (const r of rows) {
+      if (!r.category_place || r.category_place > 3) continue
+      const key = r.category_name || r.category_id
+      if (!byCat.has(key)) byCat.set(key, [])
+      byCat.get(key).push(r)
+    }
+    return [...byCat.entries()]
+  }
 </script>
 
 <main>
-  <h1>Chrono Desk</h1>
-  <p class="subtitle">Оффлайн-обработка результатов соревнований</p>
-  <p class="status">API: <span class:ok={apiStatus === 'онлайн'}>{apiStatus}</span></p>
+  <header>
+    <h1>Chrono Desk</h1>
+    <label class="btn">
+      Импорт события (JSON)
+      <input type="file" accept=".json" on:change={importEventFile} hidden/>
+    </label>
+  </header>
+
+  {#if error}<p class="error">{error}</p>{/if}
+  {#if busy}<p class="busy">{busy}</p>{/if}
+
+  {#if !currentEvent}
+    <section>
+      <h2>События</h2>
+      {#if events.length === 0}
+        <p class="hint">Нет событий. Импортируйте JSON-экспорт из run5.</p>
+      {/if}
+      <ul class="events">
+        {#each events as ev}
+          <li><button class="link" on:click={() => openEvent(ev)}>{ev.name}</button>
+            <span class="hint">{ev.date}</span></li>
+        {/each}
+      </ul>
+    </section>
+  {:else}
+    <section>
+      <p><button class="link" on:click={() => { currentEvent = null; protocol = null }}>← события</button></p>
+      <h2>{currentEvent.name} <span class="hint">{currentEvent.date}</span></h2>
+
+      <div class="toolbar">
+        <input placeholder="Код считывателя (U659)" bind:value={deviceCode}/>
+        <input placeholder="Таймзона" bind:value={csvTimezone}/>
+        <label class="btn">
+          Импорт CSV с флешки
+          <input type="file" accept=".csv,.txt" on:change={importCsvFile} hidden/>
+        </label>
+        <button class="btn primary" on:click={recount}>Пересчитать</button>
+      </div>
+
+      <div class="races">
+        {#each races as race}
+          <button class="btn race" class:active={currentRace && currentRace.id === race.id}
+                  on:click={() => openRace(race)}>{race.name}</button>
+        {/each}
+      </div>
+
+      {#if protocol}
+        {#if top3.length}
+          <h3>Топ-3 — {protocol.race_name}</h3>
+          <ol class="top3">
+            {#each top3 as r}
+              <li>{r.last_name} {r.first_name} — {r.clean_time}</li>
+            {/each}
+          </ol>
+        {/if}
+
+        {#if categoryTop.length}
+          <h3>Призёры по группам</h3>
+          <div class="cats">
+            {#each categoryTop as [cat, rows]}
+              <div class="cat">
+                <h4>{cat}</h4>
+                <ol>
+                  {#each rows as r}
+                    <li>{r.last_name} {r.first_name} — {r.clean_time}</li>
+                  {/each}
+                </ol>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <h3>Протокол</h3>
+        <table>
+          <thead>
+          <tr>
+            <th>Место</th><th>Номер</th><th>Участник</th><th>Группа</th>
+            <th>Место в группе</th><th>Пол</th><th>Время</th><th>Статус</th>
+          </tr>
+          </thead>
+          <tbody>
+          {#each protocol.rows as r}
+            <tr class:nok={r.status !== 'ok'}>
+              <td>{r.place ?? '—'}</td>
+              <td>{r.number ?? ''}</td>
+              <td class="name">{r.last_name} {r.first_name}</td>
+              <td>{r.category_name ?? ''}</td>
+              <td>{r.category_place ?? ''}</td>
+              <td>{r.gender_place ?? ''}</td>
+              <td class="time">{r.clean_time ?? ''}</td>
+              <td>{statusLabel(r.status)}</td>
+            </tr>
+          {/each}
+          </tbody>
+        </table>
+      {/if}
+    </section>
+  {/if}
 </main>
 
 <style>
   main {
-    padding: 4rem 2rem;
-    text-align: center;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    text-align: left;
   }
 
-  .subtitle {
-    color: #9aa5b1;
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 
-  .status {
-    margin-top: 2rem;
-    font-family: monospace;
+  h1 { margin: 0; }
+
+  .hint { color: #9aa5b1; }
+  .error { color: #e57373; }
+  .busy { color: #ffb74d; }
+
+  .btn {
+    display: inline-block;
+    padding: 0.4rem 0.9rem;
+    border-radius: 4px;
+    border: 1px solid #4a5568;
+    background: #2d3748;
+    color: inherit;
+    cursor: pointer;
   }
 
-  .status .ok {
-    color: #4caf50;
+  .btn.primary { background: #2b6cb0; border-color: #2b6cb0; }
+  .btn.race.active { background: #2b6cb0; }
+
+  .link {
+    background: none;
+    border: none;
+    color: #63b3ed;
+    cursor: pointer;
+    padding: 0;
+    font-size: inherit;
   }
+
+  .toolbar {
+    display: flex;
+    gap: 0.5rem;
+    margin: 1rem 0;
+    flex-wrap: wrap;
+  }
+
+  .toolbar input {
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid #4a5568;
+    background: #1a202c;
+    color: inherit;
+  }
+
+  .races { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
+  .events { list-style: none; padding: 0; }
+  .events li { padding: 0.3rem 0; }
+
+  .cats { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .cat h4 { margin: 0.2rem 0; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+  th, td { padding: 0.35rem 0.6rem; border-bottom: 1px solid #2d3748; text-align: left; }
+  th { color: #9aa5b1; font-weight: 600; }
+  td.time { font-family: monospace; }
+  tr.nok { color: #718096; }
 </style>
