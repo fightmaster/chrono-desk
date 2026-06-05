@@ -1,79 +1,44 @@
 <script>
-  import logo from './assets/images/logo-universal.png'
-  import {Greet} from '../wailsjs/go/main/App.js'
+  import {onMount} from 'svelte'
+  import {APIBaseURL} from '../wailsjs/go/main/App.js'
 
-  let resultText = "Please enter your name below 👇"
-  let name
+  let apiBase = ''
+  let apiStatus = 'подключение…'
 
-  function greet() {
-    Greet(name).then(result => resultText = result)
-  }
+  onMount(async () => {
+    try {
+      apiBase = await APIBaseURL()
+      const resp = await fetch(`${apiBase}/health`)
+      const body = await resp.json()
+      apiStatus = body.status === 'ok' ? 'онлайн' : `ошибка: ${resp.status}`
+    } catch (err) {
+      apiStatus = `недоступен (${err})`
+    }
+  })
 </script>
 
 <main>
-  <img alt="Wails logo" id="logo" src="{logo}">
-  <div class="result" id="result">{resultText}</div>
-  <div class="input-box" id="input">
-    <input autocomplete="off" bind:value={name} class="input" id="name" type="text"/>
-    <button class="btn" on:click={greet}>Greet</button>
-  </div>
+  <h1>Chrono Desk</h1>
+  <p class="subtitle">Оффлайн-обработка результатов соревнований</p>
+  <p class="status">API: <span class:ok={apiStatus === 'онлайн'}>{apiStatus}</span></p>
 </main>
 
 <style>
-
-  #logo {
-    display: block;
-    width: 50%;
-    height: 50%;
-    margin: auto;
-    padding: 10% 0 0;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: 100% 100%;
-    background-origin: content-box;
+  main {
+    padding: 4rem 2rem;
+    text-align: center;
   }
 
-  .result {
-    height: 20px;
-    line-height: 20px;
-    margin: 1.5rem auto;
+  .subtitle {
+    color: #9aa5b1;
   }
 
-  .input-box .btn {
-    width: 60px;
-    height: 30px;
-    line-height: 30px;
-    border-radius: 3px;
-    border: none;
-    margin: 0 0 0 20px;
-    padding: 0 8px;
-    cursor: pointer;
+  .status {
+    margin-top: 2rem;
+    font-family: monospace;
   }
 
-  .input-box .btn:hover {
-    background-image: linear-gradient(to top, #cfd9df 0%, #e2ebf0 100%);
-    color: #333333;
+  .status .ok {
+    color: #4caf50;
   }
-
-  .input-box .input {
-    border: none;
-    border-radius: 3px;
-    outline: none;
-    height: 30px;
-    line-height: 30px;
-    padding: 0 10px;
-    background-color: rgba(240, 240, 240, 1);
-    -webkit-font-smoothing: antialiased;
-  }
-
-  .input-box .input:hover {
-    border: none;
-    background-color: rgba(255, 255, 255, 1);
-  }
-
-  .input-box .input:focus {
-    border: none;
-    background-color: rgba(255, 255, 255, 1);
-  }
-
 </style>
