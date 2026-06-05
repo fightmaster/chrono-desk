@@ -1,0 +1,73 @@
+# macOS build for the competition MacBook (mid-2014, Intel, Big Sur 11.7).
+# Go is pinned to 1.24.x — Go 1.25+ binaries require macOS 12 and will not
+# start on the target machine. See docs/architecture.md "Build & platforms".
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  macos-intel:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.24.13
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+
+      - name: Build darwin/amd64
+        env:
+          GOTOOLCHAIN: go1.24.13
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: wails build -platform darwin/amd64 -clean
+
+      - name: Verify toolchain of the produced binary
+        run: |
+          go version build/bin/chrono-desk.app/Contents/MacOS/chrono-desk
+          go version build/bin/chrono-desk.app/Contents/MacOS/chrono-desk | grep -q go1.24 || exit 1
+
+      - name: Zip .app (ditto preserves bundle attributes)
+        run: ditto -c -k --keepParent build/bin/chrono-desk.app chrono-desk-macos-intel.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chrono-desk-macos-intel
+          path: chrono-desk-macos-intel.zip
+          retention-days: 30
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.24.13
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+
+      - name: Build windows/amd64
+        env:
+          GOTOOLCHAIN: go1.24.13
+        run: wails build -platform windows/amd64 -clean
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chrono-desk-windows
+          path: build/bin/chrono-desk.exe
+          retention-days: 30

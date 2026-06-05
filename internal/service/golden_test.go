@@ -25,7 +25,10 @@ import (
 //
 // Regenerate fixtures from the local run5 MySQL when the contract changes —
 // run event:recount first, then the generator (/tmp/golden-gen pattern, see
-// git history of this file's commit).
+// git history of this file's commit). IMPORTANT: anonymize PII afterwards
+// (names → deterministic placeholders; dob/city/team/rfid → null) — the test
+// compares only per-member times and counts, and the fixture must stay free
+// of real participants' personal data.
 
 type goldenExpectations struct {
 	Members []struct {
