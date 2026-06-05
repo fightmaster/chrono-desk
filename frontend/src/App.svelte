@@ -6,6 +6,7 @@
   import JudgePanel from './lib/JudgePanel.svelte'
   import EditsLog from './lib/EditsLog.svelte'
   import AddMemberForm from './lib/AddMemberForm.svelte'
+  import LiveScreen from './lib/LiveScreen.svelte'
 
   let error = ''
   let busy = ''
@@ -19,6 +20,7 @@
   let currentRace = null
   let protocol = null
   let judgeMemberId = null
+  let liveMode = false
   let editsLog
 
   // forms
@@ -277,6 +279,10 @@
         {/each}
       </ul>
     </section>
+  {:else if liveMode}
+    <LiveScreen eventId={currentEvent.id} {members}
+                on:changed={onEdited}
+                on:close={async () => { liveMode = false; await refreshProtocol() }}/>
   {:else}
     <section>
       <p><button class="link" on:click={() => { currentEvent = null; protocol = null }}>← события</button></p>
@@ -293,6 +299,7 @@
         {#if currentRace}
           <button class="btn" on:click={exportExcel}>Excel</button>
         {/if}
+        <button class="btn primary" on:click={() => liveMode = true}>Live-экран</button>
         <button class="btn" title="Полная копия события (.chrono): результаты, журнал правок. Восстановление — положить файл в папку событий"
                 on:click={backupEvent}>Бэкап</button>
         <button class="btn" title="JSON в формате экспорта: импортируется на другом chrono-desk"

@@ -96,8 +96,8 @@ CREATE TABLE IF NOT EXISTS results (
     event_id      TEXT NOT NULL REFERENCES events(id),
     race_id       TEXT NOT NULL REFERENCES races(id),
     member_id     TEXT NOT NULL REFERENCES members(id),
-    checkpoint_id TEXT NOT NULL REFERENCES checkpoints(id),
-    rfid_log_id   TEXT REFERENCES rfid_logs(id),
+    checkpoint_id TEXT REFERENCES checkpoints(id), -- NULL → manual judge entry
+    rfid_log_id   TEXT REFERENCES rfid_logs(id),   -- NULL → manual judge entry
     time_ms       INTEGER NOT NULL,
     number        INTEGER
 );

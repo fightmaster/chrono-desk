@@ -23,6 +23,7 @@ type Server struct {
 	httpServer *http.Server
 	listener   net.Listener
 	events     *service.EventManager
+	live       *service.LiveManager
 	logger     *log.Logger
 }
 
@@ -37,6 +38,7 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	s := &Server{
 		listener: ln,
 		events:   events,
+		live:     service.NewLiveManager(logger),
 		logger:   logger,
 	}
 
@@ -62,6 +64,12 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("DELETE /api/events/{id}/checkpoints/{cpID}", s.handleDeleteCheckpoint)
 	mux.HandleFunc("POST /api/events/{id}/backup", s.handleBackup)
 	mux.HandleFunc("POST /api/events/{id}/export-json", s.handleExportJSON)
+	mux.HandleFunc("POST /api/events/{id}/live/start", s.handleLiveStart)
+	mux.HandleFunc("POST /api/events/{id}/live/stop", s.handleLiveStop)
+	mux.HandleFunc("GET /api/events/{id}/live/status", s.handleLiveStatus)
+	mux.HandleFunc("GET /api/events/{id}/live/feed", s.handleLiveFeed)
+	mux.HandleFunc("POST /api/events/{id}/members/{memberID}/manual-finish", s.handleManualFinish)
+	mux.HandleFunc("DELETE /api/events/{id}/results/{resultID}", s.handleDeleteManualResult)
 
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
@@ -83,7 +91,96 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.live.StopAll()
 	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *Server) handleLiveStart(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req struct {
+		Port string `json:"port"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil && err != io.EOF {
+		s.fail(w, err)
+		return
+	}
+	if err := s.live.Start(store, eventID, req.Port); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.live.Status(eventID))
+}
+
+func (s *Server) handleLiveStop(w http.ResponseWriter, r *http.Request) {
+	s.live.Stop(r.PathValue("id"))
+	writeJSON(w, http.StatusOK, s.live.Status(r.PathValue("id")))
+}
+
+func (s *Server) handleLiveStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.live.Status(r.PathValue("id")))
+}
+
+func (s *Server) handleLiveFeed(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		fmt.Sscanf(v, "%d", &limit) //nolint:errcheck
+	}
+	passes, err := store.ListRecentPasses(r.Context(), r.PathValue("id"), limit)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, passes)
+}
+
+func (s *Server) handleManualFinish(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req struct {
+		TimeMs int64 `json:"time_ms"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		s.fail(w, err)
+		return
+	}
+	res, err := service.ManualFinish(r.Context(), store, r.PathValue("id"), r.PathValue("memberID"), req.TimeMs)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleDeleteManualResult(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var resultID int64
+	if _, err := fmt.Sscanf(r.PathValue("resultID"), "%d", &resultID); err != nil {
+		s.fail(w, fmt.Errorf("некорректный id результата"))
+		return
+	}
+	res, err := service.DeleteManualResult(r.Context(), store, r.PathValue("id"), resultID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func cors(next http.Handler) http.Handler {

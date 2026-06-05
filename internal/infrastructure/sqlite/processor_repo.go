@@ -98,8 +98,10 @@ func (r *ProcessorRepo) LoadLastResult(ctx context.Context, raceID, memberID str
 }
 
 func (r *ProcessorRepo) LoadPassedCheckpoints(ctx context.Context, raceID, memberID string) (map[string]bool, error) {
+	// Manual judge entries (checkpoint_id IS NULL) are not checkpoint passes.
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT checkpoint_id FROM results WHERE race_id = ? AND member_id = ?`, raceID, memberID)
+		`SELECT checkpoint_id FROM results WHERE race_id = ? AND member_id = ? AND checkpoint_id IS NOT NULL`,
+		raceID, memberID)
 	if err != nil {
 		return nil, fmt.Errorf("load passed checkpoints: %w", err)
 	}

@@ -7,6 +7,7 @@ toolchain go1.24.13
 require (
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/xuri/excelize/v2 v2.10.1
+	gitlab.com/fightmaster1/rfid-core v0.0.0-00010101000000-000000000000
 	modernc.org/sqlite v1.44.0
 )
 
@@ -51,3 +52,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+replace gitlab.com/fightmaster1/rfid-core => ../rfid-core

@@ -46,5 +46,17 @@ func (r *Recounter) Recount(ctx context.Context, eventID, raceID string) (Recoun
 		}
 	}
 
+	// Manual judge entries are authoritative: re-apply them on top of the
+	// replayed chip data (chronological order, last one wins).
+	manual, err := r.store.ListManualResults(ctx, eventID, raceID)
+	if err != nil {
+		return RecountStats{}, err
+	}
+	for _, m := range manual {
+		if err := applyManualFinish(ctx, r.store, m.MemberID, m.TimeMs); err != nil {
+			return RecountStats{}, err
+		}
+	}
+
 	return RecountStats{LogsReplayed: len(logs)}, nil
 }

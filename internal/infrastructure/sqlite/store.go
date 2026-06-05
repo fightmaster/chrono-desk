@@ -17,8 +17,12 @@ type Store struct {
 	db *sql.DB
 }
 
-// New runs the embedded schema (idempotent) and returns a Store.
+// New runs the embedded schema (idempotent), applies in-place migrations for
+// pre-existing databases and returns a Store.
 func New(db *sql.DB) (*Store, error) {
+	if err := migrate(db); err != nil {
+		return nil, err
+	}
 	if _, err := db.Exec(schemaSQL); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}

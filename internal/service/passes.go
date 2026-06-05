@@ -24,31 +24,43 @@ type MemberPass struct {
 }
 
 type MemberPasses struct {
-	MemberID     string       `json:"member_id"`
-	FirstName    string       `json:"first_name"`
-	LastName     string       `json:"last_name"`
-	Number       *int64       `json:"number"`
-	Status       int          `json:"status"`
-	StartTimeMs  *int64       `json:"start_time_ms"`
-	FinishTimeMs *int64       `json:"finish_time_ms"`
-	CleanTime    *string      `json:"clean_time"`
-	Passes       []MemberPass `json:"passes"`
+	MemberID      string                `json:"member_id"`
+	FirstName     string                `json:"first_name"`
+	LastName      string                `json:"last_name"`
+	Number        *int64                `json:"number"`
+	Status        int                   `json:"status"`
+	StartTimeMs   *int64                `json:"start_time_ms"`
+	FinishTimeMs  *int64                `json:"finish_time_ms"`
+	CleanTime     *string               `json:"clean_time"`
+	Passes        []MemberPass          `json:"passes"`
+	ManualResults []sqlite.ManualResult `json:"manual_results"`
 }
 
 // LoadMemberPasses lists the member's reads in chronological order with the
 // result (if any) each one produced.
 func LoadMemberPasses(ctx context.Context, store *sqlite.Store, memberID string) (MemberPasses, error) {
-	out := MemberPasses{MemberID: memberID, Passes: []MemberPass{}}
+	out := MemberPasses{MemberID: memberID, Passes: []MemberPass{}, ManualResults: []sqlite.ManualResult{}}
 
 	var epc sql.NullString
+	var eventID string
 	err := store.DB().QueryRowContext(ctx, `
-		SELECT epc, first_name, last_name, number, status, start_time_ms, finish_time_ms, clean_time
+		SELECT event_id, epc, first_name, last_name, number, status, start_time_ms, finish_time_ms, clean_time
 		FROM members WHERE id = ?`, memberID).
-		Scan(&epc, &out.FirstName, &out.LastName, &out.Number, &out.Status,
+		Scan(&eventID, &epc, &out.FirstName, &out.LastName, &out.Number, &out.Status,
 			&out.StartTimeMs, &out.FinishTimeMs, &out.CleanTime)
 	if err != nil {
 		return out, fmt.Errorf("member %s: %w", memberID, err)
 	}
+	manual, err := store.ListManualResults(ctx, eventID, "")
+	if err != nil {
+		return out, err
+	}
+	for _, m := range manual {
+		if m.MemberID == memberID {
+			out.ManualResults = append(out.ManualResults, m)
+		}
+	}
+
 	if !epc.Valid || epc.String == "" {
 		return out, nil // no tag — nothing to show
 	}

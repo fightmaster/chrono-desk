@@ -8,11 +8,26 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# go.mod replaces gitlab.com/fightmaster1/rfid-core with ../rfid-core, so the
+# shared module is checked out as a sibling directory (github.com/fightmaster/
+# rfid-core mirror). If that repo is private, add a PAT with repo scope as the
+# CORE_REPO_TOKEN secret and uncomment the token lines.
 jobs:
   macos-intel:
     runs-on: macos-15
+    defaults:
+      run:
+        working-directory: chrono-desk
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: chrono-desk
+
+      - uses: actions/checkout@v4
+        with:
+          repository: fightmaster/rfid-core
+          path: rfid-core
+          # token: ${{ secrets.CORE_REPO_TOKEN }}
 
       - uses: actions/setup-go@v5
         with:
@@ -42,13 +57,24 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: chrono-desk-macos-intel
-          path: chrono-desk-macos-intel.zip
+          path: chrono-desk/chrono-desk-macos-intel.zip
           retention-days: 30
 
   windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: chrono-desk
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: chrono-desk
+
+      - uses: actions/checkout@v4
+        with:
+          repository: fightmaster/rfid-core
+          path: rfid-core
+          # token: ${{ secrets.CORE_REPO_TOKEN }}
 
       - uses: actions/setup-go@v5
         with:
@@ -69,5 +95,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: chrono-desk-windows
-          path: build/bin/chrono-desk.exe
+          path: chrono-desk/build/bin/chrono-desk.exe
           retention-days: 30
