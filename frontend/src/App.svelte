@@ -238,8 +238,25 @@
     memberQuery = ''
   }
 
-  $: top3 = protocol ? protocol.rows.filter(r => r.place && r.place <= 3) : []
+  // Топ-3 по каждому полу (как на run5); если пол не размечен — общий топ-3.
+  $: genderTop = protocol ? groupGenderTop(protocol.rows) : []
   $: categoryTop = protocol ? groupCategoryTop(protocol.rows) : []
+
+  function groupGenderTop(rows) {
+    const names = {male: 'Мужчины', female: 'Женщины'}
+    const by = new Map()
+    for (const r of rows) {
+      if (!r.gender || !r.gender_place || r.gender_place > 3) continue
+      const key = names[r.gender] ?? r.gender
+      if (!by.has(key)) by.set(key, [])
+      by.get(key).push(r)
+    }
+    if (by.size === 0) {
+      const overall = rows.filter(r => r.place && r.place <= 3)
+      if (overall.length) by.set('Абсолют', overall)
+    }
+    return [...by.entries()]
+  }
   $: showCheckpoint = protocol ? protocol.rows.some(r => r.last_checkpoint_name) : false
 
   function groupCategoryTop(rows) {
@@ -362,13 +379,20 @@
       {/if}
 
       {#if protocol}
-        {#if top3.length}
+        {#if genderTop.length}
           <h3>Топ-3 — {protocol.race_name}</h3>
-          <ol class="top3">
-            {#each top3 as r}
-              <li>{r.last_name} {r.first_name} — {r.clean_time}</li>
+          <div class="cats">
+            {#each genderTop as [gender, rows]}
+              <div class="cat">
+                <h4>{gender}</h4>
+                <ol>
+                  {#each rows as r}
+                    <li>{r.last_name} {r.first_name} — {r.clean_time}</li>
+                  {/each}
+                </ol>
+              </div>
             {/each}
-          </ol>
+          </div>
         {/if}
 
         {#if categoryTop.length}
