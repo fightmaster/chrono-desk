@@ -137,7 +137,6 @@
   input { background: #1a202c; color: inherit; border: 1px solid #4a5568; border-radius: 3px; padding: 0.15rem 0.3rem; }
   input.num { width: 5.5rem; }
   input.board { width: 8rem; }
-  select { background: #1a202c; color: inherit; border: 1px solid #4a5568; border-radius: 3px; padding: 0.15rem 0.3rem; }
   .del, .add { background: none; border: none; cursor: pointer; font-size: 0.95rem; }
   .del { color: #e57373; }
   .add { color: #81c784; }

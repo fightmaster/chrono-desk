@@ -20,8 +20,13 @@ parity notes in `docs/ranking.md`. Excel export mirrors run5's column layout. Th
 engine is golden-tested against a real production event (8474 logs) byte-for-byte —
 `internal/service/golden_test.go` explains how to regenerate fixtures (anonymize PII!).
 Offline edits (delayed start, checkpoint tuning, judge mode: passes view / log disable /
-statuses / manual starts) are journaled in `local_changes`; **conflict policy: local
-edits win** — re-imports replay the journal on top (`ReapplyLocalEdits`). The journal is
+statuses / manual starts, birth-date `dob` edit) are journaled in `local_changes`;
+**conflict policy: local edits win** — re-imports replay the journal on top
+(`ReapplyLocalEdits`). On-site registration (`CreateMember`) requires a birth date
+(`dob`, ISO `YYYY-MM-DD`) — run5 parity; imported members keep whatever the export carried.
+CSV flash import is a two-step UI (pick file → set reader code + pick timezone from the
+Russian-zone selectbox → «Загрузить») and shows the `FeibotImportResult` report
+(parsed/inserted/duplicates + skipped-line errors) inline. The journal is
 also the future to-site sync list. macOS Intel builds run via GitHub Actions
 (`.github/workflows/build.yml`); the remote repo must never receive real participants'
 PII. **v0.2 live ingest is in**: the shared TCP/adapters code lives in the
@@ -29,7 +34,13 @@ PII. **v0.2 live ingest is in**: the shared TCP/adapters code lives in the
 go.mod — CI checks it out next to the repo; rfid-hub should migrate to it too).
 `LiveManager` runs a Feibot listener per event (reads land in SQLite and derive results
 in-process), the Live screen polls feed/status; manual judge finishes are authoritative
-(`results` rows with NULL checkpoint/log survive recounts and re-apply on top). Next:
+(`results` rows with NULL checkpoint/log survive recounts and re-apply on top). The judge
+enters a manual finish by participant number/name on the Live screen in two modes — clean
+elapsed time (`clean_ms`, run5's ManualTimeEntry: `finish = start + clean`) or wall-clock
+(`time_ms`); the start reference is the member's start, falling back to the race start
+(matching `processor_repo.go`), so a chip-less finisher without a START read still gets a
+clean time. Entered manual results are listed with delete (`GET .../manual-results`,
+`DELETE .../results/{id}`). Next:
 Run5Stopwatch format, log/journal upload back to the site (v0.3), rfid-hub migration to
 rfid-core. When rfid-sync's engine changes, re-diff
 `internal/processor` against `rfid-sync/internal/syncer/processor` (it is a port, not a

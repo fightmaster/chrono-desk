@@ -1,6 +1,6 @@
 <script>
   import {createEventDispatcher, onMount, onDestroy} from 'svelte'
-  import {call, fmtTime} from './api.js'
+  import {call, fmtTime, cleanToMs} from './api.js'
 
   export let eventId
   export let members = []
@@ -16,7 +16,10 @@
 
   // ручной финиш
   let query = ''
+  let manualMode = 'clean' // 'clean' = чистое время, 'wall' = время суток
   let manualTime = ''
+  let manualClean = ''
+  let manualResults = []
 
   $: found = query.trim() ? members.filter(m => {
     const q = query.trim().toLowerCase()
@@ -34,6 +37,14 @@
     }
   }
 
+  async function loadManualResults() {
+    try {
+      manualResults = await call('GET', `/api/events/${eventId}/manual-results`)
+    } catch (e) {
+      error = e.message
+    }
+  }
+
   async function loadMore() {
     feedLimit = Math.min(feedLimit + 60, 1000)
     await refresh()
@@ -41,6 +52,7 @@
 
   onMount(() => {
     refresh()
+    loadManualResults()
     timer = setInterval(refresh, 2000)
   })
   onDestroy(() => clearInterval(timer))
@@ -65,15 +77,40 @@
 
   async function manualFinish(member) {
     error = ''
-    const timeMs = manualTime ? new Date(manualTime).getTime() : Date.now()
-    if (!confirm(`Ручной финиш: №${member.number ?? '—'} ${member.last_name} ${member.first_name} в ${fmtTime(timeMs)}?`)) return
+    const who = `№${member.number ?? '—'} ${member.last_name} ${member.first_name}`
+    let body
+    if (manualMode === 'clean') {
+      const cleanMs = cleanToMs(manualClean)
+      if (cleanMs === null) {
+        error = 'Введите чистое время в формате ЧЧ:ММ:СС.ммм (например 00:47:13.250)'
+        return
+      }
+      if (!confirm(`Ручной финиш: ${who}, чистое время ${manualClean}?`)) return
+      body = {clean_ms: cleanMs}
+    } else {
+      const timeMs = manualTime ? new Date(manualTime).getTime() : Date.now()
+      if (!confirm(`Ручной финиш: ${who} в ${fmtTime(timeMs)}?`)) return
+      body = {time_ms: timeMs}
+    }
     try {
-      await call('POST', `/api/events/${eventId}/members/${member.id}/manual-finish`,
-        JSON.stringify({time_ms: timeMs}))
+      await call('POST', `/api/events/${eventId}/members/${member.id}/manual-finish`, JSON.stringify(body))
       query = ''
       manualTime = ''
+      manualClean = ''
       dispatch('changed', {recount: false})
-      await refresh()
+      await Promise.all([refresh(), loadManualResults()])
+    } catch (e) {
+      error = e.message
+    }
+  }
+
+  async function deleteManual(r) {
+    error = ''
+    if (!confirm(`Удалить ручной результат: №${r.number ?? '—'} ${r.last_name} ${r.first_name}?`)) return
+    try {
+      await call('DELETE', `/api/events/${eventId}/results/${r.id}`)
+      dispatch('changed', {recount: true}) // пересчёт восстановит данные по чипу
+      await loadManualResults()
     } catch (e) {
       error = e.message
     }
@@ -149,17 +186,43 @@
     <p class="dim">Ожидание heartbeat от считывателей…</p>
   {/if}
 
-  <div class="manual">
-    <input class="q" placeholder="Ручной финиш: номер или фамилия…" bind:value={query}/>
-    <input type="datetime-local" step="1" bind:value={manualTime} title="Пусто = текущее время"/>
-    {#if found.length}
-      <div class="candidates">
-        {#each found as m (m.id)}
-          <button class="cand" on:click={() => manualFinish(m)}>
-            №{m.number ?? '—'} {m.last_name} {m.first_name}
-          </button>
+  <div class="manual-box">
+    <div class="mode">
+      <label><input type="radio" bind:group={manualMode} value="clean"/> чистое время</label>
+      <label><input type="radio" bind:group={manualMode} value="wall"/> время суток</label>
+    </div>
+    <div class="manual">
+      <input class="q" placeholder="Ручной финиш: номер или фамилия…" bind:value={query}/>
+      {#if manualMode === 'clean'}
+        <input class="clean" placeholder="ЧЧ:ММ:СС.ммм" bind:value={manualClean}
+               title="Чистое время от старта, напр. 00:47:13.250"/>
+      {:else}
+        <input type="datetime-local" step="1" bind:value={manualTime} title="Пусто = текущее время"/>
+      {/if}
+      {#if found.length}
+        <div class="candidates">
+          {#each found as m (m.id)}
+            <button class="cand" on:click={() => manualFinish(m)}>
+              №{m.number ?? '—'} {m.last_name} {m.first_name}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+    {#if manualResults.length}
+      <table class="manual-results">
+        <caption>Ручные результаты ({manualResults.length})</caption>
+        <tbody>
+        {#each manualResults as r (r.id)}
+          <tr>
+            <td class="num">{r.number ?? ''}</td>
+            <td class="name">{r.last_name} {r.first_name}</td>
+            <td class="time">{r.clean_time ?? fmtTime(r.time_ms)}</td>
+            <td><button class="btn small" on:click={() => deleteManual(r)}>Удалить</button></td>
+          </tr>
         {/each}
-      </div>
+        </tbody>
+      </table>
     {/if}
   </div>
 
@@ -212,8 +275,17 @@
   .reader.lost { border-color: #c53030; background: #3a1e1e; }
   .reader.lost .age { color: #fc8181; font-weight: 600; }
 
-  .manual { position: relative; display: flex; gap: 0.6rem; margin: 0.6rem 0; }
+  .manual-box { margin: 0.6rem 0; }
+  .mode { display: flex; gap: 1.2rem; margin-bottom: 0.4rem; color: #9aa5b1; }
+  .mode label { display: flex; gap: 0.35rem; align-items: center; cursor: pointer; }
+  .manual { position: relative; display: flex; gap: 0.6rem; }
   .manual .q { flex: 1; max-width: 24rem; }
+  .manual .clean { width: 10rem; font-family: monospace; }
+  .manual-results { width: auto; margin-top: 0.6rem; }
+  .manual-results caption { text-align: left; color: #9aa5b1; font-size: 0.85rem; padding: 0.2rem 0; }
+  .manual-results td { border-bottom: 1px solid #2d3748; }
+  .manual-results td.time { font-family: monospace; }
+  .btn.small { padding: 0.15rem 0.6rem; font-size: 0.85rem; }
   .candidates { position: absolute; top: 2.4rem; left: 0; z-index: 5; display: flex;
     flex-direction: column; background: #2d3748; border: 1px solid #4a5568; border-radius: 6px; }
   .cand { text-align: left; padding: 0.45rem 0.9rem; background: none; border: none;

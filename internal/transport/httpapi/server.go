@@ -4,7 +4,10 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,7 +72,12 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("GET /api/events/{id}/live/status", s.handleLiveStatus)
 	mux.HandleFunc("GET /api/events/{id}/live/feed", s.handleLiveFeed)
 	mux.HandleFunc("POST /api/events/{id}/members/{memberID}/manual-finish", s.handleManualFinish)
+	mux.HandleFunc("GET /api/events/{id}/manual-results", s.handleListManualResults)
 	mux.HandleFunc("DELETE /api/events/{id}/results/{resultID}", s.handleDeleteManualResult)
+	mux.HandleFunc("GET /api/events/{id}/sync-config", s.handleGetSyncConfig)
+	mux.HandleFunc("PUT /api/events/{id}/sync-config", s.handleSetSyncConfig)
+	mux.HandleFunc("POST /api/events/{id}/sync", s.handleSyncPush)
+	mux.HandleFunc("POST /api/events/{id}/sync-pull", s.handleSyncPull)
 
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
@@ -150,18 +158,42 @@ func (s *Server) handleManualFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		TimeMs int64 `json:"time_ms"`
+		TimeMs  *int64 `json:"time_ms"`
+		CleanMs *int64 `json:"clean_ms"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		s.fail(w, err)
 		return
 	}
-	res, err := service.ManualFinish(r.Context(), store, r.PathValue("id"), r.PathValue("memberID"), req.TimeMs)
+	eventID, memberID := r.PathValue("id"), r.PathValue("memberID")
+	var res service.ManualFinishResult
+	switch {
+	case req.CleanMs != nil:
+		res, err = service.ManualFinishClean(r.Context(), store, eventID, memberID, *req.CleanMs)
+	case req.TimeMs != nil:
+		res, err = service.ManualFinish(r.Context(), store, eventID, memberID, *req.TimeMs)
+	default:
+		err = fmt.Errorf("укажите время финиша (time_ms) или чистое время (clean_ms)")
+	}
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleListManualResults(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	results, err := service.ListManualFinishes(r.Context(), store, r.PathValue("id"), r.URL.Query().Get("race"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, results)
 }
 
 func (s *Server) handleDeleteManualResult(w http.ResponseWriter, r *http.Request) {
@@ -448,7 +480,7 @@ func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
 		"id": m.ID, "race_id": m.RaceID, "category_id": m.CategoryID,
 		"number": m.Number, "epc": m.EPC,
 		"first_name": m.FirstName, "last_name": m.LastName,
-		"gender": m.Gender, "team": m.Team, "city": m.City,
+		"gender": m.Gender, "dob": m.DOB, "team": m.Team, "city": m.City,
 	})
 }
 
@@ -561,6 +593,132 @@ func (s *Server) handleExportJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"path": path})
+}
+
+// handleGetSyncConfig returns the event's run5 sync target. The token itself is
+// never echoed — only whether one is configured.
+func (s *Server) handleGetSyncConfig(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	cfg, err := store.GetSyncConfig(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"base_url":       cfg.BaseURL,
+		"token_set":      cfg.Token != "",
+		"last_synced_at": cfg.LastSyncedAt,
+	})
+}
+
+func (s *Server) handleSetSyncConfig(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req struct {
+		BaseURL string `json:"base_url"`
+		Token   string `json:"token"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if err := store.SetSyncConfig(r.Context(), r.PathValue("id"), req.BaseURL, req.Token); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleSyncPush assembles the event payload and pushes it to run5.
+func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req struct {
+		Overwrite *bool `json:"overwrite"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil && err != io.EOF {
+		s.fail(w, err)
+		return
+	}
+	overwrite := req.Overwrite == nil || *req.Overwrite // default: overwrite
+
+	cfg, err := store.GetSyncConfig(r.Context(), eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if cfg.BaseURL == "" || cfg.Token == "" {
+		s.fail(w, fmt.Errorf("настройте адрес сайта и токен синхронизации"))
+		return
+	}
+
+	payload, summary, err := service.BuildSyncPayload(r.Context(), store, eventID, overwrite)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	resp, err := service.PushSync(r.Context(), cfg.BaseURL, cfg.Token, eventID, payload)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	sum := sha256.Sum256(payload)
+	if err := store.SetSyncResult(r.Context(), eventID, time.Now().UnixMilli(), hex.EncodeToString(sum[:])); err != nil {
+		s.logger.Printf("save sync result: %v", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sent": summary, "response": resp})
+}
+
+// handleSyncPull fetches the current event export from run5 and re-imports it.
+// siteWins (overwrite) skips the local-edits-win journal replay.
+func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req struct {
+		Overwrite *bool `json:"overwrite"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil && err != io.EOF {
+		s.fail(w, err)
+		return
+	}
+	siteWins := req.Overwrite != nil && *req.Overwrite // pull default: local edits win
+
+	cfg, err := store.GetSyncConfig(r.Context(), eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if cfg.BaseURL == "" || cfg.Token == "" {
+		s.fail(w, fmt.Errorf("настройте адрес сайта и токен синхронизации"))
+		return
+	}
+
+	data, err := service.PullExport(r.Context(), cfg.BaseURL, cfg.Token, eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	stats, err := s.events.ImportExportOpts(r.Context(), bytes.NewReader(data), siteWins)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"imported": stats, "site_wins": siteWins})
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {

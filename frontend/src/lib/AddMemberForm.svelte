@@ -14,13 +14,17 @@
   let f = blank()
 
   function blank() {
-    return {race_id: defaultRaceId, last_name: '', first_name: '', number: '', epc: '', gender: '', category_id: ''}
+    return {race_id: defaultRaceId, last_name: '', first_name: '', number: '', epc: '', gender: '', dob: '', category_id: ''}
   }
 
   $: if (!f.race_id && defaultRaceId) f.race_id = defaultRaceId
 
   async function submit() {
     error = ''
+    if (!f.dob) {
+      error = 'Укажите дату рождения'
+      return
+    }
     try {
       const res = await call('POST', `/api/events/${eventId}/members`, JSON.stringify({
         race_id: f.race_id,
@@ -29,6 +33,7 @@
         number: f.number === '' ? null : Number(f.number),
         epc: f.epc.trim() ? f.epc.trim().toUpperCase() : null,
         gender: f.gender || null,
+        dob: f.dob || null,
         category_id: f.category_id || null,
       }))
       f = blank()
@@ -56,6 +61,7 @@
           <option value="female">Ж</option>
         </select>
       </label>
+      <label>Дата рождения<input type="date" bind:value={f.dob}/></label>
       <label>Гонка
         <select bind:value={f.race_id}>
           {#each races as r}<option value={r.id}>{r.name}</option>{/each}
@@ -88,7 +94,7 @@
   h4 { margin: 0 0 0.5rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.6rem; }
   label { display: flex; flex-direction: column; gap: 0.2rem; color: #9aa5b1; font-size: 0.85rem; }
-  input, select { background: #1a202c; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 3px; padding: 0.3rem 0.4rem; }
+  input { background: #1a202c; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 3px; padding: 0.3rem 0.4rem; }
   .actions { margin-top: 0.8rem; display: flex; gap: 0.5rem; }
   .btn { padding: 0.4rem 0.9rem; border-radius: 4px; border: 1px solid #4a5568; background: #2d3748; color: inherit; cursor: pointer; }
   .btn.primary { background: #2b6cb0; border-color: #2b6cb0; }

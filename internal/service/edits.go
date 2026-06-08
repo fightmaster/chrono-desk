@@ -50,6 +50,8 @@ var editWhitelist = map[string]map[string]editableField{
 		"category_id":   {table: "members", kind: kindText},
 		"first_name":    {table: "members", kind: kindText},
 		"last_name":     {table: "members", kind: kindText},
+		"gender":        {table: "members", kind: kindText}, // "male" | "female" | null
+		"dob":           {table: "members", kind: kindText}, // ISO date; display-only
 		"team":          {table: "members", kind: kindText},
 		"city":          {table: "members", kind: kindText},
 		"start_time_ms": {table: "members", kind: kindInt, recountNeeded: true},

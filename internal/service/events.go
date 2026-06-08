@@ -84,8 +84,15 @@ func (m *EventManager) openLocked(eventID string, create bool) (*sqlite.Store, e
 }
 
 // ImportExport parses a run5 event export and applies it to the event's
-// database file, creating the file on first import.
+// database file, creating the file on first import. Local edits win.
 func (m *EventManager) ImportExport(ctx context.Context, r io.Reader) (ImportStats, error) {
+	return m.ImportExportOpts(ctx, r, false)
+}
+
+// ImportExportOpts is ImportExport with control over the conflict policy:
+// siteWins=true skips the local-edits-win journal replay (the site's values are
+// taken verbatim) — used by a "site wins" pull.
+func (m *EventManager) ImportExportOpts(ctx context.Context, r io.Reader, siteWins bool) (ImportStats, error) {
 	export, err := ParseEventExport(r)
 	if err != nil {
 		return ImportStats{}, err
@@ -98,7 +105,7 @@ func (m *EventManager) ImportExport(ctx context.Context, r io.Reader) (ImportSta
 		return ImportStats{}, err
 	}
 
-	return NewEventImporter(store).Import(ctx, export)
+	return NewEventImporter(store).WithSkipLocalReplay(siteWins).Import(ctx, export)
 }
 
 // List scans the data directory and reads each event's header row.

@@ -1,12 +1,13 @@
 <script>
   import {onMount} from 'svelte'
   import {APIBaseURL} from '../wailsjs/go/main/App.js'
-  import {setBase, call, msToInput, inputToMs} from './lib/api.js'
+  import {setBase, call, msToInput, inputToMs, RU_TIMEZONES} from './lib/api.js'
   import CheckpointEditor from './lib/CheckpointEditor.svelte'
   import JudgePanel from './lib/JudgePanel.svelte'
   import EditsLog from './lib/EditsLog.svelte'
   import AddMemberForm from './lib/AddMemberForm.svelte'
   import LiveScreen from './lib/LiveScreen.svelte'
+  import SiteSyncPanel from './lib/SiteSyncPanel.svelte'
 
   let error = ''
   let busy = ''
@@ -20,12 +21,21 @@
   let currentRace = null
   let protocol = null
   let judgeMemberId = null
+  let judgeReload = 0 // bump to force the open JudgePanel to reload its passes
   let liveMode = false
   let editsLog
 
   // forms
   let deviceCode = ''
   let csvTimezone = ''
+  let csvFile = null
+  let csvResult = null
+
+  // Timezone options: the Russian list, plus the event's own zone if it is not
+  // already among them (so an unusual venue zone is never silently lost).
+  $: tzOptions = RU_TIMEZONES.some(t => t.value === csvTimezone) || !csvTimezone
+    ? RU_TIMEZONES
+    : [{value: csvTimezone, label: csvTimezone}, ...RU_TIMEZONES]
 
   onMount(async () => {
     try {
@@ -46,6 +56,8 @@
     protocol = null
     judgeMemberId = null
     csvTimezone = ev.timezone || 'Europe/Moscow'
+    csvFile = null
+    csvResult = null
     await loadRaces()
     categories = await call('GET', `/api/events/${ev.id}/categories`)
     await loadMembers()
@@ -73,6 +85,7 @@
     }
     if (editsLog) await editsLog.load()
     await loadMembers()
+    judgeReload++ // refresh an open judge card with the recounted data
   }
 
   async function recount() {
@@ -149,26 +162,33 @@
     }
   }
 
-  async function importCsvFile(e) {
-    const file = e.target.files[0]
-    if (!file || !currentEvent) return
+  // Step 1: pick the file (does NOT import — the operator sets device code and
+  // timezone first, then presses «Загрузить»).
+  function selectCsvFile(e) {
+    csvFile = e.target.files[0] ?? null
+    csvResult = null
+    error = ''
+    e.target.value = '' // allow re-selecting the same file
+  }
+
+  // Step 2: run the import on the chosen file.
+  async function runCsvImport() {
+    if (!csvFile || !currentEvent) return
     if (!deviceCode) {
       error = 'Укажите код считывателя (например, U659)'
-      e.target.value = ''
       return
     }
     error = ''
+    csvResult = null
     busy = 'Импорт rfid-логов…'
     try {
       const q = `device=${encodeURIComponent(deviceCode)}&tz=${encodeURIComponent(csvTimezone)}`
-      const res = await call('POST', `/api/events/${currentEvent.id}/rfid-import?${q}`, await file.text(), 'text/csv')
-      busy = ''
-      alert(`Строк: ${res.parsed}, новых: ${res.inserted}, дублей: ${res.duplicates}, ошибок: ${res.errors.length}`)
+      csvResult = await call('POST', `/api/events/${currentEvent.id}/rfid-import?${q}`, await csvFile.text(), 'text/csv')
+      csvFile = null
     } catch (err) {
       error = `Импорт CSV: ${err.message}`
     } finally {
       busy = ''
-      e.target.value = ''
     }
   }
 
@@ -235,6 +255,7 @@
 
   function openJudge(memberId) {
     judgeMemberId = memberId
+    judgeReload++ // re-clicking the same participant must still reload the card
     memberQuery = ''
   }
 
@@ -306,12 +327,6 @@
       <h2>{currentEvent.name} <span class="hint">{currentEvent.date}</span></h2>
 
       <div class="toolbar">
-        <input placeholder="Код считывателя (U659)" bind:value={deviceCode}/>
-        <input placeholder="Таймзона" bind:value={csvTimezone}/>
-        <label class="btn">
-          Импорт CSV с флешки
-          <input type="file" accept=".csv,.txt" on:change={importCsvFile} hidden/>
-        </label>
         <button class="btn primary" on:click={recount}>Пересчитать</button>
         {#if currentRace}
           <button class="btn" on:click={exportExcel}>Excel</button>
@@ -322,6 +337,51 @@
         <button class="btn" title="JSON в формате экспорта: импортируется на другом chrono-desk"
                 on:click={exportEventJson}>Экспорт JSON</button>
       </div>
+
+      <div class="import">
+        <h4>Импорт логов с флешки (CSV)</h4>
+        <div class="import-row">
+          <label>Код считывателя
+            <input placeholder="U659" bind:value={deviceCode}/>
+          </label>
+          <label>Часовой пояс
+            <select bind:value={csvTimezone}>
+              {#each tzOptions as t}<option value={t.value}>{t.label}</option>{/each}
+            </select>
+          </label>
+          <label class="btn file">
+            {csvFile ? 'Другой файл…' : 'Выбрать файл…'}
+            <input type="file" accept=".csv,.txt" on:change={selectCsvFile} hidden/>
+          </label>
+          <button class="btn primary" disabled={!csvFile || !deviceCode} on:click={runCsvImport}>
+            Загрузить
+          </button>
+          {#if csvFile}<span class="hint">{csvFile.name}</span>{/if}
+        </div>
+
+        {#if csvResult}
+          <div class="import-result">
+            <p>
+              Строк: <b>{csvResult.parsed}</b> ·
+              добавлено: <b class="ok">{csvResult.inserted}</b> ·
+              дублей: <b>{csvResult.duplicates}</b> ·
+              пропущено (ошибки): <b class:bad={csvResult.errors.length}>{csvResult.errors.length}</b>
+            </p>
+            {#if csvResult.errors.length}
+              <details>
+                <summary>Показать ошибки ({csvResult.errors.length}{csvResult.errors.length >= 20 ? '+, показаны первые 20' : ''})</summary>
+                <ul class="errs">
+                  {#each csvResult.errors as e}
+                    <li><b>строка {e.line}:</b> {e.reason}<br/><code>{e.raw}</code></li>
+                  {/each}
+                </ul>
+              </details>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <SiteSyncPanel eventId={currentEvent.id} on:pulled={() => openEvent(currentEvent)}/>
 
       <div class="races">
         {#each races as race}
@@ -374,7 +434,8 @@
       {/if}
 
       {#if judgeMemberId}
-        <JudgePanel eventId={currentEvent.id} memberId={judgeMemberId} {races} {categories}
+        <JudgePanel eventId={currentEvent.id} memberId={judgeMemberId} reloadToken={judgeReload}
+                    {races} {categories}
                     on:changed={onEdited} on:close={() => judgeMemberId = null}/>
       {/if}
 
@@ -492,13 +553,35 @@
     flex-wrap: wrap;
   }
 
-  .toolbar input, .race-start input {
+  .race-start input {
     padding: 0.4rem 0.6rem;
     border-radius: 4px;
     border: 1px solid #4a5568;
     background: #1a202c;
     color: inherit;
   }
+
+  .import {
+    border: 1px solid #4a5568; border-radius: 6px;
+    padding: 0.8rem 1rem; margin-bottom: 1rem; background: #232b38;
+  }
+  .import h4 { margin: 0 0 0.6rem; }
+  .import-row { display: flex; gap: 0.8rem; align-items: end; flex-wrap: wrap; }
+  .import-row label { display: flex; flex-direction: column; gap: 0.2rem;
+    color: #9aa5b1; font-size: 0.85rem; }
+  .import-row label.file { color: inherit; justify-content: center; }
+  .import-row input {
+    padding: 0.4rem 0.6rem; border-radius: 4px;
+    border: 1px solid #4a5568; background: #1a202c; color: inherit;
+  }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .import-result { margin-top: 0.7rem; font-size: 0.95rem; }
+  .import-result .ok { color: #81c784; }
+  .import-result .bad { color: #e57373; }
+  .import-result summary { cursor: pointer; color: #9aa5b1; }
+  .errs { margin: 0.4rem 0 0; padding-left: 1.1rem; max-height: 14rem; overflow: auto; }
+  .errs li { margin-bottom: 0.3rem; font-size: 0.85rem; }
+  .errs code { color: #ffb74d; font-size: 0.8rem; }
 
   .races { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
 

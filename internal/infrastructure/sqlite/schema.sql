@@ -121,3 +121,14 @@ CREATE TABLE IF NOT EXISTS local_changes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_local_changes_entity ON local_changes(entity, entity_id);
+
+-- Per-event sync target for pushing/pulling to the run5 site (v0.3). One row
+-- (the event's own id). The token authorizes the run5 sync endpoint; it never
+-- leaves the desktop except in the X-SYNC-TOKEN header.
+CREATE TABLE IF NOT EXISTS sync_config (
+    event_id          TEXT PRIMARY KEY,
+    base_url          TEXT NOT NULL DEFAULT '',
+    token             TEXT NOT NULL DEFAULT '',
+    last_synced_at    INTEGER, -- unix ms of last successful push
+    last_payload_hash TEXT     -- sha256 of last pushed payload (skip no-op re-push)
+);

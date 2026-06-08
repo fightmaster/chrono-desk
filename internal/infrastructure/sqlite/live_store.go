@@ -55,6 +55,63 @@ func (s *Store) ListManualResults(ctx context.Context, eventID, raceID string) (
 	return out, rows.Err()
 }
 
+// ManualResultDetail is a judge entry joined with the participant, for the
+// review/undo list on the live screen.
+type ManualResultDetail struct {
+	ID        int64   `json:"id"`
+	MemberID  string  `json:"member_id"`
+	Number    *int64  `json:"number"`
+	FirstName string  `json:"first_name"`
+	LastName  string  `json:"last_name"`
+	TimeMs    int64   `json:"time_ms"`
+	CleanTime *string `json:"clean_time"`
+}
+
+// ListManualResultsDetailed returns judge entries with participant name/number
+// and the member's derived clean time, newest first.
+func (s *Store) ListManualResultsDetailed(ctx context.Context, eventID, raceID string) ([]ManualResultDetail, error) {
+	query := `SELECT r.id, r.member_id, m.number, m.first_name, m.last_name, r.time_ms, m.clean_time
+		FROM results r
+		JOIN members m ON m.id = r.member_id
+		WHERE r.event_id = ? AND r.rfid_log_id IS NULL AND r.checkpoint_id IS NULL`
+	args := []any{eventID}
+	if raceID != "" {
+		query += ` AND r.race_id = ?`
+		args = append(args, raceID)
+	}
+	query += ` ORDER BY r.time_ms DESC, r.id DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list manual results detailed: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ManualResultDetail{}
+	for rows.Next() {
+		var d ManualResultDetail
+		if err := rows.Scan(&d.ID, &d.MemberID, &d.Number, &d.FirstName, &d.LastName, &d.TimeMs, &d.CleanTime); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// GetManualResult fetches one judge entry by id (for journaling its natural key
+// before deletion, so the deletion can be synced to the site).
+func (s *Store) GetManualResult(ctx context.Context, eventID string, resultID int64) (ManualResult, error) {
+	var m ManualResult
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, member_id, race_id, time_ms FROM results
+		WHERE id = ? AND event_id = ? AND rfid_log_id IS NULL AND checkpoint_id IS NULL`,
+		resultID, eventID).Scan(&m.ID, &m.MemberID, &m.RaceID, &m.TimeMs)
+	if err != nil {
+		return ManualResult{}, fmt.Errorf("get manual result %d: %w", resultID, err)
+	}
+	return m, nil
+}
+
 // DeleteManualResult removes a judge entry; refuses to touch derived rows.
 func (s *Store) DeleteManualResult(ctx context.Context, eventID string, resultID int64) error {
 	res, err := s.db.ExecContext(ctx, `
