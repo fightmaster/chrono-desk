@@ -93,3 +93,73 @@ func TestBuildProtocolXLSX(t *testing.T) {
 		t.Errorf("dns row = %q %q %q", cell("A4"), cell("L4"), cell("M4"))
 	}
 }
+
+// TimeLimited protocols render the in-window elapsed as the clean time; the
+// «Отставание» gap (off CleanTimeMs) must populate too, not stay blank.
+func TestBuildProtocolXLSXTimeLimitedGap(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.UpsertEvent(ctx, domain.Event{ID: "ev1", Name: "E"}); err != nil {
+		t.Fatal(err)
+	}
+	limit := int64(6 * 3600)
+	if err := store.UpsertRace(ctx, domain.Race{
+		ID: "r1", EventID: "ev1", Name: "6 часов", Format: domain.FormatTimeLimited, TimeLimitSeconds: &limit,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertCheckpoint(ctx, domain.Checkpoint{
+		ID: "cp1", EventID: "ev1", RaceID: "r1", Name: "круг", Type: domain.CheckpointMid, Sort: 2, Board: "Feibot:U1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	start := int64(1_000_000)
+	for _, m := range []domain.Member{
+		{ID: "m1", EventID: "ev1", RaceID: "r1", Number: ptr(1), FirstName: "A", LastName: "Победитель",
+			Gender: sptr("male"), StartTimeMs: &start},
+		{ID: "m2", EventID: "ev1", RaceID: "r1", Number: ptr(2), FirstName: "B", LastName: "Второй",
+			Gender: sptr("male"), StartTimeMs: &start},
+	} {
+		if err := store.UpsertMember(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Last in-window pass: m1 at +30:00 (winner by elapsed), m2 at +32:00.
+	insert := func(member string, tMs int64) {
+		t.Helper()
+		if _, err := store.DB().ExecContext(ctx,
+			`INSERT INTO results (event_id, race_id, member_id, checkpoint_id, rfid_log_id, time_ms, number)
+			 VALUES ('ev1','r1',?, 'cp1', NULL, ?, NULL)`, member, tMs); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("m1", start+30*60*1000)
+	insert("m2", start+32*60*1000)
+
+	data, _, err := BuildProtocolXLSX(ctx, store, "r1")
+	if err != nil {
+		t.Fatalf("build xlsx: %v", err)
+	}
+	f, err := excelize.OpenReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("open xlsx: %v", err)
+	}
+	defer f.Close()
+	sheet := f.GetSheetName(0)
+	cell := func(ref string) string {
+		t.Helper()
+		v, _ := f.GetCellValue(sheet, ref)
+		return v
+	}
+
+	// Winner: place 1, clean time = 30:00 elapsed, no gap.
+	if cell("A2") != "1" || cell("E2") != "Победитель" || cell("M2") != "00:30:00" || cell("N2") != "" {
+		t.Errorf("winner row = %s %s time=%q gap=%q", cell("A2"), cell("E2"), cell("M2"), cell("N2"))
+	}
+	// Second: gap +02:00.000 to the winner (the regression — was blank).
+	if cell("A3") != "2" || cell("N3") != "+02:00.000" {
+		t.Errorf("second row = %s gap=%q, want gap +02:00.000", cell("A3"), cell("N3"))
+	}
+}

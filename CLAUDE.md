@@ -107,13 +107,21 @@ RaceTorchApp) → `internal/service` (import/recount/ranking/excel) →
 - **Disabled logs** (`disabled_at != null`) are imported but excluded from recounts
   (run5 ADR-0007).
 - Times are unix milliseconds internally; Feibot flash CSV is zoneless local time —
-  imports require an explicit timezone.
+  imports require an explicit timezone. The CSV import API (`POST .../rfid-import`)
+  **fails closed on a missing `tz`** (no silent UTC, which would shift every read by
+  the venue offset).
 - **Atomic import**: the event importer parses the whole export into memory first
   (`buildImportData`), then writes it in one transaction (`Store.ApplyEventImport`) —
   a malformed/inconsistent export can never leave a half-updated `.chrono`. Entity
   upserts share their SQL via the `execer` interface (the pool is capped at one
   connection, so the import must route every write through its own tx). The
   local-edits replay runs after that commit.
+- **Unsupported race formats fail closed**: `BuildProtocol` errors on any format it
+  doesn't rank (currently anything but FixedDistance/TimeLimited, e.g. Run5Stopwatch)
+  instead of silently materializing FixedDistance and emitting a wrong protocol.
+- **TimeLimited protocol** sets `CleanTimeMs = ElapsedMs` (run5's compat shim renders
+  elapsed as clean time), so the Excel «Отставание» gap column anchors on the winner
+  like FixedDistance rather than staying blank.
 
 ## Sibling projects (read before reinventing)
 

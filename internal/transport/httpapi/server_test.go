@@ -175,6 +175,28 @@ func decodeBody(t *testing.T, resp *http.Response, v any) {
 
 // Regression: the webview preflights non-simple methods; DELETE must be in
 // Access-Control-Allow-Methods or checkpoint deletion dies with "Load failed".
+// Feibot CSV is zoneless: importing without a timezone must fail closed, not
+// silently assume UTC (which would shift every read by the venue's offset).
+func TestRfidImportRequiresTimezone(t *testing.T) {
+	srv := startTestServer(t)
+	base := srv.BaseURL()
+
+	fixture, err := os.ReadFile("../../service/testdata/event-export.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	mustPost(t, base+"/api/events/import", "application/json", strings.NewReader(string(fixture)))
+
+	resp, err := http.Post(base+"/api/events/ev-100/rfid-import?device=U659", "text/csv", strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("import without tz returned 200 — must fail closed")
+	}
+}
+
 func TestCORSAllowsDelete(t *testing.T) {
 	srv := startTestServer(t)
 

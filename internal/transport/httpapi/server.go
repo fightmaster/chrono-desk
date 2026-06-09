@@ -256,9 +256,13 @@ func (s *Server) handleImportEvent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRfidImport(w http.ResponseWriter, r *http.Request) {
 	eventID := r.PathValue("id")
 	device := r.URL.Query().Get("device")
+	// Feibot CSV is zoneless local time — an explicit timezone is mandatory.
+	// Defaulting to UTC would silently shift every read by the venue's offset
+	// (e.g. −3h for МСК), so fail closed instead.
 	tz := r.URL.Query().Get("tz")
 	if tz == "" {
-		tz = "UTC"
+		s.fail(w, fmt.Errorf("укажите таймзону (tz): CSV Feibot хранит локальное время без зоны"))
+		return
 	}
 
 	store, err := s.events.Open(eventID)

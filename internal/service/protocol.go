@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
@@ -47,6 +48,14 @@ func BuildProtocol(ctx context.Context, store *sqlite.Store, raceID string) (Pro
 	race, err := store.GetRace(ctx, raceID)
 	if err != nil {
 		return ProtocolResponse{}, err
+	}
+	// Fail closed on formats we don't rank yet (e.g. Run5Stopwatch): ranking
+	// would silently fall back to FixedDistance and produce a plausible but
+	// wrong protocol. Refuse loudly instead of mis-ranking.
+	switch race.Format {
+	case domain.FormatFixedDistance, domain.FormatTimeLimited:
+	default:
+		return ProtocolResponse{}, fmt.Errorf("формат гонки %q пока не поддерживается — протокол не построен", race.Format)
 	}
 	members, err := store.ListMembersByRace(ctx, raceID)
 	if err != nil {
@@ -94,10 +103,12 @@ func BuildProtocol(ctx context.Context, store *sqlite.Store, raceID string) (Pro
 			row.CleanTime = &formatted
 		}
 		// TimeLimited: run5's compat shim renders the in-window elapsed as
-		// the member's clean time.
+		// the member's clean time — including its ms, so the «Отставание» gap
+		// (computed off CleanTimeMs) anchors on the winner like FixedDistance.
 		if r.ElapsedMs != nil {
 			row.ElapsedMs = r.ElapsedMs
 			row.LastCheckpointName = r.LastCheckpointName
+			row.CleanTimeMs = r.ElapsedMs
 			formatted := processor.FormatCleanTime(0, *r.ElapsedMs)
 			row.CleanTime = &formatted
 		}
