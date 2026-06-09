@@ -39,8 +39,13 @@ enters a manual finish by participant number/name on the Live screen in two mode
 elapsed time (`clean_ms`, run5's ManualTimeEntry: `finish = start + clean`) or wall-clock
 (`time_ms`); the start reference is the member's start, falling back to the race start
 (matching `processor_repo.go`), so a chip-less finisher without a START read still gets a
-clean time. Entered manual results are listed with delete (`GET .../manual-results`,
-`DELETE .../results/{id}`). Next:
+clean time. Entered manual results appear inline in the live feed as «ручной финиш»
+rows with inline delete (`ListRecentPasses` UNIONs manual `results` rows — always
+appended, never truncated by the chip-read limit — flagged `manual`/`result_id`;
+`DELETE .../results/{id}`); a successful add/delete shows a self-dismissing toast under
+the form, and input errors render directly under the manual input row. The
+`GET .../manual-results` endpoint remains for any review tooling but the UI no longer
+renders a separate list. Next:
 Run5Stopwatch format, log/journal upload back to the site (v0.3), rfid-hub migration to
 rfid-core. When rfid-sync's engine changes, re-diff
 `internal/processor` against `rfid-sync/internal/syncer/processor` (it is a port, not a

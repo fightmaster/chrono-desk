@@ -127,7 +127,8 @@ func (s *Store) DeleteManualResult(ctx context.Context, eventID string, resultID
 }
 
 // LivePass is one feed row for the finish-judge screen: the read plus what it
-// resolved to.
+// resolved to. Manual judge finishes share this shape so they appear inline in
+// the feed (Manual=true, ResultID set) instead of a separate list.
 type LivePass struct {
 	LogID          string  `json:"log_id"`
 	TimeMs         int64   `json:"time_ms"`
@@ -141,25 +142,45 @@ type LivePass struct {
 	RaceID         *string `json:"race_id"`
 	CheckpointName *string `json:"checkpoint_name"` // nil → read produced no result
 	CheckpointType *int    `json:"checkpoint_type"`
+	ResultID       *int64  `json:"result_id"` // set only for manual entries (inline delete)
+	Manual         bool    `json:"manual"`
 }
 
-// ListRecentPasses feeds the live screen: latest reads, who they belong to
-// and whether they produced a result.
+// ListRecentPasses feeds the live screen: latest reads, who they belong to and
+// whether they produced a result, plus every manual judge finish so the judge
+// sees and can delete them inline. The chip-read window is capped by limit;
+// manual entries are always appended (they are few) so they never sink out of
+// view, then the whole feed is ordered by time.
 func (s *Store) ListRecentPasses(ctx context.Context, eventID string, limit int) ([]LivePass, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT l.id, l.time_ms, l.epc, l.board, l.disabled_at,
+		SELECT log_id, time_ms, epc, board, disabled_at,
+		       member_id, number, first_name, last_name, race_id,
+		       checkpoint_name, checkpoint_type, result_id, manual
+		FROM (
+			SELECT l.id AS log_id, l.time_ms AS time_ms, l.epc AS epc, l.board AS board,
+			       l.disabled_at AS disabled_at, m.id AS member_id, m.number AS number,
+			       m.first_name AS first_name, m.last_name AS last_name, m.race_id AS race_id,
+			       c.name AS checkpoint_name, c.type AS checkpoint_type,
+			       NULL AS result_id, 0 AS manual
+			FROM rfid_logs l
+			LEFT JOIN members m ON m.event_id = l.event_id AND m.epc = l.epc
+			LEFT JOIN results r ON r.rfid_log_id = l.id
+			LEFT JOIN checkpoints c ON c.id = r.checkpoint_id
+			WHERE l.event_id = ?
+			ORDER BY l.time_ms DESC, l.id DESC
+			LIMIT ?
+		)
+		UNION ALL
+		SELECT 'manual:' || r.id, r.time_ms, '', '', NULL,
 		       m.id, m.number, m.first_name, m.last_name, m.race_id,
-		       c.name, c.type
-		FROM rfid_logs l
-		LEFT JOIN members m ON m.event_id = l.event_id AND m.epc = l.epc
-		LEFT JOIN results r ON r.rfid_log_id = l.id
-		LEFT JOIN checkpoints c ON c.id = r.checkpoint_id
-		WHERE l.event_id = ?
-		ORDER BY l.time_ms DESC, l.id DESC
-		LIMIT ?`, eventID, limit)
+		       NULL, NULL, r.id, 1
+		FROM results r
+		JOIN members m ON m.id = r.member_id
+		WHERE r.event_id = ? AND r.rfid_log_id IS NULL AND r.checkpoint_id IS NULL
+		ORDER BY time_ms DESC, log_id DESC`, eventID, limit, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("list recent passes: %w", err)
 	}
@@ -167,12 +188,16 @@ func (s *Store) ListRecentPasses(ctx context.Context, eventID string, limit int)
 
 	out := []LivePass{}
 	for rows.Next() {
-		var p LivePass
+		var (
+			p      LivePass
+			manual int
+		)
 		if err := rows.Scan(&p.LogID, &p.TimeMs, &p.EPC, &p.Board, &p.DisabledAt,
 			&p.MemberID, &p.Number, &p.FirstName, &p.LastName, &p.RaceID,
-			&p.CheckpointName, &p.CheckpointType); err != nil {
+			&p.CheckpointName, &p.CheckpointType, &p.ResultID, &manual); err != nil {
 			return nil, err
 		}
+		p.Manual = manual == 1
 		out = append(out, p)
 	}
 	return out, rows.Err()

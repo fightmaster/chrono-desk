@@ -19,7 +19,12 @@
   let manualMode = 'clean' // 'clean' = чистое время, 'wall' = время суток
   let manualTime = ''
   let manualClean = ''
-  let manualResults = []
+  let manualError = ''   // ошибки ввода — под строкой формы
+  let flash = ''         // всплывающее подтверждение, само исчезает
+  let flashTimer = null
+
+  // число реальных прочтений в ленте (без ручных строк) — для кнопки «Загрузить ещё»
+  $: chipShown = feed.filter(p => !p.manual).length
 
   $: found = query.trim() ? members.filter(m => {
     const q = query.trim().toLowerCase()
@@ -27,19 +32,17 @@
       (m.number !== null && String(m.number).includes(q))
   }).slice(0, 8) : []
 
+  function showFlash(msg) {
+    flash = msg
+    if (flashTimer) clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => { flash = '' }, 3500)
+  }
+
   async function refresh() {
     try {
       status = await call('GET', `/api/events/${eventId}/live/status`)
       feed = await call('GET', `/api/events/${eventId}/live/feed?limit=${feedLimit}`)
       if (status.port) port = status.port
-    } catch (e) {
-      error = e.message
-    }
-  }
-
-  async function loadManualResults() {
-    try {
-      manualResults = await call('GET', `/api/events/${eventId}/manual-results`)
     } catch (e) {
       error = e.message
     }
@@ -52,10 +55,12 @@
 
   onMount(() => {
     refresh()
-    loadManualResults()
     timer = setInterval(refresh, 2000)
   })
-  onDestroy(() => clearInterval(timer))
+  onDestroy(() => {
+    clearInterval(timer)
+    if (flashTimer) clearTimeout(flashTimer)
+  })
 
   async function start() {
     error = ''
@@ -76,43 +81,48 @@
   }
 
   async function manualFinish(member) {
-    error = ''
+    manualError = ''
     const who = `№${member.number ?? '—'} ${member.last_name} ${member.first_name}`
-    let body
+    let body, label
     if (manualMode === 'clean') {
       const cleanMs = cleanToMs(manualClean)
       if (cleanMs === null) {
-        error = 'Введите чистое время в формате ЧЧ:ММ:СС.ммм (например 00:47:13.250)'
+        manualError = 'Введите чистое время в формате ЧЧ:ММ:СС.ммм (например 00:47:13.250)'
         return
       }
       if (!confirm(`Ручной финиш: ${who}, чистое время ${manualClean}?`)) return
       body = {clean_ms: cleanMs}
+      label = `${who} · ${manualClean}`
     } else {
       const timeMs = manualTime ? new Date(manualTime).getTime() : Date.now()
       if (!confirm(`Ручной финиш: ${who} в ${fmtTime(timeMs)}?`)) return
       body = {time_ms: timeMs}
+      label = `${who} · ${fmtTime(timeMs)}`
     }
     try {
       await call('POST', `/api/events/${eventId}/members/${member.id}/manual-finish`, JSON.stringify(body))
       query = ''
       manualTime = ''
       manualClean = ''
+      showFlash(`✓ Добавлено: ${label}`)
       dispatch('changed', {recount: false})
-      await Promise.all([refresh(), loadManualResults()])
+      await refresh() // ручной финиш появится строкой в ленте
     } catch (e) {
-      error = e.message
+      manualError = e.message
     }
   }
 
-  async function deleteManual(r) {
-    error = ''
-    if (!confirm(`Удалить ручной результат: №${r.number ?? '—'} ${r.last_name} ${r.first_name}?`)) return
+  async function deleteManual(p) {
+    manualError = ''
+    const who = `№${p.number ?? '—'} ${p.last_name ?? ''} ${p.first_name ?? ''}`.trim()
+    if (!confirm(`Удалить ручной результат: ${who}?`)) return
     try {
-      await call('DELETE', `/api/events/${eventId}/results/${r.id}`)
+      await call('DELETE', `/api/events/${eventId}/results/${p.result_id}`)
       dispatch('changed', {recount: true}) // пересчёт восстановит данные по чипу
-      await loadManualResults()
+      showFlash(`Удалён ручной результат: ${who}`)
+      await refresh()
     } catch (e) {
-      error = e.message
+      manualError = e.message
     }
   }
 
@@ -128,6 +138,7 @@
   }
 
   function passClass(p) {
+    if (p.manual) return 'finish manual'
     if (p.disabled_at) return 'off'
     if (!p.member_id) return 'unknown'
     if (!p.checkpoint_name) return 'skipped'
@@ -136,6 +147,7 @@
   }
 
   function passLabel(p) {
+    if (p.manual) return 'ручной финиш'
     if (p.disabled_at) return 'отключено судьёй'
     if (!p.member_id) return 'неизвестная метка'
     if (!p.checkpoint_name) return 'не засчитано'
@@ -209,43 +221,33 @@
         </div>
       {/if}
     </div>
-    {#if manualResults.length}
-      <table class="manual-results">
-        <caption>Ручные результаты ({manualResults.length})</caption>
-        <tbody>
-        {#each manualResults as r (r.id)}
-          <tr>
-            <td class="num">{r.number ?? ''}</td>
-            <td class="name">{r.last_name} {r.first_name}</td>
-            <td class="time">{r.clean_time ?? fmtTime(r.time_ms)}</td>
-            <td><button class="btn small" on:click={() => deleteManual(r)}>Удалить</button></td>
-          </tr>
-        {/each}
-        </tbody>
-      </table>
-    {/if}
+    {#if manualError}<p class="error under">{manualError}</p>{/if}
+    {#if flash}<p class="flash">{flash}</p>{/if}
+    <p class="dim hint">Ручные финиши попадают в ленту ниже строкой «ручной финиш» — там же их можно удалить.</p>
   </div>
 
-  <table>
-    <tbody>
+  <div class="feed">
     {#each feed as p (p.log_id)}
-      <tr class={passClass(p)}>
-        <td class="time">{fmtTime(p.time_ms)}</td>
-        <td class="num">{p.number ?? ''}</td>
-        <td class="name">
+      <div class="row {passClass(p)}">
+        <span class="time">{fmtTime(p.time_ms)}</span>
+        <span class="num">{p.number ?? ''}</span>
+        <span class="name">
           {#if p.member_id}{p.last_name} {p.first_name}{:else}<span class="epc">{p.epc}</span>{/if}
-        </td>
-        <td class="cp">{passLabel(p)}</td>
-        <td class="board">{p.board}</td>
-      </tr>
+        </span>
+        <span class="cp">{passLabel(p)}</span>
+        <span class="board">
+          {#if p.manual}
+            <button class="btn small" title="Удалить ручной результат" on:click={() => deleteManual(p)}>✕</button>
+          {:else}{p.board}{/if}
+        </span>
+      </div>
     {/each}
-    </tbody>
-  </table>
+  </div>
   {#if !feed.length}
     <p class="dim center">Прочтений пока нет — лента обновляется каждые 2 секунды</p>
-  {:else if feed.length >= feedLimit && feedLimit < 1000}
+  {:else if chipShown >= feedLimit && feedLimit < 1000}
     <p class="center">
-      <button class="btn" on:click={loadMore}>Загрузить ещё (показано {feed.length})</button>
+      <button class="btn" on:click={loadMore}>Загрузить ещё (показано {chipShown})</button>
     </p>
   {/if}
 </section>
@@ -281,10 +283,18 @@
   .manual { position: relative; display: flex; gap: 0.6rem; }
   .manual .q { flex: 1; max-width: 24rem; }
   .manual .clean { width: 10rem; font-family: monospace; }
-  .manual-results { width: auto; margin-top: 0.6rem; }
-  .manual-results caption { text-align: left; color: #9aa5b1; font-size: 0.85rem; padding: 0.2rem 0; }
-  .manual-results td { border-bottom: 1px solid #2d3748; }
-  .manual-results td.time { font-family: monospace; }
+  .error.under { margin: 0.4rem 0 0; }
+  .hint { font-size: 0.85rem; margin: 0.35rem 0 0; }
+  .flash {
+    margin: 0.4rem 0 0; padding: 0.4rem 0.8rem; max-width: 32rem;
+    background: #1e3a2a; border: 1px solid #2f855a; border-radius: 6px;
+    color: #81c784; animation: flash-fade 3.5s ease-out forwards;
+  }
+  @keyframes flash-fade {
+    0% { opacity: 0; transform: translateY(-4px); }
+    8%, 80% { opacity: 1; transform: none; }
+    100% { opacity: 0; }
+  }
   .btn.small { padding: 0.15rem 0.6rem; font-size: 0.85rem; }
   .candidates { position: absolute; top: 2.4rem; left: 0; z-index: 5; display: flex;
     flex-direction: column; background: #2d3748; border: 1px solid #4a5568; border-radius: 6px; }
@@ -298,20 +308,32 @@
     background: #2d3748; color: inherit; cursor: pointer; }
   .btn.primary { background: #2b6cb0; border-color: #2b6cb0; }
 
-  table { width: 100%; border-collapse: collapse; margin-top: 0.4rem; }
-  td { padding: 0.45rem 0.7rem; border-bottom: 1px solid #2d3748; }
-  td.time { font-family: monospace; font-size: 1.15rem; white-space: nowrap; }
-  td.num { font-weight: 700; font-size: 1.15rem; width: 4rem; }
-  td.name { font-size: 1.1rem; }
-  td.cp { white-space: nowrap; }
-  td.board { color: #9aa5b1; font-size: 0.85rem; white-space: nowrap; }
+  /* CSS-grid feed instead of a <table>: keyed {#each} anchor nodes inside a
+     <table> get foster-parented into anonymous table boxes, which broke column
+     alignment between chip and manual rows. Grid columns are deterministic. */
+  .feed { margin-top: 0.4rem; }
+  .row {
+    display: grid;
+    grid-template-columns: 10.5rem 4.5rem 1fr 12rem 8rem;
+    align-items: center;
+    column-gap: 0.7rem;
+    padding: 0.45rem 0.7rem;
+    border-bottom: 1px solid #2d3748;
+  }
+  .row .time { font-family: monospace; font-size: 1.15rem; white-space: nowrap; }
+  .row .num { font-weight: 700; font-size: 1.15rem; }
+  .row .name { font-size: 1.1rem; word-break: break-word; }
+  .row .board { color: #9aa5b1; font-size: 0.85rem; word-break: break-all; }
   .epc { font-family: monospace; color: #ffb74d; }
 
-  tr.finish td { background: #1e3a2a; }
-  tr.finish td.cp { color: #81c784; font-weight: 600; }
-  tr.unknown td.cp { color: #ffb74d; }
-  tr.skipped td.cp { color: #e57373; font-weight: 600; }
-  tr.off td { color: #718096; text-decoration: line-through; }
+  .row.finish { background: #1e3a2a; }
+  .row.finish .cp { color: #81c784; font-weight: 600; }
+  .row.manual { box-shadow: inset 3px 0 0 #63b3ed; }
+  .row.manual .cp { color: #63b3ed; }
+  .row.manual .cp::before { content: '✎ '; }
+  .row.unknown .cp { color: #ffb74d; }
+  .row.skipped .cp { color: #e57373; font-weight: 600; }
+  .row.off { color: #718096; text-decoration: line-through; }
 
   .center { text-align: center; margin-top: 2rem; }
   .error { color: #e57373; }
