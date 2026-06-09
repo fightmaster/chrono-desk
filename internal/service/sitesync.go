@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
@@ -129,14 +130,27 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 		DeletedManualResults: []syncManualResult{}, CheckpointCreates: []syncCheckpointCreate{}, CheckpointDeletes: []string{},
 	}
 
-	// Members map for member_ref resolution.
-	members, err := store.ListMembersByEvent(ctx, eventID)
+	// Full member records: used for member_ref resolution AND to emit offline
+	// (local-) members as new_members from the live table — their _created
+	// journal entry may be absent (e.g. after a backup restore), so the table
+	// is the source of truth (same reasoning as offline checkpoints).
+	members, err := store.ListMembersFullByEvent(ctx, eventID)
 	if err != nil {
 		return nil, SyncSummary{}, err
 	}
-	memberByID := make(map[string]sqlite.MemberRow, len(members))
+	memberByID := make(map[string]domain.Member, len(members))
 	for _, m := range members {
 		memberByID[m.ID] = m
+	}
+	for _, m := range members {
+		if !strings.HasPrefix(m.ID, "local-") {
+			continue
+		}
+		p.NewMembers = append(p.NewMembers, syncNewMember{
+			LocalID: m.ID, RaceID: m.RaceID, FirstName: m.FirstName, LastName: m.LastName,
+			Number: m.Number, EPC: m.EPC, Gender: m.Gender, DOB: m.DOB,
+			CategoryID: m.CategoryID, Team: m.Team, City: m.City,
+		})
 	}
 	ref := func(memberID string) syncMemberRef {
 		r := syncMemberRef{}
@@ -191,15 +205,6 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	cpDeleted := map[string]bool{}
 	for _, c := range changes {
 		switch {
-		case c.Entity == "member" && c.Field == "_created" && strings.HasPrefix(c.EntityID, "local-"):
-			var req CreateMemberRequest
-			if json.Unmarshal([]byte(c.NewValue), &req) == nil {
-				p.NewMembers = append(p.NewMembers, syncNewMember{
-					LocalID: c.EntityID, RaceID: req.RaceID, FirstName: req.FirstName, LastName: req.LastName,
-					Number: req.Number, EPC: req.EPC, Gender: req.Gender, DOB: req.DOB,
-					CategoryID: req.CategoryID, Team: req.Team, City: req.City,
-				})
-			}
 		case c.Entity == "member" && c.Field == "_manual_finish_deleted":
 			var d struct {
 				MemberID string `json:"member_id"`
@@ -211,7 +216,9 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 					MemberRef: ref(d.MemberID), RaceID: d.RaceID, TimeMs: d.TimeMs,
 				})
 			}
-		case c.Entity == "member" && syncMemberFields[c.Field]:
+		// Field edits only for SITE members; local- ones ship in full as
+		// new_members (above), so an edit to them is redundant/unresolvable.
+		case c.Entity == "member" && syncMemberFields[c.Field] && !strings.HasPrefix(c.EntityID, "local-"):
 			putEdit(memberEdits, c.EntityID, c.Field, c.NewValue)
 		case c.Entity == "race" && syncRaceFields[c.Field]:
 			putEdit(raceEdits, c.EntityID, c.Field, c.NewValue)

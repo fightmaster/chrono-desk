@@ -183,6 +183,51 @@ func TestBuildSyncPayloadCheckpointsFromTable(t *testing.T) {
 	}
 }
 
+// Offline (local-) members sync from the live table, not the journal — a
+// local- member with no _created entry must still be emitted as a new_member
+// (regression: backup restore lost the _created journal entries).
+func TestBuildSyncPayloadNewMembersFromTable(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+
+	num := int64(909)
+	epc := "E280NEW"
+	id, _, err := CreateMember(ctx, store, "ev-100", CreateMemberRequest{
+		RaceID: "race-10k", FirstName: "Новый", LastName: "Участник", Number: &num, EPC: &epc,
+		Gender: sptr("female"), DOB: sptr("2000-02-02"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Drop the _created journal entry to simulate a member without it.
+	if _, err := store.DB().ExecContext(ctx,
+		`DELETE FROM local_changes WHERE entity='member' AND entity_id=? AND field='_created'`, id); err != nil {
+		t.Fatal(err)
+	}
+
+	data, summary, err := BuildSyncPayload(ctx, store, "ev-100", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.NewMembers != 1 {
+		t.Fatalf("new_members summary = %d, want 1", summary.NewMembers)
+	}
+	var p syncPayload
+	if err := json.Unmarshal(data, &p); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.NewMembers) != 1 {
+		t.Fatalf("new_members = %d, want 1", len(p.NewMembers))
+	}
+	nm := p.NewMembers[0]
+	if nm.LocalID != id || nm.RaceID != "race-10k" || nm.LastName != "Участник" ||
+		nm.Number == nil || *nm.Number != 909 || nm.EPC == nil || *nm.EPC != "E280NEW" ||
+		nm.Gender == nil || *nm.Gender != "female" || nm.DOB == nil || *nm.DOB != "2000-02-02" {
+		t.Errorf("new member = %+v", nm)
+	}
+}
+
 func mustEdit(t *testing.T, store *sqlite.Store, req EditRequest) {
 	t.Helper()
 	if _, err := ApplyEdit(context.Background(), store, req); err != nil {
