@@ -159,93 +159,21 @@ func ParseEventExport(r io.Reader) (*EventExport, error) {
 func (i *EventImporter) Import(ctx context.Context, export *EventExport) (ImportStats, error) {
 	stats := ImportStats{EventID: export.Event.ID}
 
-	if err := i.store.UpsertEvent(ctx, domain.Event{
-		ID: export.Event.ID, Name: export.Event.Name, Slug: export.Event.Slug, Date: export.Event.Date,
-		Timezone: export.Timezone,
-	}); err != nil {
+	// Validate-first: parse every time field and build the full record set in
+	// memory before touching the DB. A malformed value aborts here, leaving the
+	// .chrono untouched (the apply below is then all-or-nothing).
+	data, err := buildImportData(export)
+	if err != nil {
 		return stats, err
 	}
-
-	for _, l := range export.Laps {
-		if err := i.store.UpsertLap(ctx, domain.Lap(l)); err != nil {
-			return stats, err
-		}
-	}
-
-	for _, r := range export.Races {
-		startedAt, err := parseTimeMs(r.StartedAt)
-		if err != nil {
-			return stats, fmt.Errorf("race %s started_at: %w", r.ID, err)
-		}
-		if err := i.store.UpsertRace(ctx, domain.Race{
-			ID: r.ID, EventID: r.EventID, Name: r.Name, Date: r.Date,
-			StartedAtMs: startedAt, LapID: r.LapID, Format: domain.RaceFormat(r.Format),
-			TimeLimitSeconds: r.TimeLimitSeconds, CategoryExcludesTopByGender: r.CategoryExcludesTopByGender,
-		}); err != nil {
-			return stats, err
-		}
-		stats.Races++
-	}
-
-	for _, c := range export.Categories {
-		if err := i.store.UpsertCategory(ctx, domain.Category(c)); err != nil {
-			return stats, err
-		}
-		stats.Categories++
-	}
-
-	for _, cp := range export.Checkpoints {
-		since, err := parseTimeMs(cp.Since)
-		if err != nil {
-			return stats, fmt.Errorf("checkpoint %s since: %w", cp.ID, err)
-		}
-		if err := i.store.UpsertCheckpoint(ctx, domain.Checkpoint{
-			ID: cp.ID, EventID: cp.EventID, RaceID: cp.RaceID, Name: cp.Name,
-			Type: domain.CheckpointType(cp.Type), Sort: cp.Sort, Board: cp.Board,
-			SinceMs: since, SinceOffsetSeconds: cp.SinceOffsetSeconds, SleepAfterPrevSeconds: cp.SleepAfterPrevSeconds,
-		}); err != nil {
-			return stats, err
-		}
-		stats.Checkpoints++
-	}
-
-	for _, m := range export.Members {
-		startMs, err := parseTimeMs(m.StartTime)
-		if err != nil {
-			return stats, fmt.Errorf("member %s start_time: %w", m.ID, err)
-		}
-		finishMs, err := parseTimeMs(m.FinishTime)
-		if err != nil {
-			return stats, fmt.Errorf("member %s finish_time: %w", m.ID, err)
-		}
-		if err := i.store.UpsertMember(ctx, domain.Member{
-			ID: m.ID, EventID: m.EventID, RaceID: m.RaceID, CategoryID: m.CategoryID,
-			Number: m.Number, EPC: m.EPC, RFID: m.RFID,
-			FirstName: m.FirstName, LastName: m.LastName, Gender: m.Gender, DOB: m.DOB,
-			City: m.City, Team: m.Team, Status: domain.MemberStatus(m.Status),
-			StartTimeMs: startMs, FinishTimeMs: finishMs, CleanTime: m.CleanTime,
-		}); err != nil {
-			return stats, err
-		}
-		stats.Members++
-	}
-
-	logs := make([]domain.RfidLog, 0, len(export.RfidLogs))
-	for _, l := range export.RfidLogs {
-		disabledAt, err := parseTimeMs(l.DisabledAt)
-		if err != nil {
-			return stats, fmt.Errorf("rfid_log %s disabled_at: %w", l.ID, err)
-		}
-		logs = append(logs, domain.RfidLog{
-			ID: l.ID, EventID: l.EventID, Status: l.Status, Number: l.Number,
-			TimeMs: l.Time, Ant: l.Ant, EPC: l.EPC, RSSI: l.RSSI, Board: l.Board,
-			DisabledAt: disabledAt,
-		})
-	}
-	if err := i.store.UpsertRfidLogs(ctx, logs); err != nil {
+	if err := i.store.ApplyEventImport(ctx, data); err != nil {
 		return stats, err
 	}
-	stats.RfidLogs = len(logs)
+	stats.Races = len(data.Races)
+	stats.Categories = len(data.Categories)
+	stats.Checkpoints = len(data.Checkpoints)
+	stats.Members = len(data.Members)
+	stats.RfidLogs = len(data.RfidLogs)
 
 	// Conflict policy: local offline edits beat the re-imported site data —
 	// unless the caller asked for "site wins" (pull with overwrite).
@@ -258,6 +186,82 @@ func (i *EventImporter) Import(ctx context.Context, export *EventExport) (Import
 	}
 
 	return stats, nil
+}
+
+// buildImportData parses and validates the whole export into domain objects in
+// memory. Every time field is parsed here — before any DB write — so a malformed
+// value aborts the import without leaving a partially-written .chrono.
+func buildImportData(export *EventExport) (sqlite.EventImportData, error) {
+	d := sqlite.EventImportData{
+		Event: domain.Event{
+			ID: export.Event.ID, Name: export.Event.Name, Slug: export.Event.Slug,
+			Date: export.Event.Date, Timezone: export.Timezone,
+		},
+		Laps:        make([]domain.Lap, 0, len(export.Laps)),
+		Races:       make([]domain.Race, 0, len(export.Races)),
+		Categories:  make([]domain.Category, 0, len(export.Categories)),
+		Checkpoints: make([]domain.Checkpoint, 0, len(export.Checkpoints)),
+		Members:     make([]domain.Member, 0, len(export.Members)),
+		RfidLogs:    make([]domain.RfidLog, 0, len(export.RfidLogs)),
+	}
+
+	for _, l := range export.Laps {
+		d.Laps = append(d.Laps, domain.Lap(l))
+	}
+	for _, r := range export.Races {
+		startedAt, err := parseTimeMs(r.StartedAt)
+		if err != nil {
+			return sqlite.EventImportData{}, fmt.Errorf("race %s started_at: %w", r.ID, err)
+		}
+		d.Races = append(d.Races, domain.Race{
+			ID: r.ID, EventID: r.EventID, Name: r.Name, Date: r.Date,
+			StartedAtMs: startedAt, LapID: r.LapID, Format: domain.RaceFormat(r.Format),
+			TimeLimitSeconds: r.TimeLimitSeconds, CategoryExcludesTopByGender: r.CategoryExcludesTopByGender,
+		})
+	}
+	for _, c := range export.Categories {
+		d.Categories = append(d.Categories, domain.Category(c))
+	}
+	for _, cp := range export.Checkpoints {
+		since, err := parseTimeMs(cp.Since)
+		if err != nil {
+			return sqlite.EventImportData{}, fmt.Errorf("checkpoint %s since: %w", cp.ID, err)
+		}
+		d.Checkpoints = append(d.Checkpoints, domain.Checkpoint{
+			ID: cp.ID, EventID: cp.EventID, RaceID: cp.RaceID, Name: cp.Name,
+			Type: domain.CheckpointType(cp.Type), Sort: cp.Sort, Board: cp.Board,
+			SinceMs: since, SinceOffsetSeconds: cp.SinceOffsetSeconds, SleepAfterPrevSeconds: cp.SleepAfterPrevSeconds,
+		})
+	}
+	for _, m := range export.Members {
+		startMs, err := parseTimeMs(m.StartTime)
+		if err != nil {
+			return sqlite.EventImportData{}, fmt.Errorf("member %s start_time: %w", m.ID, err)
+		}
+		finishMs, err := parseTimeMs(m.FinishTime)
+		if err != nil {
+			return sqlite.EventImportData{}, fmt.Errorf("member %s finish_time: %w", m.ID, err)
+		}
+		d.Members = append(d.Members, domain.Member{
+			ID: m.ID, EventID: m.EventID, RaceID: m.RaceID, CategoryID: m.CategoryID,
+			Number: m.Number, EPC: m.EPC, RFID: m.RFID,
+			FirstName: m.FirstName, LastName: m.LastName, Gender: m.Gender, DOB: m.DOB,
+			City: m.City, Team: m.Team, Status: domain.MemberStatus(m.Status),
+			StartTimeMs: startMs, FinishTimeMs: finishMs, CleanTime: m.CleanTime,
+		})
+	}
+	for _, l := range export.RfidLogs {
+		disabledAt, err := parseTimeMs(l.DisabledAt)
+		if err != nil {
+			return sqlite.EventImportData{}, fmt.Errorf("rfid_log %s disabled_at: %w", l.ID, err)
+		}
+		d.RfidLogs = append(d.RfidLogs, domain.RfidLog{
+			ID: l.ID, EventID: l.EventID, Status: l.Status, Number: l.Number,
+			TimeMs: l.Time, Ant: l.Ant, EPC: l.EPC, RSSI: l.RSSI, Board: l.Board,
+			DisabledAt: disabledAt,
+		})
+	}
+	return d, nil
 }
 
 // parseTimeMs accepts RFC 3339 timestamps (with or without fractional

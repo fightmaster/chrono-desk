@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
@@ -11,7 +12,11 @@ import (
 // re-imports overwrite site-owned data in place.
 
 func (s *Store) UpsertLap(ctx context.Context, l domain.Lap) error {
-	_, err := s.db.ExecContext(ctx, `
+	return upsertLap(ctx, s.db, l)
+}
+
+func upsertLap(ctx context.Context, ex execer, l domain.Lap) error {
+	_, err := ex.ExecContext(ctx, `
 		INSERT INTO laps (id, name, slug, description) VALUES (?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, slug=excluded.slug, description=excluded.description`,
 		l.ID, l.Name, l.Slug, l.Description)
@@ -22,7 +27,11 @@ func (s *Store) UpsertLap(ctx context.Context, l domain.Lap) error {
 }
 
 func (s *Store) UpsertRace(ctx context.Context, r domain.Race) error {
-	_, err := s.db.ExecContext(ctx, `
+	return upsertRace(ctx, s.db, r)
+}
+
+func upsertRace(ctx context.Context, ex execer, r domain.Race) error {
+	_, err := ex.ExecContext(ctx, `
 		INSERT INTO races (id, event_id, name, date, started_at_ms, lap_id, format, time_limit_seconds, category_excludes_top_by_gender)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -38,7 +47,11 @@ func (s *Store) UpsertRace(ctx context.Context, r domain.Race) error {
 }
 
 func (s *Store) UpsertCategory(ctx context.Context, c domain.Category) error {
-	_, err := s.db.ExecContext(ctx, `
+	return upsertCategory(ctx, s.db, c)
+}
+
+func upsertCategory(ctx context.Context, ex execer, c domain.Category) error {
+	_, err := ex.ExecContext(ctx, `
 		INSERT INTO categories (id, name, min, max, gender) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, min=excluded.min, max=excluded.max, gender=excluded.gender`,
 		c.ID, c.Name, c.Min, c.Max, c.Gender)
@@ -49,7 +62,11 @@ func (s *Store) UpsertCategory(ctx context.Context, c domain.Category) error {
 }
 
 func (s *Store) UpsertCheckpoint(ctx context.Context, cp domain.Checkpoint) error {
-	_, err := s.db.ExecContext(ctx, `
+	return upsertCheckpoint(ctx, s.db, cp)
+}
+
+func upsertCheckpoint(ctx context.Context, ex execer, cp domain.Checkpoint) error {
+	_, err := ex.ExecContext(ctx, `
 		INSERT INTO checkpoints (id, event_id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -126,7 +143,11 @@ func (s *Store) ShiftMemberStarts(ctx context.Context, raceID string, deltaMs in
 }
 
 func (s *Store) UpsertMember(ctx context.Context, m domain.Member) error {
-	_, err := s.db.ExecContext(ctx, `
+	return upsertMember(ctx, s.db, m)
+}
+
+func upsertMember(ctx context.Context, ex execer, m domain.Member) error {
+	_, err := ex.ExecContext(ctx, `
 		INSERT INTO members (id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
 			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -145,9 +166,15 @@ func (s *Store) UpsertMember(ctx context.Context, m domain.Member) error {
 	return nil
 }
 
-// UpsertRfidLogs is the event-import variant: unlike InsertRfidLogs it also
+// rfidLogUpsertSQL is the event-import variant: unlike InsertRfidLogs it also
 // refreshes disabled_at on existing rows, so a re-export that disables a log
 // (run5 ADR-0007) takes effect on the next recount.
+const rfidLogUpsertSQL = `
+	INSERT INTO rfid_logs (id, event_id, status, number, time_ms, ant, epc, rssi, board, disabled_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(id) DO UPDATE SET disabled_at=excluded.disabled_at`
+
+// UpsertRfidLogs upserts logs in their own transaction (standalone callers).
 func (s *Store) UpsertRfidLogs(ctx context.Context, logs []domain.RfidLog) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -155,10 +182,16 @@ func (s *Store) UpsertRfidLogs(ctx context.Context, logs []domain.RfidLog) error
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after commit
 
-	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO rfid_logs (id, event_id, status, number, time_ms, ant, epc, rssi, board, disabled_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET disabled_at=excluded.disabled_at`)
+	if err := upsertRfidLogs(ctx, tx, logs); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// upsertRfidLogs upserts every log on ex (a tx), using a prepared statement so
+// a full event's worth of logs (thousands) stays fast.
+func upsertRfidLogs(ctx context.Context, tx *sql.Tx, logs []domain.RfidLog) error {
+	stmt, err := tx.PrepareContext(ctx, rfidLogUpsertSQL)
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
 	}
@@ -169,6 +202,64 @@ func (s *Store) UpsertRfidLogs(ctx context.Context, logs []domain.RfidLog) error
 			l.ID, l.EventID, l.Status, l.Number, l.TimeMs, l.Ant, l.EPC, l.RSSI, l.Board, l.DisabledAt); err != nil {
 			return fmt.Errorf("upsert rfid_log %s: %w", l.ID, err)
 		}
+	}
+	return nil
+}
+
+// EventImportData is a fully-parsed event export, ready to apply atomically.
+type EventImportData struct {
+	Event       domain.Event
+	Laps        []domain.Lap
+	Races       []domain.Race
+	Categories  []domain.Category
+	Checkpoints []domain.Checkpoint
+	Members     []domain.Member
+	RfidLogs    []domain.RfidLog
+}
+
+// ApplyEventImport writes a parsed export in a single transaction: either every
+// site entity lands or none do, so a malformed or internally-inconsistent
+// export can never leave a half-updated .chrono before a race. Parents are
+// written before children (event → laps → races → categories → checkpoints →
+// members → logs) to satisfy foreign keys. The local-edits replay runs after
+// this commits (it touches only the now-consistent imported rows).
+func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin import: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+
+	if err := upsertEvent(ctx, tx, d.Event); err != nil {
+		return err
+	}
+	for _, l := range d.Laps {
+		if err := upsertLap(ctx, tx, l); err != nil {
+			return err
+		}
+	}
+	for _, r := range d.Races {
+		if err := upsertRace(ctx, tx, r); err != nil {
+			return err
+		}
+	}
+	for _, c := range d.Categories {
+		if err := upsertCategory(ctx, tx, c); err != nil {
+			return err
+		}
+	}
+	for _, cp := range d.Checkpoints {
+		if err := upsertCheckpoint(ctx, tx, cp); err != nil {
+			return err
+		}
+	}
+	for _, m := range d.Members {
+		if err := upsertMember(ctx, tx, m); err != nil {
+			return err
+		}
+	}
+	if err := upsertRfidLogs(ctx, tx, d.RfidLogs); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

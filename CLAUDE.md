@@ -108,6 +108,12 @@ RaceTorchApp) → `internal/service` (import/recount/ranking/excel) →
   (run5 ADR-0007).
 - Times are unix milliseconds internally; Feibot flash CSV is zoneless local time —
   imports require an explicit timezone.
+- **Atomic import**: the event importer parses the whole export into memory first
+  (`buildImportData`), then writes it in one transaction (`Store.ApplyEventImport`) —
+  a malformed/inconsistent export can never leave a half-updated `.chrono`. Entity
+  upserts share their SQL via the `execer` interface (the pool is capped at one
+  connection, so the import must route every write through its own tx). The
+  local-edits replay runs after that commit.
 
 ## Sibling projects (read before reinventing)
 

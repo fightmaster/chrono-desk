@@ -32,8 +32,22 @@ func New(db *sql.DB) (*Store, error) {
 // DB exposes the underlying handle for transaction composition.
 func (s *Store) DB() *sql.DB { return s.db }
 
+// execer is satisfied by both *sql.DB and *sql.Tx, so the upsert helpers below
+// run either standalone or inside the single import transaction
+// (ApplyEventImport). The connection pool is capped at one (open.go), so an
+// open tx and a parallel s.db call would deadlock — the import must route every
+// write through its tx, which this interface makes possible without duplicating
+// the upsert SQL.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 func (s *Store) UpsertEvent(ctx context.Context, e domain.Event) error {
-	_, err := s.db.ExecContext(ctx, `
+	return upsertEvent(ctx, s.db, e)
+}
+
+func upsertEvent(ctx context.Context, ex execer, e domain.Event) error {
+	_, err := ex.ExecContext(ctx, `
 		INSERT INTO events (id, name, slug, date, timezone) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, slug=excluded.slug, date=excluded.date, timezone=excluded.timezone`,
 		e.ID, e.Name, e.Slug, e.Date, e.Timezone)
