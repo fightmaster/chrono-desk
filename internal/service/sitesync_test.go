@@ -228,6 +228,54 @@ func TestBuildSyncPayloadNewMembersFromTable(t *testing.T) {
 	}
 }
 
+// A race-start shift must reach the site as member_edits (start_time_ms) for
+// every member it moved, so the corrected start lands on run5 (applied there
+// only on an overwrite push). This is the chrono-desk half of "did it sync".
+func TestRaceStartShiftSyncsMemberEdits(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+
+	const oldStart, delta = int64(1780812000000), int64(120000)
+	if _, err := store.DB().ExecContext(ctx,
+		`UPDATE members SET start_time_ms = ? WHERE id = 'mem-1'`, oldStart); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(ctx,
+		`UPDATE members SET start_time_ms = ? WHERE id = 'mem-2'`, oldStart+30000); err != nil {
+		t.Fatal(err)
+	}
+	mustEdit(t, store, EditRequest{Entity: "race", EntityID: "race-10k", Field: "started_at_ms",
+		Value: json.RawMessage(`1780812120000`)}) // oldStart + delta
+
+	data, _, err := BuildSyncPayload(ctx, store, "ev-100", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p syncPayload
+	if err := json.Unmarshal(data, &p); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"mem-1": "1780812120000",
+		"mem-2": "1780812150000",
+	}
+	got := map[string]string{}
+	for _, me := range p.MemberEdits {
+		if me.MemberRef.MemberID == nil {
+			continue
+		}
+		if v, ok := me.Fields["start_time_ms"]; ok {
+			got[*me.MemberRef.MemberID] = string(v)
+		}
+	}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("member_edits[%s].start_time_ms = %q, want %q (shifted by +%d)", id, got[id], w, delta)
+		}
+	}
+}
+
 func mustEdit(t *testing.T, store *sqlite.Store, req EditRequest) {
 	t.Helper()
 	if _, err := ApplyEdit(context.Background(), store, req); err != nil {

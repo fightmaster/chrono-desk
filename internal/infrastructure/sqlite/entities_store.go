@@ -64,6 +64,67 @@ func (s *Store) UpsertCheckpoint(ctx context.Context, cp domain.Checkpoint) erro
 	return nil
 }
 
+// MemberStartShift records one member whose start moved by the race-start
+// delta, with both values so the service can journal the diff.
+type MemberStartShift struct {
+	MemberID   string
+	OldStartMs int64
+	NewStartMs int64
+}
+
+// ShiftMemberStarts moves every member of the race that has a start by deltaMs
+// (the race start moved later/earlier, so the whole field follows). A relative
+// shift preserves the gaps of a staggered start (раздельный старт каждые 30 с),
+// unlike snapping everyone to one time. NULL starts are left alone — they
+// re-derive to the current race start on the next recount. Returns the affected
+// members with old/new for journaling.
+func (s *Store) ShiftMemberStarts(ctx context.Context, raceID string, deltaMs int64) ([]MemberStartShift, error) {
+	if deltaMs == 0 {
+		return nil, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin shift starts: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id, start_time_ms FROM members
+		 WHERE race_id = ? AND start_time_ms IS NOT NULL
+		 ORDER BY id`, raceID)
+	if err != nil {
+		return nil, fmt.Errorf("list members with start: %w", err)
+	}
+	var shifts []MemberStartShift
+	for rows.Next() {
+		var sh MemberStartShift
+		if err := rows.Scan(&sh.MemberID, &sh.OldStartMs); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		sh.NewStartMs = sh.OldStartMs + deltaMs
+		shifts = append(shifts, sh)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	if len(shifts) > 0 {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE members SET start_time_ms = start_time_ms + ?
+			 WHERE race_id = ? AND start_time_ms IS NOT NULL`,
+			deltaMs, raceID); err != nil {
+			return nil, fmt.Errorf("shift member starts: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit shift starts: %w", err)
+	}
+	return shifts, nil
+}
+
 func (s *Store) UpsertMember(ctx context.Context, m domain.Member) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO members (id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,

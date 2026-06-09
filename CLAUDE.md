@@ -22,7 +22,18 @@ engine is golden-tested against a real production event (8474 logs) byte-for-byt
 Offline edits (delayed start, checkpoint tuning, judge mode: passes view / log disable /
 statuses / manual starts, birth-date `dob` edit) are journaled in `local_changes`;
 **conflict policy: local edits win** — re-imports replay the journal on top
-(`ReapplyLocalEdits`). On-site registration (`CreateMember`) requires a birth date
+(`ReapplyLocalEdits`). **Delayed/advanced start**: editing `race.started_at_ms`
+shifts every member of that race by the same delta (`ShiftMemberStarts`, using the old
+start returned by `UpdateEntityField`), journaling each as a `member.start_time_ms` diff
+— so a mass start follows and a **staggered start keeps its 30s gaps** (relative shift,
+not snapping everyone to one time). The diffs sync to run5 as `member_edits`
+(`start_time_ms`→`start_time`), where they apply **only on an overwrite push** and the
+finalize recount keeps the non-null start. This is a deliberate deviation from run5's
+`RecountRfid` (which only resets `finish_time`/`clean_time`, so the recount alone would
+leave the stale backfilled start — the backfill in `UpdateMemberTimes` only fires on a
+NULL start). NULL starts are left alone (they re-derive to the current race start on
+recount); a member with a START read keeps the read time (the recount re-derives it). A
+future per-event toggle may guard events with assigned individual starts. On-site registration (`CreateMember`) requires a birth date
 (`dob`, ISO `YYYY-MM-DD`) — run5 parity; imported members keep whatever the export carried.
 CSV flash import is a two-step UI (pick file → set reader code + pick timezone from the
 Russian-zone selectbox → «Загрузить») and shows the `FeibotImportResult` report
