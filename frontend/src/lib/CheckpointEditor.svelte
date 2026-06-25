@@ -4,6 +4,7 @@
 
   export let eventId
   export let raceId
+  export let reloadToken = 0
 
   const dispatch = createEventDispatcher()
   const typeNames = {1: 'Старт', 2: 'КП', 3: 'Финиш'}
@@ -16,7 +17,7 @@
     checkpoints = all.filter(c => c.race_id === raceId)
   }
 
-  $: eventId && raceId && load()
+  $: eventId && raceId && reloadToken >= 0 && load()
 
   async function save(cp, field, value) {
     error = ''
@@ -26,7 +27,7 @@
       dispatch('changed', {recount: res.recount_needed})
     } catch (e) {
       error = `${cp.name}: ${e.message}`
-      await load() // вернуть прежнее значение в форму
+      await load()
     }
   }
 
@@ -43,7 +44,10 @@
   }
 
   let adding = false
-  let nf = {name: '', type: 2, sort: '', board: '', since_offset_seconds: '', sleep_after_prev_seconds: ''}
+  let nf = blank()
+  function blank() {
+    return {name: '', type: 2, sort: '', board: '', since_offset_seconds: '', sleep_after_prev_seconds: ''}
+  }
 
   async function addCheckpoint() {
     error = ''
@@ -58,7 +62,7 @@
         sleep_after_prev_seconds: numOrNull(nf.sleep_after_prev_seconds),
       }))
       adding = false
-      nf = {name: '', type: 2, sort: '', board: '', since_offset_seconds: '', sleep_after_prev_seconds: ''}
+      nf = blank()
       await load()
       dispatch('changed', {recount: res.recount_needed})
     } catch (e) {
@@ -73,77 +77,99 @@
   }
 </script>
 
-<details class="cps">
-  <summary>Чекпоинты ({checkpoints.length})</summary>
-  {#if error}<p class="error">{error}</p>{/if}
-  <table>
-    <thead>
-    <tr>
-      <th>Чекпоинт</th><th>Тип</th><th>Sort</th><th>Считыватель</th>
-      <th>Активен с</th><th>Офсет от старта, с</th><th>Сон после отсечки, с</th><th></th>
-    </tr>
-    </thead>
-    <tbody>
-    {#each checkpoints as cp (cp.id)}
-      <tr>
-        <td>{cp.name}</td>
-        <td>{typeNames[cp.type] ?? cp.type}</td>
-        <td><input class="num" type="number" value={cp.sort}
-                   on:change={e => save(cp, 'sort', numOrNull(e.target.value))}/></td>
-        <td><input class="board" value={cp.board}
-                   on:change={e => save(cp, 'board', e.target.value || null)}/></td>
-        <td><input type="datetime-local" step="1" value={msToInput(cp.since_ms)}
-                   on:change={e => save(cp, 'since_ms', inputToMs(e.target.value))}/></td>
-        <td><input class="num" type="number" value={cp.since_offset_seconds ?? ''}
-                   on:change={e => save(cp, 'since_offset_seconds', numOrNull(e.target.value))}/></td>
-        <td><input class="num" type="number" value={cp.sleep_after_prev_seconds ?? ''}
-                   on:change={e => save(cp, 'sleep_after_prev_seconds', numOrNull(e.target.value))}/></td>
-        <td><button class="del" title="Удалить чекпоинт" on:click={() => removeCheckpoint(cp)}>✕</button></td>
-      </tr>
-    {/each}
-    {#if adding}
-      <tr class="newrow">
-        <td><input bind:value={nf.name} placeholder="Название"/></td>
-        <td>
-          <select bind:value={nf.type}>
-            <option value={1}>Старт</option>
-            <option value={2}>КП</option>
-            <option value={3}>Финиш</option>
-          </select>
-        </td>
-        <td><input class="num" type="number" bind:value={nf.sort} placeholder="sort"/></td>
-        <td><input class="board" bind:value={nf.board} placeholder="Feibot:U659"/></td>
-        <td></td>
-        <td><input class="num" type="number" bind:value={nf.since_offset_seconds}/></td>
-        <td><input class="num" type="number" bind:value={nf.sleep_after_prev_seconds}/></td>
-        <td>
-          <button class="add" on:click={addCheckpoint}>✓</button>
-          <button class="del" on:click={() => adding = false}>✕</button>
-        </td>
-      </tr>
-    {/if}
-    </tbody>
-  </table>
-  {#if !adding}
-    <button class="addbtn" on:click={() => adding = true}>+ чекпоинт</button>
+<div class="head">Чекпоинты <span class="faint">({checkpoints.length})</span></div>
+<div class="faint desc">Точки отсечки: считыватель, время активности, офсет от старта и пауза между повторными чтениями.</div>
+{#if error}<p class="error">{error}</p>{/if}
+
+<div class="scroll">
+  <div class="grid head-row">
+    <span>Чекпоинт</span><span>Тип</span><span>Sort</span><span>Считыватель</span>
+    <span>Активен с</span><span>Офсет от старта, с</span><span>Сон после отсечки, с</span><span></span>
+  </div>
+
+  {#each checkpoints as cp (cp.id)}
+    <div class="grid row">
+      <span class="cpname">{cp.name}</span>
+      <select class="input cell type-sel" value={cp.type}
+              on:change={e => save(cp, 'type', Number(e.target.value))}>
+        <option value={1}>Старт</option>
+        <option value={2}>КП</option>
+        <option value={3}>Финиш</option>
+      </select>
+      <input class="cell mono" type="number" value={cp.sort}
+             on:change={e => save(cp, 'sort', numOrNull(e.target.value))}/>
+      <input class="cell mono" value={cp.board}
+             on:change={e => save(cp, 'board', e.target.value || null)}/>
+      <input class="cell mono" type="datetime-local" step="1" value={msToInput(cp.since_ms)}
+             on:change={e => save(cp, 'since_ms', inputToMs(e.target.value))}/>
+      <input class="cell mono" type="number" value={cp.since_offset_seconds ?? ''}
+             on:change={e => save(cp, 'since_offset_seconds', numOrNull(e.target.value))}/>
+      <input class="cell mono" type="number" value={cp.sleep_after_prev_seconds ?? ''}
+             on:change={e => save(cp, 'sleep_after_prev_seconds', numOrNull(e.target.value))}/>
+      <button class="x" title="Удалить чекпоинт" on:click={() => removeCheckpoint(cp)}>✕</button>
+    </div>
+  {/each}
+
+  {#if adding}
+    <div class="grid row">
+      <input class="cell" bind:value={nf.name} placeholder="Название"/>
+      <select class="input cell type-sel" bind:value={nf.type}>
+        <option value={1}>Старт</option>
+        <option value={2}>КП</option>
+        <option value={3}>Финиш</option>
+      </select>
+      <input class="cell mono" type="number" bind:value={nf.sort} placeholder="sort"/>
+      <input class="cell mono" bind:value={nf.board} placeholder="Feibot:U659"/>
+      <span class="cell-na faint">—</span>
+      <input class="cell mono" type="number" bind:value={nf.since_offset_seconds}/>
+      <input class="cell mono" type="number" bind:value={nf.sleep_after_prev_seconds}/>
+      <span class="confirm">
+        <button class="ok" title="Добавить" on:click={addCheckpoint}>✓</button>
+        <button class="x" title="Отмена" on:click={() => { adding = false; nf = blank() }}>✕</button>
+      </span>
+    </div>
+  {:else}
+    <button class="add" on:click={() => adding = true}>+ чекпоинт</button>
   {/if}
-</details>
+</div>
 
 <style>
-  .cps { margin: 1rem 0; }
-  summary { cursor: pointer; color: #9aa5b1; }
-  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-  th, td { padding: 0.25rem 0.4rem; border-bottom: 1px solid #2d3748; text-align: left; font-size: 0.9rem; }
-  input { background: #1a202c; color: inherit; border: 1px solid #4a5568; border-radius: 3px; padding: 0.15rem 0.3rem; }
-  input.num { width: 5.5rem; }
-  input.board { width: 8rem; }
-  .del, .add { background: none; border: none; cursor: pointer; font-size: 0.95rem; }
-  .del { color: #e57373; }
-  .add { color: #81c784; }
-  .addbtn {
-    margin-top: 0.4rem; padding: 0.2rem 0.7rem; border-radius: 4px;
-    border: 1px solid #4a5568; background: #2d3748; color: inherit; cursor: pointer;
+  .head { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .desc { font-size: 13px; margin-bottom: 14px; }
+  .scroll { overflow-x: auto; }
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(150px, 1.4fr) 100px 88px 150px 172px 144px 152px 64px;
+    gap: 12px; align-items: center; min-width: 960px;
   }
-  .newrow td { background: #232b38; }
-  .error { color: #e57373; }
+  .head-row {
+    padding: 0 0 10px; border-bottom: 1px solid var(--border);
+    font-size: 11.5px; font-weight: 700; color: var(--faint);
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .row { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .cpname { font-size: 14.5px; font-weight: 600; }
+  .type { font-size: 14px; color: var(--accent); font-weight: 600; }
+  .cell {
+    width: 100%; font: inherit; font-size: 13px;
+    background: var(--input); border: 1px solid var(--border);
+    border-radius: 7px; padding: 8px 10px; color: var(--text); outline: none;
+  }
+  .cell.mono { font-family: var(--mono); }
+  .type-sel { font-size: 13.5px; font-weight: 600; color: var(--accent); }
+  .cell-na { font-family: var(--mono); font-size: 12.5px; }
+  .x, .ok {
+    background: none; border: none; cursor: pointer;
+    font-size: 16px; font-weight: 700; justify-self: center;
+  }
+  .x { color: var(--bad); }
+  .ok { color: var(--ok); }
+  .confirm { display: flex; gap: 10px; justify-self: center; }
+  .add {
+    display: inline-flex; align-items: center; gap: 7px; margin-top: 14px;
+    cursor: pointer; padding: 9px 15px; border-radius: 9px;
+    border: 1px solid var(--border2); background: var(--surface2);
+    color: var(--text); font: inherit; font-size: 13.5px; font-weight: 600;
+  }
+  .error { color: var(--bad); }
 </style>

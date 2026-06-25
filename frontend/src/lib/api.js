@@ -39,6 +39,35 @@ export function fmtTime(ms) {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(ms % 1000).padStart(3, '0')}`
 }
 
+// Re-apply an edited "HH:MM:SS.mmm" wall-clock string onto the calendar day of
+// a base timestamp. Used by the drawer's manual-finish time field so the judge
+// can correct a captured time without losing the date. Returns null if unparsable.
+export function timeStrToMs(baseMs, str) {
+  const m = String(str).trim().match(/^(\d{1,2}):(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?$/)
+  if (!m) return null
+  const d = new Date(baseMs)
+  d.setHours(Number(m[1]), Number(m[2]), Number(m[3]), m[4] ? Number(m[4].padEnd(3, '0')) : 0)
+  return d.getTime()
+}
+
+// Wall-clock date+time for display, e.g. "07.06.2026, 12:20:00".
+export function fmtDateTime(ms) {
+  if (ms === null || ms === undefined) return '—'
+  const d = new Date(ms)
+  const pad = n => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}, ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+// Shared participant-search predicate (header search + drawer number bind):
+// matches last/first name, number, or EPC against a lowercased query.
+export function memberMatches(m, q) {
+  return (m.last_name && m.last_name.toLowerCase().includes(q)) ||
+    (m.first_name && m.first_name.toLowerCase().includes(q)) ||
+    (m.number !== null && m.number !== undefined && String(m.number).includes(q)) ||
+    (m.epc && m.epc.toLowerCase().includes(q))
+}
+
 // Russian time zones for CSV import (Feibot flash dumps are zoneless local
 // time). Values are IANA names — the backend validates them via time.LoadLocation.
 export const RU_TIMEZONES = [
