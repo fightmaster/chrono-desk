@@ -26,6 +26,11 @@ func New(db *sql.DB) (*Store, error) {
 	if _, err := db.Exec(schemaSQL); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	// Backfill needs the schema applied first (it touches the new pivot table),
+	// so it runs here rather than in migrate().
+	if err := seedRaceCategories(db); err != nil {
+		return nil, err
+	}
 	return &Store{db: db}, nil
 }
 

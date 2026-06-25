@@ -36,6 +36,20 @@ CREATE TABLE IF NOT EXISTS categories (
     gender TEXT
 );
 
+-- Which categories are attached to which race (run5's category_race pivot).
+-- The catalog (categories) is event-global; this table is what scopes the
+-- "available for assignment" set per distance. Without it, the attached set
+-- could only be inferred from member.category_id, which cannot represent a
+-- category attached to a race but not yet assigned to anyone. Local
+-- attach/detach is journaled (entity "race_category") and syncs back to run5.
+CREATE TABLE IF NOT EXISTS race_categories (
+    race_id     TEXT NOT NULL REFERENCES races(id),
+    category_id TEXT NOT NULL REFERENCES categories(id),
+    PRIMARY KEY (race_id, category_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_race_categories_race ON race_categories(race_id);
+
 CREATE TABLE IF NOT EXISTS checkpoints (
     id                       TEXT PRIMARY KEY,
     event_id                 TEXT NOT NULL REFERENCES events(id),
@@ -121,6 +135,19 @@ CREATE TABLE IF NOT EXISTS local_changes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_local_changes_entity ON local_changes(entity, entity_id);
+
+-- «Зафиксировать время»: wall-clock finishes the judge captured before a
+-- participant number is known. They persist here so a restart doesn't lose
+-- them (the bug: they used to live only in frontend state). Binding a number
+-- turns one into a manual result via the existing manual-finish path (which is
+-- journaled and synced) and the capture row is deleted. Unbound captures have
+-- no run5 representation, so they are intentionally local-only (not journaled).
+CREATE TABLE IF NOT EXISTS pending_captures (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   TEXT NOT NULL REFERENCES events(id),
+    time_ms    INTEGER NOT NULL,
+    created_at INTEGER NOT NULL -- unix ms
+);
 
 -- Per-event sync target for pushing/pulling to the run5 site (v0.3). One row
 -- (the event's own id). The token authorizes the run5 sync endpoint; it never

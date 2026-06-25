@@ -22,7 +22,7 @@ const syncSchemaVersion = 1
 var (
 	syncMemberFields     = set("status", "number", "epc", "category_id", "first_name", "last_name", "gender", "dob", "team", "city", "start_time_ms", "race_id")
 	syncRaceFields       = set("started_at_ms", "name", "category_excludes_top_by_gender")
-	syncCheckpointFields = set("since_ms", "since_offset_seconds", "sleep_after_prev_seconds", "board", "sort")
+	syncCheckpointFields = set("since_ms", "since_offset_seconds", "sleep_after_prev_seconds", "board", "sort", "type")
 )
 
 type syncMemberRef struct {
@@ -108,6 +108,11 @@ type syncPayload struct {
 	DeletedManualResults []syncManualResult     `json:"deleted_manual_results"`
 	CheckpointCreates    []syncCheckpointCreate `json:"checkpoint_creates"`
 	CheckpointDeletes    []string               `json:"checkpoint_deletes"`
+	// Per-race category attachments (run5's category_race pivot). Attaches are
+	// the desired-state from the live pivot (idempotent syncWithoutDetaching on
+	// run5); detaches come from the journal (overwrite-gated detach on run5).
+	CategoryAttaches []categoryRacePair `json:"category_attaches"`
+	CategoryDetaches []categoryRacePair `json:"category_detaches"`
 }
 
 // SyncSummary is the count of what the payload carries (shown in the UI).
@@ -119,6 +124,8 @@ type SyncSummary struct {
 	CheckpointCreates int `json:"checkpoint_creates"`
 	CheckpointEdits   int `json:"checkpoint_edits"`
 	RaceEdits         int `json:"race_edits"`
+	CategoryAttaches  int `json:"category_attaches"`
+	CategoryDetaches  int `json:"category_detaches"`
 }
 
 // BuildSyncPayload assembles the deterministic JSON push payload for an event.
@@ -128,6 +135,7 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 		RfidLogs: []syncRfidLog{}, NewMembers: []syncNewMember{}, MemberEdits: []syncMemberEdit{},
 		ManualResults: []syncManualResult{}, CheckpointEdits: []syncCheckpointEdit{}, RaceEdits: []syncRaceEdit{},
 		DeletedManualResults: []syncManualResult{}, CheckpointCreates: []syncCheckpointCreate{}, CheckpointDeletes: []string{},
+		CategoryAttaches: []categoryRacePair{}, CategoryDetaches: []categoryRacePair{},
 	}
 
 	// Full member records: used for member_ref resolution AND to emit offline
@@ -203,6 +211,8 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	raceEdits := map[string]map[string]json.RawMessage{}
 	cpEdits := map[string]map[string]json.RawMessage{}
 	cpDeleted := map[string]bool{}
+	catAttached := map[string]categoryRacePair{}
+	catDetached := map[string]categoryRacePair{}
 	for _, c := range changes {
 		switch {
 		case c.Entity == "member" && c.Field == "_manual_finish_deleted":
@@ -224,6 +234,16 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 			putEdit(raceEdits, c.EntityID, c.Field, c.NewValue)
 		case c.Entity == "checkpoint" && c.Field == "_deleted":
 			cpDeleted[c.EntityID] = true
+		case c.Entity == "race_category" && c.Field == "_attached":
+			var pr categoryRacePair
+			if json.Unmarshal([]byte(c.NewValue), &pr) == nil && pr.RaceID != "" && pr.CategoryID != "" {
+				catAttached[pr.RaceID+"\x00"+pr.CategoryID] = pr
+			}
+		case c.Entity == "race_category" && c.Field == "_detached":
+			var pr categoryRacePair
+			if json.Unmarshal([]byte(c.NewValue), &pr) == nil && pr.RaceID != "" && pr.CategoryID != "" {
+				catDetached[pr.RaceID+"\x00"+pr.CategoryID] = pr
+			}
 		// Field edits only for SITE checkpoints; local- ones are sent in full as
 		// checkpoint_creates (below), so an edit to them would be unresolvable.
 		case c.Entity == "checkpoint" && syncCheckpointFields[c.Field] && !strings.HasPrefix(c.EntityID, "local-"):
@@ -257,6 +277,38 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 		p.CheckpointDeletes = append(p.CheckpointDeletes, id)
 	}
 
+	// category_attaches: LOCAL additions only — journaled _attached pairs that
+	// are still present in the live pivot. We deliberately do NOT push the whole
+	// pivot: the imported baseline already exists on the site, and re-sending it
+	// would let a non-overwrite (additive) push resurrect a link the site removed
+	// after our export — run5 applies attaches via syncWithoutDetaching, ungated
+	// by overwrite, which cuts against "site is source of truth". Only genuine
+	// local edits sync back, exactly like member_edits.
+	pivot, err := store.ListCategoryRaces(ctx, eventID)
+	if err != nil {
+		return nil, SyncSummary{}, err
+	}
+	attached := make(map[string]bool, len(pivot))
+	for _, cr := range pivot {
+		attached[cr.RaceID+"\x00"+cr.CategoryID] = true
+	}
+	for _, key := range sortedPairKeys(catAttached) {
+		pr := catAttached[key]
+		if !attached[pr.RaceID+"\x00"+pr.CategoryID] {
+			continue // attached then detached locally — nothing left to add
+		}
+		p.CategoryAttaches = append(p.CategoryAttaches, pr)
+	}
+	// category_detaches: journaled detaches whose pair is no longer attached (a
+	// re-attach would already ship in category_attaches).
+	for _, key := range sortedPairKeys(catDetached) {
+		pr := catDetached[key]
+		if attached[pr.RaceID+"\x00"+pr.CategoryID] {
+			continue
+		}
+		p.CategoryDetaches = append(p.CategoryDetaches, pr)
+	}
+
 	for _, id := range sortedKeys(memberEdits) {
 		p.MemberEdits = append(p.MemberEdits, syncMemberEdit{MemberRef: ref(id), Fields: memberEdits[id]})
 	}
@@ -275,6 +327,7 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 		RfidLogs: len(p.RfidLogs), NewMembers: len(p.NewMembers), MemberEdits: len(p.MemberEdits),
 		ManualResults: len(p.ManualResults), CheckpointCreates: len(p.CheckpointCreates),
 		CheckpointEdits: len(p.CheckpointEdits), RaceEdits: len(p.RaceEdits),
+		CategoryAttaches: len(p.CategoryAttaches), CategoryDetaches: len(p.CategoryDetaches),
 	}
 	return data, summary, nil
 }
@@ -296,6 +349,15 @@ func sortedKeys(m map[string]map[string]json.RawMessage) []string {
 }
 
 func sortedBoolKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedPairKeys(m map[string]categoryRacePair) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

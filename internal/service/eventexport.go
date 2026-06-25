@@ -10,13 +10,14 @@ import (
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
-// BuildEventExport renders the event back into the schema_version 1 contract
+// BuildEventExport renders the event back into the schema_version 2 contract
 // (docs/event-export-format.md) — the JSON backup. The current local state is
 // exported as-is: edited start times, judge-disabled logs, locally created
-// members/checkpoints all carry over, so importing the file into another
-// chrono-desk plus a recount reproduces the protocol exactly. Derived data
-// (results, member_results) is intentionally absent — recountable; for a
-// byte-perfect copy including the edit journal use the .chrono snapshot.
+// members/checkpoints, the full category catalog and the race↔category pivot
+// all carry over, so importing the file into another chrono-desk plus a recount
+// reproduces the protocol exactly. Derived data (results, member_results) is
+// intentionally absent — recountable; for a byte-perfect copy including the
+// edit journal use the .chrono snapshot.
 func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) ([]byte, string, error) {
 	event, err := store.GetEvent(ctx, eventID)
 	if err != nil {
@@ -24,18 +25,19 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 	}
 
 	export := EventExport{
-		SchemaVersion: 1,
+		SchemaVersion: 2,
 		ExportedAt:    time.Now().UTC().Format(time.RFC3339),
 		Timezone:      event.Timezone,
 		Event: exportEvent{
 			ID: event.ID, Name: event.Name, Slug: event.Slug, Date: event.Date,
 		},
-		Laps:        []exportLap{},
-		Races:       []exportRace{},
-		Categories:  []exportCategory{},
-		Checkpoints: []exportCheckpoint{},
-		Members:     []exportMember{},
-		RfidLogs:    []exportRfidLog{},
+		Laps:          []exportLap{},
+		Races:         []exportRace{},
+		Categories:    []exportCategory{},
+		CategoryRaces: []exportCategoryRace{},
+		Checkpoints:   []exportCheckpoint{},
+		Members:       []exportMember{},
+		RfidLogs:      []exportRfidLog{},
 	}
 
 	laps, err := store.ListLaps(ctx)
@@ -64,6 +66,14 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 	}
 	for _, c := range categories {
 		export.Categories = append(export.Categories, exportCategory(c))
+	}
+
+	pivot, err := store.ListCategoryRaces(ctx, eventID)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, cr := range pivot {
+		export.CategoryRaces = append(export.CategoryRaces, exportCategoryRace(cr))
 	}
 
 	checkpoints, err := store.ListCheckpointsFullByEvent(ctx, eventID)

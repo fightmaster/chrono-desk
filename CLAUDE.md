@@ -20,7 +20,8 @@ parity notes in `docs/ranking.md`. Excel export mirrors run5's column layout. Th
 engine is golden-tested against a real production event (8474 logs) byte-for-byte —
 `internal/service/golden_test.go` explains how to regenerate fixtures (anonymize PII!).
 Offline edits (delayed start, checkpoint tuning, judge mode: passes view / log disable /
-statuses / manual starts, birth-date `dob` edit) are journaled in `local_changes`;
+statuses / manual starts, birth-date `dob` edit, per-race category attach/detach) are
+journaled in `local_changes`;
 **conflict policy: local edits win** — re-imports replay the journal on top
 (`ReapplyLocalEdits`). **Delayed/advanced start**: editing `race.started_at_ms`
 shifts every member of that race by the same delta (`ShiftMemberStarts`, using the old

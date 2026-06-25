@@ -43,6 +43,9 @@ var editWhitelist = map[string]map[string]editableField{
 		"sleep_after_prev_seconds": {table: "checkpoints", kind: kindInt, recountNeeded: true},
 		"board":                    {table: "checkpoints", kind: kindText, recountNeeded: true},
 		"sort":                     {table: "checkpoints", kind: kindInt, recountNeeded: true},
+		// 1=START/2=CHECKPOINT/3=FINISH. Editable so a mistyped checkpoint can be
+		// fixed without delete+recreate; changes derivation, so recount.
+		"type": {table: "checkpoints", kind: kindInt, recountNeeded: true},
 	},
 	"member": {
 		"status":        {table: "members", kind: kindInt}, // ranking-only
@@ -179,6 +182,25 @@ func ReapplyLocalEdits(ctx context.Context, store *sqlite.Store) (applied int, e
 			// Re-imports resurrect site checkpoints; re-delete what the judge
 			// removed (idempotent — no-op when already absent).
 			if err := store.DeleteCheckpointCascade(ctx, c.EntityID); err == nil {
+				applied++
+			}
+			continue
+		}
+		if c.Entity == "race_category" && (c.Field == "_attached" || c.Field == "_detached") {
+			// The import replaced the event's pivot with the site's; replay the
+			// judge's attach/detach on top (local wins). Processed oldest→newest,
+			// so the last action for a pair wins. Both are idempotent.
+			var p categoryRacePair
+			if json.Unmarshal([]byte(c.NewValue), &p) != nil || p.RaceID == "" || p.CategoryID == "" {
+				continue
+			}
+			var e error
+			if c.Field == "_attached" {
+				e = store.AttachRaceCategory(ctx, p.RaceID, p.CategoryID)
+			} else {
+				e = store.DetachRaceCategory(ctx, p.RaceID, p.CategoryID)
+			}
+			if e == nil {
 				applied++
 			}
 			continue

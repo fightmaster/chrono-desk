@@ -39,11 +39,13 @@ func NewEventManager(dataDir string, logger *log.Logger) (*EventManager, error) 
 
 // EventInfo is a list entry for the UI.
 type EventInfo struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Date     string `json:"date"`
-	Timezone string `json:"timezone"`
-	File     string `json:"file"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Date        string `json:"date"`
+	Timezone    string `json:"timezone"`
+	File        string `json:"file"`
+	RaceCount   int    `json:"race_count"`
+	MemberCount int    `json:"member_count"`
 }
 
 var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
@@ -131,8 +133,14 @@ func (m *EventManager) List(ctx context.Context) ([]EventInfo, error) {
 			m.logger.Printf("skip event file %s: %v", e.Name(), err)
 			continue
 		}
+		raceCount, memberCount, err := store.CountRacesAndMembers(ctx)
+		if err != nil {
+			m.logger.Printf("skip event file %s: %v", e.Name(), err)
+			continue
+		}
 		infos = append(infos, EventInfo{
 			ID: event.ID, Name: event.Name, Date: event.Date, Timezone: event.Timezone, File: e.Name(),
+			RaceCount: raceCount, MemberCount: memberCount,
 		})
 	}
 	sort.Slice(infos, func(i, j int) bool { return infos[i].Date > infos[j].Date })

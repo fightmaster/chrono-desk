@@ -8,18 +8,26 @@ a no-op, importing a newer export overwrites site-owned data and triggers a reco
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "exported_at": "2026-06-05T12:00:00+03:00",
   "timezone": "Europe/Moscow",
   "event": {},
   "laps": [],
   "races": [],
   "categories": [],
+  "category_races": [],
   "checkpoints": [],
   "members": [],
   "rfid_logs": []
 }
 ```
+
+**Schema versions.** v1: `categories` carried only the groups referenced by the
+event's members, and there was no `category_races`. v2: `categories` is the **full
+global catalog** (so a judge can attach a not-yet-used group offline), plus a
+`category_races` pivot mapping which categories are attached to which race. The
+importer accepts both; a v1 export (no `category_races`) seeds the pivot from
+`member.category_id` so per-race chips don't regress.
 
 `timezone` — IANA zone of the event; used as the default when importing Feibot
 flash-drive CSV (which carries zoneless local time).
@@ -47,8 +55,18 @@ strings with offset unless noted; `rfid_logs.time` is unix milliseconds.
 
 `id`, `name`, `min`, `max`, `gender`
 
-Protocol grouping derives the category list per race from members (`member.category_id`),
-mirroring run5 `Race::categoriesUsedByMembers()`.
+The **full global catalog** (run5 categories are event-global, attached to races via
+the `category_race` pivot). v1 exports carried only the used subset — see schema
+versions above.
+
+### category_races
+
+`race_id`, `category_id` — run5's `category_race` pivot: which catalog categories are
+attached to each race. This is the set the desktop offers when assigning a participant
+(not the whole catalog). Re-import REPLACES the event's pivot (site is the source of
+truth); local attach/detach edits (`race_category` journal entries) replay on top.
+Protocol grouping still derives from members (`member.category_id`), mirroring run5
+`Race::categoriesUsedByMembers()` — the pivot governs availability, not ranking.
 
 ### checkpoints
 

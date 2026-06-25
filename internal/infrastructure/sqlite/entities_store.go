@@ -215,6 +215,11 @@ type EventImportData struct {
 	Checkpoints []domain.Checkpoint
 	Members     []domain.Member
 	RfidLogs    []domain.RfidLog
+	// CategoryRaces is the race↔category pivot from the export. It REPLACES the
+	// event's pivot (site is the source of truth); local attach/detach edits are
+	// replayed on top afterwards. Nil means the export carried no pivot (a
+	// pre-v2 export) — the importer seeds it from member usage instead.
+	CategoryRaces []CategoryRace
 }
 
 // ApplyEventImport writes a parsed export in a single transaction: either every
@@ -245,6 +250,19 @@ func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) error {
 	}
 	for _, c := range d.Categories {
 		if err := upsertCategory(ctx, tx, c); err != nil {
+			return err
+		}
+	}
+	// Replace the event's race↔category pivot with the export's: the site owns
+	// it, and local attach/detach edits replay on top after the commit. Done
+	// here (after races+categories upsert) so the FK targets exist.
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM race_categories WHERE race_id IN (SELECT id FROM races WHERE event_id = ?)`,
+		d.Event.ID); err != nil {
+		return fmt.Errorf("clear race_categories: %w", err)
+	}
+	for _, cr := range d.CategoryRaces {
+		if err := upsertRaceCategory(ctx, tx, cr.RaceID, cr.CategoryID); err != nil {
 			return err
 		}
 	}

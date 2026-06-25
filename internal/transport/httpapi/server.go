@@ -62,6 +62,9 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("POST /api/events/{id}/members", s.handleCreateMember)
 	mux.HandleFunc("GET /api/events/{id}/members/{memberID}", s.handleGetMember)
 	mux.HandleFunc("GET /api/events/{id}/categories", s.handleListCategories)
+	mux.HandleFunc("GET /api/events/{id}/races/{raceID}/categories", s.handleListRaceCategories)
+	mux.HandleFunc("POST /api/events/{id}/races/{raceID}/categories", s.handleAttachCategory)
+	mux.HandleFunc("DELETE /api/events/{id}/races/{raceID}/categories/{categoryID}", s.handleDetachCategory)
 	mux.HandleFunc("GET /api/events/{id}/members", s.handleListMembers)
 	mux.HandleFunc("POST /api/events/{id}/checkpoints", s.handleCreateCheckpoint)
 	mux.HandleFunc("DELETE /api/events/{id}/checkpoints/{cpID}", s.handleDeleteCheckpoint)
@@ -74,6 +77,9 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("POST /api/events/{id}/members/{memberID}/manual-finish", s.handleManualFinish)
 	mux.HandleFunc("GET /api/events/{id}/manual-results", s.handleListManualResults)
 	mux.HandleFunc("DELETE /api/events/{id}/results/{resultID}", s.handleDeleteManualResult)
+	mux.HandleFunc("POST /api/events/{id}/captures", s.handleCreateCapture)
+	mux.HandleFunc("GET /api/events/{id}/captures", s.handleListCaptures)
+	mux.HandleFunc("DELETE /api/events/{id}/captures/{capID}", s.handleDeleteCapture)
 	mux.HandleFunc("GET /api/events/{id}/sync-config", s.handleGetSyncConfig)
 	mux.HandleFunc("PUT /api/events/{id}/sync-config", s.handleSetSyncConfig)
 	mux.HandleFunc("POST /api/events/{id}/sync", s.handleSyncPush)
@@ -213,6 +219,59 @@ func (s *Server) handleDeleteManualResult(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleCreateCapture(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req struct {
+		TimeMs int64 `json:"time_ms"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		s.fail(w, err)
+		return
+	}
+	id, err := store.CreatePendingCapture(r.Context(), r.PathValue("id"), req.TimeMs)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "time_ms": req.TimeMs})
+}
+
+func (s *Server) handleListCaptures(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	captures, err := store.ListPendingCaptures(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, captures)
+}
+
+func (s *Server) handleDeleteCapture(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var capID int64
+	if _, err := fmt.Sscanf(r.PathValue("capID"), "%d", &capID); err != nil {
+		s.fail(w, fmt.Errorf("некорректный id захвата"))
+		return
+	}
+	if err := store.DeletePendingCapture(r.Context(), r.PathValue("id"), capID); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func cors(next http.Handler) http.Handler {
@@ -488,6 +547,14 @@ func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type categoryJSON struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// handleListCategories returns the full event-global catalog — the source for
+// the "add category to a race" picker. The member-edit dropdown uses the
+// per-race attached set (handleListRaceCategories) instead.
 func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 	store, err := s.events.Open(r.PathValue("id"))
 	if err != nil {
@@ -499,16 +566,67 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	type catJSON struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	}
-	out := make([]catJSON, 0, len(categories))
+	out := make([]categoryJSON, 0, len(categories))
 	for _, c := range categories {
-		out = append(out, catJSON{ID: c.ID, Name: c.Name})
+		out = append(out, categoryJSON{ID: c.ID, Name: c.Name})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	writeJSON(w, http.StatusOK, out)
+}
+
+// handleListRaceCategories returns the categories attached to a race (run5's
+// category_race pivot) — the set offered when assigning a participant.
+func (s *Server) handleListRaceCategories(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	categories, err := store.ListRaceCategories(r.Context(), r.PathValue("raceID"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := make([]categoryJSON, 0, len(categories))
+	for _, c := range categories {
+		out = append(out, categoryJSON{ID: c.ID, Name: c.Name})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleAttachCategory(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req struct {
+		CategoryID string `json:"category_id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		s.fail(w, err)
+		return
+	}
+	res, err := service.AttachCategory(r.Context(), store, r.PathValue("id"), r.PathValue("raceID"), req.CategoryID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleDetachCategory(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	res, err := service.DetachCategory(r.Context(), store, r.PathValue("id"), r.PathValue("raceID"), r.PathValue("categoryID"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {

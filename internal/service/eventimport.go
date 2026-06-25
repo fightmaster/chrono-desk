@@ -16,16 +16,17 @@ import (
 // strings; rfid_logs.time is unix milliseconds.
 
 type EventExport struct {
-	SchemaVersion int                `json:"schema_version"`
-	ExportedAt    string             `json:"exported_at"`
-	Timezone      string             `json:"timezone"`
-	Event         exportEvent        `json:"event"`
-	Laps          []exportLap        `json:"laps"`
-	Races         []exportRace       `json:"races"`
-	Categories    []exportCategory   `json:"categories"`
-	Checkpoints   []exportCheckpoint `json:"checkpoints"`
-	Members       []exportMember     `json:"members"`
-	RfidLogs      []exportRfidLog    `json:"rfid_logs"`
+	SchemaVersion int                  `json:"schema_version"`
+	ExportedAt    string               `json:"exported_at"`
+	Timezone      string               `json:"timezone"`
+	Event         exportEvent          `json:"event"`
+	Laps          []exportLap          `json:"laps"`
+	Races         []exportRace         `json:"races"`
+	Categories    []exportCategory     `json:"categories"`
+	CategoryRaces []exportCategoryRace `json:"category_races"`
+	Checkpoints   []exportCheckpoint   `json:"checkpoints"`
+	Members       []exportMember       `json:"members"`
+	RfidLogs      []exportRfidLog      `json:"rfid_logs"`
 }
 
 type exportEvent struct {
@@ -60,6 +61,11 @@ type exportCategory struct {
 	Min    *int    `json:"min"`
 	Max    *int    `json:"max"`
 	Gender *string `json:"gender"`
+}
+
+type exportCategoryRace struct {
+	RaceID     string `json:"race_id"`
+	CategoryID string `json:"category_id"`
 }
 
 type exportCheckpoint struct {
@@ -147,8 +153,10 @@ func ParseEventExport(r io.Reader) (*EventExport, error) {
 	if err := dec.Decode(&export); err != nil {
 		return nil, fmt.Errorf("parse event export: %w", err)
 	}
-	if export.SchemaVersion != 1 {
-		return nil, fmt.Errorf("unsupported schema_version %d (want 1)", export.SchemaVersion)
+	// v1: categories[] are only those used by members, no category_races pivot.
+	// v2: categories[] is the full global catalog + a category_races pivot.
+	if export.SchemaVersion != 1 && export.SchemaVersion != 2 {
+		return nil, fmt.Errorf("unsupported schema_version %d (want 1 or 2)", export.SchemaVersion)
 	}
 	if export.Event.ID == "" {
 		return nil, fmt.Errorf("event export has no event id")
@@ -261,7 +269,41 @@ func buildImportData(export *EventExport) (sqlite.EventImportData, error) {
 			DisabledAt: disabledAt,
 		})
 	}
+
+	// Race↔category pivot. A v2 export carries it explicitly (the site is the
+	// source of truth). A pre-v2 export (CategoryRaces == nil) has no pivot, so
+	// seed it from member usage — exactly the set the UI used to infer, so the
+	// attached chips don't regress on an old export.
+	if export.CategoryRaces == nil {
+		d.CategoryRaces = seedPivotFromMembers(d.Members)
+	} else {
+		d.CategoryRaces = make([]sqlite.CategoryRace, 0, len(export.CategoryRaces))
+		for _, cr := range export.CategoryRaces {
+			d.CategoryRaces = append(d.CategoryRaces, sqlite.CategoryRace(cr))
+		}
+	}
 	return d, nil
+}
+
+// seedPivotFromMembers derives the race↔category pivot from member.category_id —
+// the fallback for pre-v2 exports that carry no explicit pivot. Mirrors run5's
+// Race::categoriesUsedByMembers (the previous inference) so an old export keeps
+// showing the same per-race category chips.
+func seedPivotFromMembers(members []domain.Member) []sqlite.CategoryRace {
+	seen := map[string]bool{}
+	pivot := make([]sqlite.CategoryRace, 0)
+	for _, m := range members {
+		if m.CategoryID == nil || *m.CategoryID == "" {
+			continue
+		}
+		key := m.RaceID + "\x00" + *m.CategoryID
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		pivot = append(pivot, sqlite.CategoryRace{RaceID: m.RaceID, CategoryID: *m.CategoryID})
+	}
+	return pivot
 }
 
 // parseTimeMs accepts RFC 3339 timestamps (with or without fractional
