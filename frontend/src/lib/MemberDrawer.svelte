@@ -18,21 +18,40 @@
     {value: 3, label: 'DSQ — дисквалифицирован'},
   ]
 
-  const manualMode = !!capture
+  const openedAsCapture = !!capture
+  // Latches true for a manual finish — a fresh capture OR a reopened member that
+  // already has one — and STAYS true through an unbind→reassign so the editor
+  // doesn't vanish mid-flow.
+  let manualMode = openedAsCapture
 
   // Effective member: the known one (normal) or the one bound to the capture.
   let boundMemberId = memberId
   let bound = !!memberId
-  let createdResultId = null // manual result row created when binding (for re-bind)
+  let createdResultId = null // manual result row in play (for time-edit / re-bind)
 
-  // Editable finish time string for the manual form (HH:MM:SS.mmm).
+  // Editable finish time string for the manual form (HH:MM:SS.mmm) plus the date
+  // anchor used to parse it back to absolute ms.
   let timeStr = capture ? fmtTime(capture.time_ms) : ''
+  let timeSeeded = openedAsCapture
+  let baseMs = capture ? capture.time_ms : null
   let bindQuery = ''
 
   let data = null   // passes + derived result
   let member = null // registration fields
   let error = ''
   let onlyHits = true
+
+  // A manual finish already attached to the bound member (reopen case): expose
+  // the same time-edit / reassign controls as a fresh capture. Skipped in
+  // capture mode, where the unbound capture itself is the source of truth.
+  $: existingManual = (!openedAsCapture && data && data.manual_results && data.manual_results.length)
+    ? data.manual_results[0] : null
+  $: if (existingManual) {
+    manualMode = true                       // latch — survives unbind→reassign
+    createdResultId = existingManual.id      // the row to edit/delete
+  }
+  $: if (baseMs === null && existingManual) baseMs = existingManual.time_ms
+  $: if (!timeSeeded && existingManual) { timeStr = fmtTime(existingManual.time_ms); timeSeeded = true }
 
   $: bindMatches = bindQuery.trim()
     ? members.filter(m => memberMatches(m, bindQuery.trim().toLowerCase())).slice(0, 6)
@@ -78,7 +97,7 @@
 
   async function bindNumber(m) {
     error = ''
-    const ms = timeStrToMs(capture.time_ms, timeStr)
+    const ms = timeStrToMs(baseMs, timeStr)
     if (ms === null) { error = 'Время финиша в формате ЧЧ:ММ:СС.ммм'; return }
     try {
       const res = await call('POST', `/api/events/${eventId}/members/${m.id}/manual-finish`,
@@ -95,6 +114,7 @@
   }
 
   // Wrong participant: delete the manual result we created and return to search.
+  // timeStr/baseMs are kept so the next bind re-applies the same finish time.
   async function unbind() {
     error = ''
     try {
@@ -110,12 +130,36 @@
     }
   }
 
+  // Save an edited finish time on an already-stored manual result. InsertManualResult
+  // appends, so editing in place would duplicate — drop the old row, create a fresh
+  // one at the new time. Fires on change of the time field while a result is bound
+  // (both the just-bound capture and a reopened manual finish).
+  async function maybeSaveTime() {
+    if (!bound || !boundMemberId || !createdResultId) return
+    const ms = timeStrToMs(baseMs, timeStr)
+    if (ms === null) { error = 'Время финиша в формате ЧЧ:ММ:СС.ммм'; return }
+    if (existingManual && ms === existingManual.time_ms) return // blurred unchanged — no-op
+    error = ''
+    try {
+      await call('DELETE', `/api/events/${eventId}/results/${createdResultId}`)
+      const res = await call('POST', `/api/events/${eventId}/members/${boundMemberId}/manual-finish`,
+        JSON.stringify({time_ms: ms}))
+      createdResultId = res.result_id
+      dispatch('changed', {recount: true})
+      await load()
+    } catch (e) {
+      error = e.message
+      await load()
+    }
+  }
+
   // Closing finalizes the capture: drop the now-redundant pending capture ONLY
   // when a manual finish is still bound. unbind() leaves the pending capture
   // intact, so picking the wrong participant and closing never loses the time —
-  // the capture stays in the list to be re-bound later.
+  // the capture stays in the list to be re-bound later. Gated on `capture` so a
+  // reopened manual finish (no pending capture) never touches the capture list.
   function closeDrawer() {
-    if (manualMode && bound && createdResultId) dispatch('captureBound', {captureId: capture.id})
+    if (capture && bound && createdResultId) dispatch('captureBound', {captureId: capture.id})
     dispatch('close')
   }
 
@@ -159,7 +203,7 @@
 
       <div class="field time-field">
         <span>Время финиша</span>
-        <input class="input mono" bind:value={timeStr} placeholder="ЧЧ:ММ:СС.ммм"/>
+        <input class="input mono" bind:value={timeStr} placeholder="ЧЧ:ММ:СС.ммм" on:change={maybeSaveTime}/>
       </div>
 
       <div class="field num-field">
@@ -266,7 +310,14 @@
           <span class="mono dim">{p.board}/{p.ant}</span>
           <span class="mono dim">{p.rssi}</span>
           <span class="as">{p.disabled_at ? 'отключено судьёй' : (p.checkpoint_name ?? '—')}</span>
-          <button class="btn small" on:click={() => toggleLog(p)}>{p.disabled_at ? 'Включить' : 'Отключить'}</button>
+          <button class="icon-btn" class:on={!p.disabled_at} on:click={() => toggleLog(p)}
+                  aria-label={p.disabled_at ? 'Включить отсечку' : 'Отключить отсечку'}
+                  title={p.disabled_at ? 'Включить отсечку — снова засчитывать' : 'Отключить отсечку — не засчитывать'}>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3v9"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/>
+            </svg>
+          </button>
         </div>
       {/each}
       {#if !shownPasses.length}
@@ -338,15 +389,21 @@
   .sh-title { font-size: 14px; font-weight: 700; }
   .onlyhits { font-size: 12px; display: flex; align-items: center; gap: 7px; cursor: pointer; }
   .splits { border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
-  .grid { display: grid; grid-template-columns: 130px 1fr 60px 110px 100px; align-items: center; gap: 8px; padding: 10px 14px; }
+  .grid { display: grid; grid-template-columns: 124px 1fr 52px 104px 40px; align-items: center; gap: 8px; padding: 10px 14px; }
   .shead { background: var(--surface2); font-size: 11px; font-weight: 700; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; }
   .srow { border-top: 1px solid var(--border); font-size: 13px; }
   .srow .mono:first-child { font-size: 14px; font-weight: 600; }
   .srow.hit { background: var(--okbg); }
   .srow.hit .as { color: var(--ok); font-weight: 600; }
   .srow.off { color: var(--faint); text-decoration: line-through; }
-  .srow.off .btn { text-decoration: none; }
-  .srow .btn.small { justify-self: end; }
+  .icon-btn {
+    justify-self: end; display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; padding: 0; border: 1px solid var(--border2); border-radius: 8px;
+    background: var(--surface); color: var(--faint); cursor: pointer; text-decoration: none;
+    transition: color .12s, border-color .12s;
+  }
+  .icon-btn.on { color: var(--ok); }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
   .empty { padding: 12px 14px; margin: 0; font-style: italic; }
 
   .footer { display: flex; gap: 10px; margin-top: 22px; }

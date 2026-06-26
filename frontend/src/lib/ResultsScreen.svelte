@@ -89,6 +89,25 @@
     }
   }
 
+  // Stamp the race start with the current system time to the millisecond — the
+  // judge presses this at the gun. Like any start edit it shifts every member by
+  // the same delta and recounts the distance. Date.now() keeps the ms; the
+  // seconds-only field below is for manual correction.
+  function startRaceNow() {
+    saveRaceStartMs(Date.now())
+  }
+  async function saveRaceStartMs(ms) {
+    error = ''
+    try {
+      await call('POST', `/api/events/${eventId}/edits`, JSON.stringify({
+        entity: 'race', entity_id: currentRace.id, field: 'started_at_ms', value: ms,
+      }))
+      dispatch('changed', {recount: true, reloadRaces: true})
+    } catch (err) {
+      error = `Старт гонки: ${err.message}`
+    }
+  }
+
   async function saveTop3(checked) {
     error = ''
     try {
@@ -240,8 +259,16 @@
             <input class="input mono" type="datetime-local" step="1"
                    value={msToInput(currentRace.started_at_ms)}
                    on:change={e => saveRaceStart(e.target.value)}/>
-            <span class="faint">Правка времени старта запускает автопересчёт этой дистанции.</span>
+            <button class="btn primary" on:click={startRaceNow}>⏱ Старт сейчас</button>
+            {#if currentRace.started_at_ms}
+              <span class="faint mono">= {fmtTime(currentRace.started_at_ms)}</span>
+            {/if}
           </div>
+          <p class="faint start-note">
+            Правка времени старта запускает автопересчёт этой дистанции. «Старт сейчас»
+            ставит текущее системное время с миллисекундами и сдвигает старты всех
+            участников на ту же величину.
+          </p>
         </div>
 
         <label class="card check">
@@ -374,6 +401,7 @@
   .dset { display: flex; flex-direction: column; gap: 14px; max-width: 1080px; }
   .start-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
   .start-row .input { font-size: 15px; }
+  .start-note { margin: 10px 0 0; max-width: 640px; line-height: 1.45; }
   .card.check { display: flex; align-items: center; gap: 14px; cursor: pointer; }
   .card.check input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
   .check-text { display: flex; flex-direction: column; gap: 3px; }
