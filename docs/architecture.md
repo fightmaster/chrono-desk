@@ -6,15 +6,21 @@ A multiplatform (macOS primary, Windows, Linux) desktop app that replaces the ru
 in offline zones at competition sites: view results, top-3, print protocols, make
 temporary registration fixes — without internet access.
 
-## Non-goals (v1)
+## Non-goals (v1) — and what shipped since
 
-- Bidirectional sync / conflict resolution. The site is the source of truth; the desktop
-  is a helper. Priority flow: site changes → re-export → re-import → recount.
-- Ranking parity for every run5 race format at once. v1 implements FixedDistance plus
-  both category-ranking strategies; TimeLimited and Run5Stopwatch follow the same spec
-  (see `docs/ranking.md`).
-- Replacing rfid-hub on site. v1 ingests logs from flash-drive CSV only; live TCP ingest
-  arrives in v0.2.
+The site stays the source of truth throughout; these were the deliberate v1 cuts, with
+their current status noted.
+
+- Bidirectional sync / conflict resolution. *(v1 deferred.)* **Shipped in v0.3** as opt-in
+  push-back of local edits, logs and manual finishes to run5 (token-auth, idempotent,
+  overwrite-gated where destructive). The site remains source of truth; conflict policy is
+  **local edits win** — a re-import replays the `local_changes` journal on top
+  (`ReapplyLocalEdits`).
+- Ranking parity for every run5 race format at once. v1 shipped FixedDistance plus both
+  category-ranking strategies; **TimeLimited shipped** as well. Run5Stopwatch is specced
+  (`docs/ranking.md`) but not yet implemented — `BuildProtocol` fails closed on it.
+- Replacing rfid-hub on site. Still a non-goal. But the desktop is no longer flash-CSV
+  only: **live TCP ingest shipped in v0.2**, built on the shared `rfid-core` module.
 
 ## Layers
 
@@ -77,8 +83,13 @@ Feibot reader ──(USB flash CSV)──▶ CSV import (dedup by id) ──▶ 
                        member start/finish/clean times → ranking → UI / Excel
 ```
 
-v0.2 adds: Feibot ──TCP──▶ chrono-desk listener (rfid-hub `internal/tcp` adapters with a
-SQLite `Publisher`) ──▶ rfid_logs → incremental processing → live standings.
+v0.2 (shipped): Feibot ──TCP──▶ chrono-desk listener (`rfid-core` adapters with a SQLite
+`Publisher`) ──▶ rfid_logs → in-process recount → live standings; judges enter manual
+finishes and tune checkpoints on the Live screen.
+
+v0.3 (shipped): chrono-desk ──(sync push/pull, X-SYNC-TOKEN)──▶ run5 — local edits, new
+members, logs and manual finishes sync back; run5 applies them (overwrite-gated where
+destructive). Pull reuses the import path. Site stays the source of truth.
 
 ## Checkpoint semantics (inherited from run5 / rfid-sync)
 

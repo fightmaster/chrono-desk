@@ -129,9 +129,11 @@ RaceTorchApp) → `internal/service` (import/recount/ranking/excel) →
 - `../rfid-sync/internal/syncer/processor/` — **the result-derivation engine this app
   ports** (Repository interface + processor.go + table-driven `processor_flow_test.go`).
   Ranking is NOT there (site-side); chrono-desk implements its own for display.
-- `../rfid-hub/internal/tcp/` + `internal/ingest/` — TCP listeners, Feibot/MyRaceNano/
-  ChronoEvents adapters, `Publisher` interface. Planned for v0.2 live ingest: copy
-  (internal packages aren't importable cross-module), implement a SQLite `Publisher`.
+- `../rfid-core/` — the shared TCP/adapters module chrono-desk uses for live ingest
+  (`replace ../rfid-core` in go.mod). **v0.2 live ingest is built on it** (a SQLite
+  `Publisher`). `../rfid-hub/internal/tcp/` + `internal/ingest/` is the original TCP
+  listener / Feibot–MyRaceNano–ChronoEvents adapter source; it should migrate to
+  rfid-core too.
 - `~/projects/run5` — Laravel site; data model in `app/Models`, derivation reference in
   `app/Services/PushResult.php` + `RecountRfid.php`, protocol columns in
   `RaceResultsExportRowBuilder`. **The ranking system is ported from here** (format
@@ -144,8 +146,12 @@ RaceTorchApp) → `internal/service` (import/recount/ranking/excel) →
 ## Conventions
 
 - English code/comments/docs; Russian UI strings (run5 convention).
-- Behavior/config/API/schema changes update the matching docs (`README.md`, `docs/*`)
-  in the same change.
+- **Docs are always kept current.** Any behavior/config/API/schema/UI change updates the
+  matching docs in the SAME change — `README.md`, `docs/*`, and the judge guide
+  (`docs/judge-guide.html`). Never leave a doc describing an older state; if a change makes
+  a doc stale, fix the doc as part of that change.
 - Golden tests are the safety net for the recount engine: real exported events in
   `testdata/` with reference results; Go recount must reproduce them exactly.
-- Small focused commits, imperative summaries (`Add Feibot CSV importer`).
+- Small focused commits, imperative summaries (`Add Feibot CSV importer`). **No AI/assistant
+  attribution** in commit messages or PR bodies — no `Co-Authored-By` trailers, no
+  "Generated with …" lines, no mention of AI tooling.
