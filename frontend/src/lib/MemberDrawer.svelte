@@ -28,7 +28,8 @@
   let boundMemberId = memberId
   let bound = !!memberId
   let createdResultId = null // effective manual row in play (for time-edit / re-bind)
-  let reassignId = null      // the ONE original row to drop once a reassignment binds
+  let reassignId = null      // the ONE original row to drop on reassign / detach
+  let reassignTimeMs = null  // its finish time — floated back as a capture if detached
 
   // Editable finish time string for the manual form (HH:MM:SS.mmm) plus the date
   // anchor used to parse it back to absolute ms.
@@ -112,6 +113,7 @@
       if (reassignId) {
         try { await call('DELETE', `/api/events/${eventId}/results/${reassignId}`) } catch (_) { /* best-effort */ }
         reassignId = null
+        reassignTimeMs = null
       }
       createdResultId = res.result_id
       boundMemberId = m.id
@@ -124,13 +126,14 @@
     }
   }
 
-  // "Изменить номер": return to search. timeStr/baseMs are kept so the next bind
-  // re-applies the same finish time.
+  // "Изменить номер": detach the current number and return to search; timeStr/baseMs
+  // are kept so the next bind re-applies the same finish time.
   //   • Capture mode — the pending capture is the safety net, so drop the (wrong)
   //     result we just created right now.
-  //   • Reopen mode — the manual rows are the ONLY record of this finish, so do
-  //     NOT delete: remember them and drop them only once a replacement binds
-  //     (bindNumber), so closing/cancelling mid-reassign preserves the original.
+  //   • Reopen mode — defer: remember the row and its time. Bind a new number →
+  //     the row moves there (bindNumber). Close WITHOUT a new number → closeDrawer
+  //     detaches the participant and floats the time back as an unassigned pending
+  //     capture (number removed, time kept).
   async function unbind() {
     error = ''
     if (openedAsCapture) {
@@ -142,7 +145,8 @@
       }
       dispatch('changed', {recount: true})
     } else {
-      reassignId = createdResultId // the current row only; dropped once a replacement binds
+      reassignId = createdResultId
+      reassignTimeMs = existingManual ? existingManual.time_ms : baseMs // capture before data clears
     }
     createdResultId = null
     boundMemberId = null
@@ -176,13 +180,24 @@
     }
   }
 
-  // Closing finalizes the capture: drop the now-redundant pending capture ONLY
-  // when a manual finish is still bound. unbind() leaves the pending capture
-  // intact, so picking the wrong participant and closing never loses the time —
-  // the capture stays in the list to be re-bound later. Gated on `capture` so a
-  // reopened manual finish (no pending capture) never touches the capture list.
-  function closeDrawer() {
+  // Closing finalizes the manual-finish flow:
+  //   • Capture mode + a kept binding → consume the pending capture.
+  //   • Reopen mode + an unfinished "Изменить номер" (no new number chosen) →
+  //     detach the participant: delete the manual finish and float its time back
+  //     as an unassigned pending capture, so the number is removed without losing
+  //     the time. (If a new number was bound, reassignId was already cleared.)
+  async function closeDrawer() {
     if (capture && bound && createdResultId) dispatch('captureBound', {captureId: capture.id})
+    if (!capture && reassignId) {
+      const id = reassignId, t = reassignTimeMs
+      reassignId = null
+      reassignTimeMs = null
+      try {
+        await call('DELETE', `/api/events/${eventId}/results/${id}`)
+        if (t != null) dispatch('capture', t)   // float the time back, unassigned
+        dispatch('changed', {recount: true})
+      } catch (_) { /* keep the finish if the delete failed */ }
+    }
     dispatch('close')
   }
 
@@ -267,9 +282,9 @@
 
       <p class="faint note">
         {#if bound}
-          Если номер привязан к неверному участнику — «Изменить номер» удалит ручной финиш и вернёт поиск. Ниже — карточка участника.
+          «Изменить номер» откроет поиск: выберите другого участника — финиш перейдёт к нему; закройте без выбора — номер снимется, а время вернётся в захваты. Ниже — карточка участника.
         {:else}
-          Пока номер не привязан, известно только время. После привязки появятся регистрационные данные и отсечки.
+          Выберите участника, чтобы привязать время. Закроете без выбора — время останется в захватах без номера.
         {/if}
       </p>
     </div>

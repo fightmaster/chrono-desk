@@ -228,6 +228,7 @@
                   capture={drawer.capture ?? null}
                   on:changed={onEdited}
                   on:captureBound={captureBound}
+                  on:capture={e => addCapture(e.detail)}
                   on:close={closeDrawer}/>
   {/if}
 </div>
