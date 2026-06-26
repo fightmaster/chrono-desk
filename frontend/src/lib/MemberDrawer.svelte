@@ -203,6 +203,16 @@
     edit('disabled_at', pass.disabled_at ? null : Date.now(), 'rfid_log', pass.log_id)
   }
 
+  // Bib number: empty → null ("номер не назначен"); otherwise an integer. Used
+  // with a text input (type=number can't reliably report/reflect the cleared
+  // state in the webview, so clearing the bib wouldn't save).
+  function bibOrNull(v) {
+    const s = String(v).trim()
+    if (s === '') return null
+    const n = Number.parseInt(s, 10)
+    return Number.isNaN(n) ? null : n
+  }
+
   $: title = manualMode
     ? (bound ? `№${data?.number ?? '—'} ${data?.last_name ?? ''} ${data?.first_name ?? ''}`.trim() : 'Ручной финиш')
     : (data ? `№${data.number ?? '—'} ${data.last_name ?? ''} ${data.first_name ?? ''}`.trim() : 'Участник')
@@ -299,8 +309,8 @@
       <div class="field"><span>Дата рождения</span>
         <input class="input mono" type="date" value={member.dob ?? ''} on:change={e => edit('dob', e.target.value || null)}/></div>
       <div class="field"><span>Номер</span>
-        <input class="input mono" type="number" value={member.number ?? ''}
-               on:change={e => edit('number', e.target.value === '' ? null : Number(e.target.value))}/></div>
+        <input class="input mono" type="text" inputmode="numeric" value={member.number ?? ''}
+               on:change={e => edit('number', bibOrNull(e.target.value))}/></div>
       <div class="field"><span>Метка (EPC)</span>
         <input class="input mono" value={member.epc ?? ''}
                on:change={e => edit('epc', e.target.value ? e.target.value.toUpperCase() : null)}/></div>

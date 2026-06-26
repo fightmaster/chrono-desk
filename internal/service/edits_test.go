@@ -64,6 +64,35 @@ func TestApplyEditJournalsAndUpdates(t *testing.T) {
 	}
 }
 
+// Clearing the bib number (value: null) must persist as SQL NULL and read back
+// as a nil pointer — "номер не назначен".
+func TestApplyEditClearsNumberToNull(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+
+	if _, err := ApplyEdit(ctx, store, EditRequest{
+		Entity: "member", EntityID: "mem-1", Field: "number", Value: json.RawMessage(`null`),
+	}); err != nil {
+		t.Fatalf("clear number: %v", err)
+	}
+
+	var n *int64
+	if err := store.DB().QueryRow(`SELECT number FROM members WHERE id='mem-1'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != nil {
+		t.Fatalf("number = %d, want NULL", *n)
+	}
+	m, err := store.GetMember(ctx, "mem-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Number != nil {
+		t.Fatalf("GetMember number = %d, want nil", *m.Number)
+	}
+}
+
 // Moving the race start shifts every member's start by the same delta — so a
 // mass start follows and a staggered start keeps its gaps — and each shift is
 // journaled (so it syncs to the site). The shift must also survive the recount
