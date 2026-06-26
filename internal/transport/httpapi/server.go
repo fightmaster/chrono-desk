@@ -20,6 +20,7 @@ import (
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
+	"gitlab.com/fightmaster1/chrono-desk/internal/version"
 )
 
 type Server struct {
@@ -47,6 +48,7 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("GET /api/events", s.handleListEvents)
 	mux.HandleFunc("POST /api/events/import", s.handleImportEvent)
 	mux.HandleFunc("POST /api/events/{id}/rfid-import", s.handleRfidImport)
@@ -289,6 +291,10 @@ func cors(next http.Handler) http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, version.Get())
 }
 
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {

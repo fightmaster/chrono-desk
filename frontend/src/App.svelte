@@ -36,10 +36,12 @@
   // screen (the Live screen has its own faster feed poll while mounted).
   let liveStatus = {running: false, port: ''}
   let statusTimer = null
+  let appVersion = null
 
   onMount(async () => {
     try {
       setBase(await APIBaseURL())
+      appVersion = await call('GET', '/api/version').catch(() => null)
       await loadEvents()
     } catch (e) {
       error = `API недоступен: ${e}`
@@ -187,6 +189,7 @@
 <div class="root" data-theme={$theme}>
   <div class="titlebar">
     <span class="tb-name">Chrono Desk</span>
+    {#if appVersion}<span class="tb-ver" title="коммит {appVersion.commit}{appVersion.date ? ` · ${appVersion.date}` : ''}">v{appVersion.version}+{appVersion.build}</span>{/if}
     <div class="tb-dots"><span></span><span></span><span></span></div>
   </div>
 
@@ -247,6 +250,7 @@
     position: relative;
   }
   .tb-name { font-size: 12.5px; font-weight: 600; color: var(--dim); letter-spacing: .02em; }
+  .tb-ver { font-size: 11px; color: var(--faint); margin-left: 8px; letter-spacing: .02em; }
   .tb-dots { position: absolute; right: 14px; display: flex; gap: 9px; }
   .tb-dots span { width: 12px; height: 12px; border-radius: 50%; background: var(--border2); }
 
