@@ -27,7 +27,8 @@
   // Effective member: the known one (normal) or the one bound to the capture.
   let boundMemberId = memberId
   let bound = !!memberId
-  let createdResultId = null // manual result row in play (for time-edit / re-bind)
+  let createdResultId = null // effective manual row in play (for time-edit / re-bind)
+  let reassignId = null      // the ONE original row to drop once a reassignment binds
 
   // Editable finish time string for the manual form (HH:MM:SS.mmm) plus the date
   // anchor used to parse it back to absolute ms.
@@ -44,6 +45,9 @@
   // A manual finish already attached to the bound member (reopen case): expose
   // the same time-edit / reassign controls as a fresh capture. Skipped in
   // capture mode, where the unbound capture itself is the source of truth.
+  // The EFFECTIVE finish is the FIRST manual row — recount is first-wins
+  // (recount.go applies the first per member, time_ms then id, matching run5).
+  // Edits/reassign touch ONLY this row, never any sibling.
   $: existingManual = (!openedAsCapture && data && data.manual_results && data.manual_results.length)
     ? data.manual_results[0] : null
   $: if (existingManual) {
@@ -102,6 +106,13 @@
     try {
       const res = await call('POST', `/api/events/${eventId}/members/${m.id}/manual-finish`,
         JSON.stringify({time_ms: ms}))
+      // Reopen-reassign: now that the replacement exists, drop the ONE original
+      // row (deferred from unbind so a mid-reassign close can't lose the finish).
+      // Only this row — any duplicate the member may have is left untouched.
+      if (reassignId) {
+        try { await call('DELETE', `/api/events/${eventId}/results/${reassignId}`) } catch (_) { /* best-effort */ }
+        reassignId = null
+      }
       createdResultId = res.result_id
       boundMemberId = m.id
       bound = true
@@ -113,38 +124,50 @@
     }
   }
 
-  // Wrong participant: delete the manual result we created and return to search.
-  // timeStr/baseMs are kept so the next bind re-applies the same finish time.
+  // "Изменить номер": return to search. timeStr/baseMs are kept so the next bind
+  // re-applies the same finish time.
+  //   • Capture mode — the pending capture is the safety net, so drop the (wrong)
+  //     result we just created right now.
+  //   • Reopen mode — the manual rows are the ONLY record of this finish, so do
+  //     NOT delete: remember them and drop them only once a replacement binds
+  //     (bindNumber), so closing/cancelling mid-reassign preserves the original.
   async function unbind() {
     error = ''
-    try {
-      if (createdResultId) await call('DELETE', `/api/events/${eventId}/results/${createdResultId}`)
-      createdResultId = null
-      boundMemberId = null
-      bound = false
-      data = null
-      member = null
+    if (openedAsCapture) {
+      try {
+        if (createdResultId) await call('DELETE', `/api/events/${eventId}/results/${createdResultId}`)
+      } catch (e) {
+        error = e.message
+        return
+      }
       dispatch('changed', {recount: true})
-    } catch (e) {
-      error = e.message
+    } else {
+      reassignId = createdResultId // the current row only; dropped once a replacement binds
     }
+    createdResultId = null
+    boundMemberId = null
+    bound = false
+    data = null
+    member = null
   }
 
-  // Save an edited finish time on an already-stored manual result. InsertManualResult
-  // appends, so editing in place would duplicate — drop the old row, create a fresh
-  // one at the new time. Fires on change of the time field while a result is bound
-  // (both the just-bound capture and a reopened manual finish).
+  // Save an edited finish time. There's no update endpoint and InsertManualResult
+  // appends, so re-stamp THIS row only: create the replacement first, then delete
+  // the old one (create-then-delete — never a moment with no record on a failure).
+  // Touches only the current row; any duplicate the member may have is left alone.
+  // No-op when the value is unchanged.
   async function maybeSaveTime() {
     if (!bound || !boundMemberId || !createdResultId) return
     const ms = timeStrToMs(baseMs, timeStr)
     if (ms === null) { error = 'Время финиша в формате ЧЧ:ММ:СС.ммм'; return }
     if (existingManual && ms === existingManual.time_ms) return // blurred unchanged — no-op
     error = ''
+    const oldId = createdResultId
     try {
-      await call('DELETE', `/api/events/${eventId}/results/${createdResultId}`)
       const res = await call('POST', `/api/events/${eventId}/members/${boundMemberId}/manual-finish`,
         JSON.stringify({time_ms: ms}))
       createdResultId = res.result_id
+      try { await call('DELETE', `/api/events/${eventId}/results/${oldId}`) } catch (_) { /* keep the old rather than lose the new */ }
       dispatch('changed', {recount: true})
       await load()
     } catch (e) {

@@ -17,9 +17,12 @@ import (
 // a judge-entered time always wins. To revert, delete the entry.
 
 // ManualFinishResult reports the stored entry to the UI so it can offer undo.
+// AlreadyHadFinish flags that the participant already had a manual finish before
+// this one — a likely double-entry; the live screen warns (but does not block).
 type ManualFinishResult struct {
-	ResultID      int64 `json:"result_id"`
-	RecountNeeded bool  `json:"recount_needed"`
+	ResultID         int64 `json:"result_id"`
+	RecountNeeded    bool  `json:"recount_needed"`
+	AlreadyHadFinish bool  `json:"already_had_finish"`
 }
 
 // ManualFinish stores a crossing given as wall-clock time of day.
@@ -65,6 +68,20 @@ func storeManualFinish(ctx context.Context, store *sqlite.Store, eventID, member
 		return ManualFinishResult{}, fmt.Errorf("участник %s не принадлежит событию", memberID)
 	}
 
+	// Detect a pre-existing manual finish so the UI can warn about a double-entry
+	// (we still store it — the judge decides; first-wins keeps the earlier one).
+	existing, err := store.ListManualResults(ctx, eventID, "")
+	if err != nil {
+		return ManualFinishResult{}, err
+	}
+	alreadyHad := false
+	for _, e := range existing {
+		if e.MemberID == memberID {
+			alreadyHad = true
+			break
+		}
+	}
+
 	resultID, err := store.InsertManualResult(ctx, eventID, m.RaceID, memberID, timeMs, m.Number)
 	if err != nil {
 		return ManualFinishResult{}, err
@@ -79,7 +96,7 @@ func storeManualFinish(ctx context.Context, store *sqlite.Store, eventID, member
 	}); err != nil {
 		return ManualFinishResult{}, err
 	}
-	return ManualFinishResult{ResultID: resultID, RecountNeeded: false}, nil
+	return ManualFinishResult{ResultID: resultID, RecountNeeded: false, AlreadyHadFinish: alreadyHad}, nil
 }
 
 // ListManualFinishes returns judge entries with participant name/number for the

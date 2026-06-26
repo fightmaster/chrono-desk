@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log"
 	"testing"
 )
 
@@ -114,6 +116,57 @@ func TestManualFinishAppearsInProtocol(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("manual finisher missing from protocol")
+	}
+}
+
+// Two manual finishes for one participant: the recount is first-wins (mirrors a
+// chip finish — run5 sets finish only while null), so the FIRST entry stands and
+// the later duplicate is left in place but not counted. The second entry also
+// flags AlreadyHadFinish so the live screen can warn.
+func TestManualFinishRecountFirstWins(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+
+	t1 := raceStartMs + 600000 // earliest → wins
+	t2 := raceStartMs + 900000
+
+	res1, err := ManualFinish(ctx, store, "ev-100", "mem-2", t1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res1.AlreadyHadFinish {
+		t.Error("first manual finish must not flag AlreadyHadFinish")
+	}
+	res2, err := ManualFinish(ctx, store, "ev-100", "mem-2", t2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res2.AlreadyHadFinish {
+		t.Error("second manual finish for the same member must flag AlreadyHadFinish")
+	}
+
+	// Each entry applies immediately, so before the recount the LATER one stands.
+	// The recount must restore first-wins.
+	if _, err := NewRecounter(store, log.New(io.Discard, "", 0), false).Recount(ctx, "ev-100", ""); err != nil {
+		t.Fatalf("recount: %v", err)
+	}
+
+	var finish *int64
+	if err := store.DB().QueryRow(`SELECT finish_time_ms FROM members WHERE id = ?`, "mem-2").Scan(&finish); err != nil {
+		t.Fatal(err)
+	}
+	if finish == nil || *finish != t1 {
+		t.Fatalf("finish = %v, want first-wins %d (not last %d)", finish, t1, t2)
+	}
+
+	// The duplicate row is left in place (not deleted) — both entries still listed.
+	list, err := ListManualFinishes(ctx, store, "ev-100", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("manual rows = %d, want 2 (duplicate kept, not auto-deleted)", len(list))
 	}
 }
 

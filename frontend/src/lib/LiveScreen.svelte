@@ -90,9 +90,11 @@
       body = {time_ms: ms}; label = `${who} · ${fmtTime(ms)}`
     }
     try {
-      await call('POST', `/api/events/${eventId}/members/${member.id}/manual-finish`, JSON.stringify(body))
+      const res = await call('POST', `/api/events/${eventId}/members/${member.id}/manual-finish`, JSON.stringify(body))
       query = ''; timeStr = ''
-      showFlash(`✓ Добавлено: ${label}`)
+      showFlash(res && res.already_had_finish
+        ? `⚠ У ${who} уже был ручной финиш — добавлен ещё один`
+        : `✓ Добавлено: ${label}`)
       dispatch('changed', {recount: false})
       await refresh()
     } catch (e) {
