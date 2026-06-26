@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chrono Desk — руководство судьи</title>
+<style>
+  :root{
+    --ink:#1b2636; --dim:#54637a; --faint:#8794a7; --line:#e2e7ef; --line2:#cdd5e1;
+    --bg:#ffffff; --soft:#f5f7fb; --accent:#2f6df0; --ok:#1d9d63; --okbg:#e8f6ee;
+    --warn:#b26a00; --warnbg:#fdf3e3; --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0; color:var(--ink); background:var(--soft);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","IBM Plex Sans",Roboto,Helvetica,Arial,sans-serif}
+  .page{max-width:880px; margin:0 auto; background:var(--bg); padding:48px 56px}
+  h1{font-size:30px; line-height:1.2; margin:0 0 4px}
+  .lede{color:var(--dim); font-size:17px; margin:0 0 8px}
+  .meta{color:var(--faint); font-size:13px; margin:0 0 28px}
+  h2{font-size:21px; margin:38px 0 10px; padding-top:14px; border-top:2px solid var(--line)}
+  h2 .n{color:var(--accent); font-variant-numeric:tabular-nums; margin-right:8px}
+  h3{font-size:16px; margin:22px 0 6px}
+  p{margin:8px 0} ul,ol{margin:8px 0 8px 4px; padding-left:22px} li{margin:4px 0}
+  a{color:var(--accent)}
+  code,.k{font-family:var(--mono); font-size:.88em; background:var(--soft); border:1px solid var(--line); border-radius:5px; padding:1px 5px}
+  .btnk{display:inline-block; font-size:.85em; font-weight:600; background:var(--accent); color:#fff; border-radius:6px; padding:2px 9px; white-space:nowrap}
+  .toc{background:var(--soft); border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin:18px 0 8px}
+  .toc h4{margin:0 0 8px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint)}
+  .toc ol{column-count:2; column-gap:32px; margin:0; padding-left:20px} .toc a{text-decoration:none}
+  .steps{counter-reset:step; list-style:none; padding-left:0; margin:10px 0}
+  .steps>li{counter-increment:step; position:relative; padding:8px 0 8px 42px; border-bottom:1px solid var(--line)}
+  .steps>li:last-child{border-bottom:0}
+  .steps>li::before{content:counter(step); position:absolute; left:0; top:8px; width:28px; height:28px;
+    background:var(--accent); color:#fff; border-radius:50%; font-size:14px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .note{border-radius:10px; padding:12px 16px; margin:14px 0; border:1px solid var(--line2)}
+  .note .lbl{font-weight:700; font-size:12px; letter-spacing:.04em; text-transform:uppercase; display:block; margin-bottom:2px}
+  .tip{background:var(--okbg); border-color:#bfe6cf} .tip .lbl{color:var(--ok)}
+  .warn{background:var(--warnbg); border-color:#f0dcb4} .warn .lbl{color:var(--warn)}
+  table{border-collapse:collapse; width:100%; margin:12px 0; font-size:14px}
+  th,td{border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top}
+  th{background:var(--soft); font-size:13px}
+  .kbd{font-family:var(--mono); font-size:.85em; background:#fff; border:1px solid var(--line2); border-bottom-width:2px; border-radius:5px; padding:1px 6px}
+  figure{margin:16px 0} figure img{display:block; width:100%; border:1px solid var(--line2); border-radius:14px}
+  figcaption{color:var(--faint); font-size:13px; margin-top:8px; text-align:center}
+  .foot{margin-top:40px; padding-top:16px; border-top:2px solid var(--line); color:var(--faint); font-size:13px}
+
+  /* ── drawn reproductions of the app screens (real dark theme) ─────────────── */
+  .scr{
+    --b:#E8EDF4; --bar:#FFFFFF; --sf:#FFFFFF; --sf2:#F2F6FB; --bd:#D2DCE8; --bd2:#A9BBCF;
+    --tx:#0E1B2C; --dm:#48586C; --ft:#7888A0; --ac:#1D4ED8; --ok:#15803D; --am:#B45309;
+    --bad:#DC2626; --inp:#FFFFFF; --m:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    background:var(--b); color:var(--tx); border:1px solid var(--bd2); border-radius:14px;
+    overflow:hidden; font-size:13px; line-height:1.45; box-shadow:0 6px 20px rgba(15,30,55,.12)}
+  .scr .bar{background:var(--bar); padding:9px 14px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--bd)}
+  .scr .dots{width:46px; height:11px; flex:none;
+    background:radial-gradient(circle 5px at 5px 5px,#ff5f57 99%,transparent),
+      radial-gradient(circle 5px at 22px 5px,#febc2e 99%,transparent),
+      radial-gradient(circle 5px at 39px 5px,#28c840 99%,transparent)}
+  .scr .nm{font-weight:600; color:var(--dm); font-size:12.5px}
+  .scr .ver{font-family:var(--m); color:var(--ft); font-size:11px}
+  .scr .tabs{display:flex; background:var(--sf); border-bottom:1px solid var(--bd)}
+  .scr .tabs .t{padding:9px 16px; color:var(--dm); font-weight:600; font-size:12.5px; border-right:1px solid var(--bd)}
+  .scr .tabs .t.on{color:var(--tx); background:var(--b); box-shadow:inset 0 -2px 0 var(--ac)}
+  .scr .pad{padding:14px 16px}
+  .scr .cols{display:flex} .scr .side{width:200px; border-right:1px solid var(--bd); background:var(--sf); padding:12px 14px; color:var(--dm)}
+  .scr .body{flex:1; padding:14px 16px}
+  .scr .mono{font-family:var(--m)} .scr .dm{color:var(--dm)} .scr .ft{color:var(--ft)}
+  .scr .ok{color:var(--ok)} .scr b{color:var(--tx)}
+  .scr .btn{display:inline-block; background:var(--ac); color:#fff; border-radius:8px; padding:7px 13px; font-weight:600; font-size:12.5px}
+  .scr .btn.ghost{background:transparent; border:1px solid var(--bd2); color:var(--dm)}
+  .scr .chip{display:inline-flex; gap:10px; align-items:center; flex-wrap:wrap; background:var(--sf2);
+    border:1px solid var(--bd); border-radius:10px; padding:8px 12px; font-family:var(--m); font-size:12px; color:var(--dm)}
+  .scr .live{width:8px; height:8px; border-radius:50%; background:#16A34A; box-shadow:0 0 0 4px rgba(22,163,74,.18)}
+  .scr .feed{margin-top:12px} .scr .r{display:flex; gap:12px; align-items:center; padding:8px 0; border-top:1px solid var(--bd)}
+  .scr .r.man{box-shadow:inset 3px 0 0 var(--ac); padding-left:10px}
+  .scr .tag{font-size:11px; font-weight:600; border-radius:20px; padding:2px 9px; white-space:nowrap}
+  .scr .tag.man{background:rgba(29,78,216,.12); color:#1D4ED8} .scr .tag.fin{background:rgba(22,160,80,.14); color:var(--ok)}
+  .scr .eyebrow{font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ft); margin:14px 0 6px}
+  .scr .eyebrow.okk{color:var(--ok)}
+  .scr .fld{margin:8px 0} .scr .fld span{display:block; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--ft); margin-bottom:3px}
+  .scr .inp{background:var(--inp); border:1px solid var(--bd2); border-radius:8px; padding:7px 10px; color:var(--tx); font-family:var(--m); font-size:12.5px}
+  .scr .g2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .scr .ptab{display:flex; gap:0; margin-bottom:10px} .scr .ptab .t{padding:6px 13px; font-size:12px; font-weight:600; color:var(--dm); border:1px solid var(--bd); border-right:0}
+  .scr .ptab .t:last-child{border-right:1px solid var(--bd)} .scr .ptab .t.on{background:var(--sf2); color:var(--tx)}
+  .scr .prow{display:grid; grid-template-columns:34px 1fr 80px 64px; gap:10px; padding:7px 0; border-top:1px solid var(--bd); align-items:center}
+  .scr .prow.h{color:var(--ft); font-size:11px; text-transform:uppercase; letter-spacing:.04em; border-top:0}
+  .scr .pl{font-weight:700; color:var(--am)}
+
+  @media (max-width:640px){ .page{padding:28px 20px} .toc ol{column-count:1} .scr .cols{flex-direction:column} .scr .side{width:auto; border-right:0; border-bottom:1px solid var(--bd)} }
+  @media print{
+    body{background:#fff; font-size:12pt} .page{max-width:none; padding:0}
+    h2,h3{break-after:avoid} .note,figure,.steps>li,table,.scr{break-inside:avoid}
+    a{color:var(--ink); text-decoration:none}
+    .scr{box-shadow:none; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Chrono Desk — руководство судьи</h1>
+  <p class="lede">Офлайн-замена сайта chrono.events на старте: приём отсечек, ручные финиши, протоколы и экспорт — без интернета.</p>
+  <p class="meta">Актуально для версии приложения <strong>v0.3.x</strong> (версия видна в левом верхнем углу окна — <span class="k">v0.3.0+NN</span>). Экраны ниже — точные отрисовки интерфейса (светлая тема приложения); при необходимости любой блок можно заменить реальным скриншотом. Файл хранится в репозитории (<span class="k">docs/judge-guide.html</span>) и обновляется вместе с приложением.</p>
+
+  <div class="toc">
+    <h4>Содержание</h4>
+    <ol>
+      <li><a href="#about">Что это и когда нужно</a></li>
+      <li><a href="#start">Запуск и загрузка события</a></li>
+      <li><a href="#live">Приём считывателя (Live)</a></li>
+      <li><a href="#manual">Ручные финиши</a></li>
+      <li><a href="#csv">Импорт с флэшки (CSV)</a></li>
+      <li><a href="#results">Результаты и протокол</a></li>
+      <li><a href="#member">Правки участника</a></li>
+      <li><a href="#export">Экспорт и бэкап</a></li>
+      <li><a href="#sync">Синхронизация на сайт</a></li>
+      <li><a href="#trouble">Подсказки и проблемы</a></li>
+    </ol>
+  </div>
+
+  <h2 id="about"><span class="n">0</span>Что это и когда нужно</h2>
+  <p>Chrono Desk заменяет сайт chrono.events в зоне без интернета. Сайт остаётся <strong>главным источником данных</strong>: вы выгружаете событие с сайта, работаете офлайн, а потом (когда появится связь) отправляете изменения обратно.</p>
+  <ul>
+    <li><strong>Одно событие = один файл</strong> <span class="k">.chrono</span>. Его можно переносить на флэшке между ноутбуками; резервная копия — это просто копия файла.</li>
+    <li>Результаты <strong>пересчитываются офлайн</strong> из отсечек считывателя и ручных финишей судьи.</li>
+    <li>Судейские правки сохраняются и при следующем импорте <strong>накладываются поверх</strong> данных сайта («локальные правки побеждают»).</li>
+  </ul>
+
+  <h2 id="start"><span class="n">1</span>Запуск и загрузка события</h2>
+  <figure>
+    <div class="scr">
+      <div class="bar"><span class="dots"></span><span class="nm">Chrono Desk</span><span class="ver">v0.3.0+NN</span></div>
+      <div class="tabs"><span class="t on">Live · приём</span><span class="t">Результаты</span></div>
+      <div class="cols">
+        <div class="side"><div class="eyebrow">События</div>Кросс «Осень»<br><span class="ft">3 дистанции · 412 участников</span><div class="eyebrow" style="margin-top:14px">Поиск</div><span class="mono ft">№ или фамилия…</span></div>
+        <div class="body"><div class="eyebrow">Рабочая область</div>Лента приёма, карточки участников, протокол и экспорт — в зависимости от выбранной вкладки.<br><br><span class="btn">Импорт события (.json)</span></div>
+      </div>
+    </div>
+    <figcaption>Окно приложения: версия в шапке слева, две вкладки — «Live» (приём) и «Результаты».</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>На стартовом экране — список событий с подписью «<em>N дистанций · M участников</em>».</li>
+    <li>Нет события на ноутбуке — <strong>импортируйте выгрузку с сайта</strong> (<span class="k">.json</span>). Импорт атомарный: либо целиком, либо ничего.</li>
+    <li>Файл <span class="k">.chrono</span> уже есть — откройте его из списка.</li>
+    <li>Выберите событие → откроется рабочая область с вкладками <strong>Live</strong> и <strong>Результаты</strong>.</li>
+  </ol>
+  <div class="note tip"><span class="lbl">Совет</span>Повторный импорт той же выгрузки безопасен: данные сайта обновятся, а локальные правки сохранятся.</div>
+
+  <h2 id="live"><span class="n">2</span>Приём считывателя (Live)</h2>
+  <p>На вкладке <strong>Live</strong> приложение принимает отсечки от считывателя Feibot по сети (TCP) в реальном времени и сразу пересчитывает результаты.</p>
+  <figure>
+    <div class="scr">
+      <div class="bar"><span class="dots"></span><span class="nm">Live · приём</span></div>
+      <div class="pad">
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px"><span class="btn">Остановить</span><span class="chip"><span class="live"></span> приём идёт</span></div>
+        <div class="chip">Feibot:U659 · <b>батарея 78%</b> · меток 1240 · <span class="ok">heartbeat 3 с назад</span></div>
+        <div class="feed">
+          <div class="r man"><span class="mono">10:16:38.440</span><span style="flex:1">№318 Гвоздев Павел</span><span class="tag man">ручной финиш</span></div>
+          <div class="r"><span class="mono">10:15:02.110</span><span style="flex:1">№204 Соколова Анна</span><span class="tag fin">финиш</span></div>
+          <div class="r"><span class="mono">10:14:51.880</span><span style="flex:1">№177 — чекпоинт 2</span><span class="dm mono">U659/1</span></div>
+        </div>
+      </div>
+    </div>
+    <figcaption>Live: кнопка приёма, состояние считывателя (заряд, метки, свежесть связи) и лента чтений.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li>Нажмите <span class="btnk">Запустить приём</span> — появится индикатор LIVE.</li>
+    <li>Следите за состоянием: заряд, число меток и «свежесть» (<em>heartbeat N с назад</em>). Оранжевый цвет давности (&gt;30&nbsp;с) — связь с прибором потеряна.</li>
+    <li>В ленте идут чтения чипов; ручные финиши помечены «ручной финиш».</li>
+  </ol>
+  <div class="note warn"><span class="lbl">Важно</span>Если приём остановился, под кнопкой будет показана причина. Опрос состояния в шапке — это лишь обновление картинки; <strong>сами отсечки приходят на ноутбук сразу</strong>, по сети от прибора.</div>
+
+  <h2 id="manual"><span class="n">3</span>Ручные финиши</h2>
+  <p>Если чип не сработал, судья вводит финиш вручную. Ручной финиш <strong>авторитетный</strong>: переживает пересчёты и накладывается поверх чиповых данных.</p>
+  <figure>
+    <div class="scr">
+      <div class="bar"><span class="dots"></span><span class="nm">№318 Гвоздев Павел</span></div>
+      <div class="pad">
+        <div class="eyebrow okk">Ручной финиш — номер привязан</div>
+        <div class="g2">
+          <div class="fld"><span>Время финиша</span><div class="inp">10:16:38.440</div></div>
+          <div class="fld"><span>Номер участника</span><div class="chip" style="justify-content:space-between"><b class="mono">№318 Гвоздев Павел</b><span class="btn ghost">Изменить номер</span></div></div>
+        </div>
+        <div class="eyebrow">Карточка участника</div>
+        <div class="g2">
+          <div class="fld"><span>Статус</span><div class="inp">OK</div></div>
+          <div class="fld"><span>Группа</span><div class="inp">М 30–39</div></div>
+        </div>
+      </div>
+    </div>
+    <figcaption>Карточка с ручным финишем: время финиша и кнопка «Изменить номер»; ниже — данные участника.</figcaption>
+  </figure>
+
+  <h3>Ввод по номеру/фамилии</h3>
+  <ol class="steps">
+    <li>На Live найдите участника по номеру или фамилии.</li>
+    <li>Выберите режим: <strong>чистое время</strong> (например <span class="k">00:47:13.250</span>) или <strong>время суток</strong> (<span class="k">ЧЧ:ММ:СС.ммм</span>).</li>
+    <li>Подтвердите — запись появится в ленте с возможностью удалить.</li>
+  </ol>
+  <div class="note warn"><span class="lbl">Предупреждение о дубле</span>Если у номера уже есть ручной финиш — появится предупреждение. При пересчёте у участника засчитывается <strong>первая</strong> запись (как у чипа); лишнюю удалите из ленты.</div>
+
+  <h3>Зафиксировать время сейчас, номер — потом</h3>
+  <ol class="steps">
+    <li>Нажмите <span class="btnk">⏱ Зафиксировать время</span> — момент сохранится как «захват» без номера (не теряется при перезапуске).</li>
+    <li>Позже откройте захват и привяжите номер — создастся ручной финиш, захват исчезнет.</li>
+  </ol>
+
+  <h3>Изменить или снять номер</h3>
+  <p>Откройте участника с ручным финишем → <span class="btnk">Изменить номер</span> — откроется поиск:</p>
+  <ul>
+    <li><strong>Выбрать другого участника</strong> → финиш перейдёт к нему (время сохранится).</li>
+    <li><strong>Закрыть без выбора</strong> → номер снимется, а время вернётся в «захваты» без номера. Так участника убирают с этого времени, ничего не теряя.</li>
+  </ul>
+  <h3>Поправить время</h3>
+  <p>В открытой карточке измените поле «Время финиша» — меняется только эта запись, соседние не трогаются.</p>
+
+  <h2 id="csv"><span class="n">4</span>Импорт с флэшки (CSV)</h2>
+  <p>Когда отсечки сняты на флэшку (формат Feibot), их можно загрузить файлом.</p>
+  <ol class="steps">
+    <li>Выберите CSV-файл.</li>
+    <li>Укажите <strong>код считывателя</strong> и <strong>часовой пояс</strong> (из списка российских зон) — обязательно: в CSV время записано <em>без</em> зоны.</li>
+    <li>Нажмите <span class="btnk">Загрузить</span> — появится отчёт: разобрано / добавлено / дубликаты / ошибки строк.</li>
+  </ol>
+  <div class="note warn"><span class="lbl">Часовой пояс обязателен</span>Без пояса импорт не выполнится — иначе все отсечки сдвинулись бы на смещение зоны.</div>
+
+  <h2 id="results"><span class="n">5</span>Результаты и протокол</h2>
+  <figure>
+    <div class="scr">
+      <div class="bar"><span class="dots"></span><span class="nm">Результаты · 10 км</span><span class="ver">финишировало 184 из 206</span></div>
+      <div class="pad">
+        <div class="ptab"><span class="t on">Призёры</span><span class="t">Полный протокол</span><span class="t">Настройки дистанции</span></div>
+        <div class="prow h"><span>Место</span><span>Участник</span><span>Чистое</span><span>Группа</span></div>
+        <div class="prow"><span class="pl">1</span><span>Соколова Анна</span><span class="mono">00:38:12</span><span class="dm">Ж 30–39</span></div>
+        <div class="prow"><span class="pl">2</span><span>Гвоздев Павел</span><span class="mono">00:39:41</span><span class="dm">М 30–39</span></div>
+        <div class="prow"><span class="pl">3</span><span>Иванов Пётр</span><span class="mono">00:40:05</span><span class="dm">М 40–49</span></div>
+      </div>
+    </div>
+    <figcaption>Результаты: шапка «финишировало X из Y», вкладки «Призёры / Полный протокол / Настройки дистанции».</figcaption>
+  </figure>
+  <p>Выберите дистанцию. В шапке — «<em>финишировало X из Y</em>» (Y — стартовый список, X — у кого есть место).</p>
+  <h3>Старт дистанции</h3>
+  <ul>
+    <li>Правка времени старта <strong>запускает автопересчёт</strong> и сдвигает старты всех участников на ту же величину.</li>
+    <li><span class="btnk">⏱ Старт сейчас</span> — ставит текущее системное время (с миллисекундами) как старт. Нажимайте по сигналу.</li>
+  </ul>
+  <h3>Возрастные группы</h3>
+  <ul>
+    <li>У участника в списке — только группы, <strong>привязанные к его дистанции</strong>.</li>
+    <li>«<strong>+ добавить из каталога</strong>» — привязать существующую группу. Открепить можно, только если в ней нет участников этой гонки.</li>
+  </ul>
+  <h3>Чекпоинты</h3>
+  <p>В настройках дистанции можно править чекпоинты (тип START/CHECKPOINT/FINISH, привязку к прибору, окна активации) — прямо у готовой строки. Изменения требуют пересчёта.</p>
+
+  <h2 id="member"><span class="n">6</span>Правки участника</h2>
+  <table>
+    <tr><th>Что</th><th>Как</th></tr>
+    <tr><td>Статус</td><td><span class="k">OK</span> / <span class="k">DNS</span> (не стартовал) / <span class="k">DNF</span> (сошёл) / <span class="k">DSQ</span>. DNS убирает из «стартовало», DNF/DSQ — из «финишировало».</td></tr>
+    <tr><td>Номер</td><td>Введите цифры; <strong>очистите поле</strong>, чтобы снять номер («не назначен»).</td></tr>
+    <tr><td>Старт (ручной)</td><td>Индивидуальное время старта участника.</td></tr>
+    <tr><td>Группа / Гонка</td><td>Сменить возрастную группу или дистанцию.</td></tr>
+    <tr><td>Отсечки</td><td>Каждое чтение можно <strong>отключить</strong> (иконка питания) — ложное чтение перестанет засчитываться; включить так же.</td></tr>
+  </table>
+  <div class="note tip"><span class="lbl">Регистрация на месте</span>Нового участника можно завести прямо в приложении — обязательна <strong>дата рождения</strong> (как на сайте).</div>
+
+  <h2 id="export"><span class="n">7</span>Экспорт и бэкап</h2>
+  <ul>
+    <li><strong>Протокол Excel</strong> (<span class="k">.xlsx</span>) — колонки повторяют формат сайта; путь к файлу показывается после экспорта.</li>
+    <li><strong>Бэкап</strong> — снимок <span class="k">.chrono</span> и выгрузка в контрактном JSON.</li>
+  </ul>
+
+  <h2 id="sync"><span class="n">8</span>Синхронизация на сайт</h2>
+  <p>Когда появится интернет, локальные изменения (отсечки, новые участники, правки, ручные финиши) можно отправить на сайт chrono.events. Сайт применит их идемпотентно; разрушительные действия — только в режиме перезаписи. <strong>Сайт остаётся главным источником данных.</strong></p>
+  <div class="note warn"><span class="lbl">Порядок</span>Сверяйтесь с ответственным за сайт: сначала отправка с ноутбука, затем при необходимости повторная выгрузка и реимпорт — локальные правки сохранятся.</div>
+
+  <h2 id="trouble"><span class="n">9</span>Подсказки и решение проблем</h2>
+  <table>
+    <tr><th>Симптом</th><th>Что делать</th></tr>
+    <tr><td>Приём не идёт / нет LIVE</td><td>Проверьте кнопку «Запустить приём» и причину под ней; питание и сеть считывателя; свежесть heartbeat.</td></tr>
+    <tr><td>Участника нет в протоколе</td><td>Проверьте статус (не DNS) и наличие старта/финиша. Без START-чтения старт берётся от старта гонки.</td></tr>
+    <tr><td>Ручной финиш «не там»</td><td>Откройте финиш → «Изменить номер» → верный участник (или закройте без выбора, чтобы вернуть время в захваты).</td></tr>
+    <tr><td>Импорт CSV не идёт</td><td>Укажите часовой пояс и код считывателя.</td></tr>
+    <tr><td>Версия приложения</td><td>Левый верхний угол окна (<span class="k">v0.3.0+NN</span>) — называйте её при обращении за помощью.</td></tr>
+  </table>
+
+  <p class="foot">Chrono Desk — руководство судьи. Поддерживается вместе с приложением (<span class="k">docs/judge-guide.html</span>). Печать в PDF: <span class="kbd">Ctrl/Cmd</span> + <span class="kbd">P</span> → «Сохранить как PDF».</p>
+
+</div>
+</body>
+</html>
