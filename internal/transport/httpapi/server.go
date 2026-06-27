@@ -28,6 +28,7 @@ type Server struct {
 	listener   net.Listener
 	events     *service.EventManager
 	live       *service.LiveManager
+	photos     *service.PhotoManager
 	logger     *log.Logger
 }
 
@@ -43,6 +44,7 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 		listener: ln,
 		events:   events,
 		live:     service.NewLiveManager(logger),
+		photos:   service.NewPhotoManager(logger),
 		logger:   logger,
 	}
 
@@ -82,6 +84,12 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("POST /api/events/{id}/captures", s.handleCreateCapture)
 	mux.HandleFunc("GET /api/events/{id}/captures", s.handleListCaptures)
 	mux.HandleFunc("DELETE /api/events/{id}/captures/{capID}", s.handleDeleteCapture)
+	mux.HandleFunc("GET /api/events/{id}/photos/sources", s.handleListPhotoSources)
+	mux.HandleFunc("POST /api/events/{id}/photos/sources", s.handleAddPhotoSource)
+	mux.HandleFunc("DELETE /api/events/{id}/photos/sources", s.handleDeletePhotoSource)
+	mux.HandleFunc("POST /api/events/{id}/photos/poll", s.handlePollPhotos)
+	mux.HandleFunc("GET /api/events/{id}/photos/status", s.handlePhotoStatus)
+	mux.HandleFunc("GET /api/events/{id}/photos", s.handleMatchPhotos)
 	mux.HandleFunc("GET /api/events/{id}/sync-config", s.handleGetSyncConfig)
 	mux.HandleFunc("PUT /api/events/{id}/sync-config", s.handleSetSyncConfig)
 	mux.HandleFunc("POST /api/events/{id}/sync", s.handleSyncPush)
@@ -108,6 +116,7 @@ func (s *Server) Start() error {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.live.StopAll()
+	s.photos.StopAll()
 	return s.httpServer.Shutdown(ctx)
 }
 
@@ -274,6 +283,135 @@ func (s *Server) handleDeleteCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ─── Finish photos (Chrono Cam integration) ───────────────────────────────────
+
+func (s *Server) handleListPhotoSources(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	sources, err := store.ListPhotoSources(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sources)
+}
+
+func (s *Server) handleAddPhotoSource(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var req struct {
+		BaseURL string `json:"base_url"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if req.BaseURL == "" {
+		s.fail(w, fmt.Errorf("укажите адрес телефона (base_url), напр. http://192.168.0.50:8080"))
+		return
+	}
+	if err := store.UpsertPhotoSource(r.Context(), eventID, sqlite.PhotoSource{BaseURL: req.BaseURL, Enabled: true}); err != nil {
+		s.fail(w, err)
+		return
+	}
+	// Begin (idempotent) background polling and pull once now for instant feedback.
+	s.photos.Start(store, eventID)
+	stats, _ := s.photos.PollOnce(r.Context(), store, eventID)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "polled": stats})
+}
+
+func (s *Server) handleDeletePhotoSource(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	baseURL := r.URL.Query().Get("base_url")
+	if baseURL == "" {
+		s.fail(w, fmt.Errorf("укажите base_url источника"))
+		return
+	}
+	if err := store.DeletePhotoSource(r.Context(), eventID, baseURL); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handlePollPhotos(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	stats, err := s.photos.PollOnce(r.Context(), store, eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// handleMatchPhotos returns finish photos near a given time — the judge fixes a
+// time and sees the photo + number. Query: time_ms (required), tolerance_ms
+// (default 1500), bib (optional hint).
+func (s *Server) handleMatchPhotos(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var timeMs int64
+	if _, err := fmt.Sscanf(r.URL.Query().Get("time_ms"), "%d", &timeMs); err != nil {
+		s.fail(w, fmt.Errorf("укажите time_ms"))
+		return
+	}
+	tolerance := int64(1500)
+	if v := r.URL.Query().Get("tolerance_ms"); v != "" {
+		fmt.Sscanf(v, "%d", &tolerance) //nolint:errcheck
+	}
+	photos, err := service.MatchPhotos(r.Context(), store, eventID, timeMs, tolerance, r.URL.Query().Get("bib"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, photos)
+}
+
+func (s *Server) handlePhotoStatus(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	sources, err := store.ListPhotoSources(r.Context(), eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	count, err := store.CountPhotos(r.Context(), eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"running":      s.photos.Running(eventID),
+		"sources":      sources,
+		"photos_count": count,
+	})
 }
 
 func cors(next http.Handler) http.Handler {
