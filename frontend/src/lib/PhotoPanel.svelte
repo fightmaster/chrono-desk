@@ -69,9 +69,16 @@
   $: distinctBibs = [...new Set(photos.map(p => p.bib).filter(Boolean).map(String))]
   $: crowded = !matchedByBib && distinctBibs.length > 1
 
-  // Neighbour frames: when locked on a number, show ONLY that runner's burst so a
-  // pack doesn't mix numbers and frames; otherwise the whole time window.
-  $: frameSourcePhotos = matchedByBib ? photos.filter(p => String(p.bib) === hint) : photos
+  // Neighbour frames: when locked on a number, show ONLY that runner's burst from
+  // a SINGLE camera (best's source) so a pack — or a second phone — doesn't mix
+  // numbers, angles and frames into the scrub strip; otherwise the time window.
+  $: frameSourcePhotos = matchedByBib
+    ? photos.filter(p => String(p.bib) === hint && p.source_id === best?.source_id)
+    : photos
+  // Other cameras that also caught this runner (a second phone) — shown as a hint.
+  $: otherCameras = matchedByBib
+    ? [...new Set(photos.filter(p => String(p.bib) === hint && p.source_id !== best?.source_id).map(p => p.camera_label).filter(Boolean))]
+    : []
 
   // Flatten the relevant tracks' bursts into a single time-sorted frame list.
   $: allFrames = (() => {
@@ -202,7 +209,7 @@
       </div>
 
       {#if matchedByBib}
-        <div class="matchtag ok">✓ Совпадение по номеру №{hint}</div>
+        <div class="matchtag ok">✓ Совпадение по номеру №{hint}{#if otherCameras.length} · также на: {otherCameras.join(', ')}{/if}</div>
       {:else if crowded}
         <div class="warn">
           <span>⚠</span>

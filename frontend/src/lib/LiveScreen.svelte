@@ -64,6 +64,26 @@
 
   function setView(v) { feedView = v; refresh() }
 
+  // Collapse the same finish from multiple phones into one card: group by number
+  // (unique per event) when known, else by a ~1.5s time bucket (same crossing seen
+  // by two cameras). Keeps the wall free of doubles; the card notes how many
+  // cameras caught it. Re-runs when photos changes.
+  $: photoGroups = (() => {
+    const groups = new Map()
+    for (const ph of photos) {
+      const key = ph.bib ? `b:${ph.bib}` : `t:${Math.round(ph.time_ms / 1500)}`
+      const g = groups.get(key) || {items: []}
+      g.items.push(ph)
+      groups.set(key, g)
+    }
+    return [...groups.values()].map(g => {
+      const items = g.items.slice().sort((a, b) => b.time_ms - a.time_ms)
+      const rep = items.find(p => p.bib_source === 'manual') || items[0]
+      const cams = [...new Set(items.map(p => p.camera_label).filter(Boolean))]
+      return {...rep, cams}
+    }).sort((a, b) => b.time_ms - a.time_ms)
+  })()
+
   // Click a finish photo:
   //  • recognized number that maps to a participant → open their card (the photo
   //    panel re-shows this frame by time);
@@ -268,7 +288,7 @@
   <div class="feedhead">
     <div class="seg">
       <button class="seg-item" class:active={feedView === 'chips'} on:click={() => setView('chips')}>Отметки</button>
-      <button class="seg-item" class:active={feedView === 'photos'} on:click={() => setView('photos')}>Фотофиниш{#if photos.length} · {photos.length}{/if}</button>
+      <button class="seg-item" class:active={feedView === 'photos'} on:click={() => setView('photos')}>Фотофиниш{#if photoGroups.length} · {photoGroups.length}{/if}</button>
     </div>
   </div>
 
@@ -311,15 +331,16 @@
     {/if}
   {:else}
     <div class="pwall">
-      {#each photos as ph (ph.id)}
+      {#each photoGroups as ph (ph.id)}
         <button class="pcard" on:click={() => openPhoto(ph)} title={ph.bib ? `Открыть №${ph.bib}` : 'Номер не распознан'}>
           <div class="pimg">
             {#if ph.best_photo_url}<img src={imgURL(eventId, ph.best_photo_url, 480)} alt="кадр финиша" loading="lazy"/>{:else}<span class="noimg">нет кадра</span>{/if}
             <span class="ptime mono">{fmtTime(ph.time_ms)}</span>
             {#if ph.bib}<span class="pbib mono" class:ocr={ph.bib_source === 'ocr'}>№{ph.bib}</span>{/if}
+            {#if ph.cams.length > 1}<span class="pcams mono">📷×{ph.cams.length}</span>{/if}
           </div>
           <div class="pmeta">
-            <span class="mono faint">{ph.camera_label || 'камера'}</span>
+            <span class="mono faint">{ph.cams.length > 1 ? ph.cams.join(' · ') : (ph.camera_label || 'камера')}</span>
             {#if ph.bib_source === 'ocr'}<span class="ocrtag">OCR</span>{:else if ph.bib_source === 'manual'}<span class="oktag">✓</span>{/if}
           </div>
         </button>
@@ -420,6 +441,7 @@
   .ptime { position: absolute; left: 8px; bottom: 8px; background: rgba(6, 10, 16, .72); color: #ffd34d; font-size: 13px; font-weight: 600; padding: 3px 7px; border-radius: 6px; }
   .pbib { position: absolute; right: 8px; top: 8px; background: rgba(6, 10, 16, .72); color: #fff; font-size: 17px; font-weight: 700; padding: 3px 8px; border-radius: 7px; }
   .pbib.ocr { color: var(--amber); }
+  .pcams { position: absolute; left: 8px; top: 8px; background: rgba(6, 10, 16, .72); color: #cfe0f2; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 6px; }
   .pmeta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; }
   .pmeta .faint { font-size: 11.5px; }
   .ocrtag { font-size: 10px; font-weight: 700; color: var(--amber); border: 1px solid var(--amber); border-radius: 5px; padding: 1px 5px; }
