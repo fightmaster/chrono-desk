@@ -282,7 +282,7 @@
           <span class="st amber-text">не привязано</span>
           <button class="del" on:click|stopPropagation={() => dispatch('removeCapture', c.id)}>удалить</button>
           {#if capturePhotos[c.id]}
-            <img class="rowthumb" src={imgURL(eventId, capturePhotos[c.id].best_photo_url)} alt="кадр финиша" loading="lazy"/>
+            <img class="rowthumb" src={imgURL(eventId, capturePhotos[c.id].best_photo_url, 240)} alt="кадр финиша" loading="lazy"/>
           {/if}
         </div>
       {/each}
@@ -298,7 +298,7 @@
             <span class="reader-cell mono faint">{p.board}</span>
           {/if}
           {#if rowPhotos[p.log_id]}
-            <img class="rowthumb" src={imgURL(eventId, rowPhotos[p.log_id].best_photo_url)} alt="кадр финиша" loading="lazy"/>
+            <img class="rowthumb" src={imgURL(eventId, rowPhotos[p.log_id].best_photo_url, 240)} alt="кадр финиша" loading="lazy"/>
           {/if}
         </div>
       {/each}
@@ -314,7 +314,7 @@
       {#each photos as ph (ph.id)}
         <button class="pcard" on:click={() => openPhoto(ph)} title={ph.bib ? `Открыть №${ph.bib}` : 'Номер не распознан'}>
           <div class="pimg">
-            {#if ph.best_photo_url}<img src={imgURL(eventId, ph.best_photo_url)} alt="кадр финиша" loading="lazy"/>{:else}<span class="noimg">нет кадра</span>{/if}
+            {#if ph.best_photo_url}<img src={imgURL(eventId, ph.best_photo_url, 480)} alt="кадр финиша" loading="lazy"/>{:else}<span class="noimg">нет кадра</span>{/if}
             <span class="ptime mono">{fmtTime(ph.time_ms)}</span>
             {#if ph.bib}<span class="pbib mono" class:ocr={ph.bib_source === 'ocr'}>№{ph.bib}</span>{/if}
           </div>
