@@ -65,11 +65,20 @@
 
   function setView(v) { feedView = v; refresh() }
 
-  // Click a finish photo → open the matching participant (by recognized number).
+  // Click a finish photo:
+  //  • recognized number that maps to a participant → open their card (the photo
+  //    panel re-shows this frame by time);
+  //  • otherwise → fix the frame's time as a manual capture and jump to Отметки,
+  //    where opening it shows this same photo so the judge can read the number
+  //    off the image and bind it. No dead end for unrecognized finishers.
   function openPhoto(ph) {
-    if (!ph.bib) return
-    const m = members.find(x => String(x.number) === String(ph.bib))
-    if (m) dispatch('openMember', m.id)
+    if (ph.bib) {
+      const m = members.find(x => String(x.number) === String(ph.bib))
+      if (m) { dispatch('openMember', m.id); return }
+    }
+    dispatch('capture', ph.time_ms)
+    feedView = 'chips'
+    showFlash(`Время кадра ${fmtTime(ph.time_ms)} зафиксировано — откройте его в «Отметках», чтобы назначить номер`)
   }
 
   async function loadMore() {
