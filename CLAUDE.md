@@ -57,7 +57,28 @@ appended, never truncated by the chip-read limit — flagged `manual`/`result_id
 `DELETE .../results/{id}`); a successful add/delete shows a self-dismissing toast under
 the form, and input errors render directly under the manual input row. The
 `GET .../manual-results` endpoint remains for any review tooling but the UI no longer
-renders a separate list. Next:
+renders a separate list. **LAN results broadcast is in**: a SEPARATE read-only server
+(`internal/transport/publicweb`, `0.0.0.0:8090`, override `CHRONO_PUBLIC_PORT`) serves a
+self-contained mobile page so spectators/engravers/SMM read results from their phones
+with no internet. The page has a **distance dropdown** (not scrolling pills) and two tabs
+mirroring the desktop ResultsScreen: **Призёры** (absolute M/Ж top-3 + age-group podiums)
+and **Протокол** (full table with name/number search), ~20s auto-refresh. The Призёры tab
+has a **«Скопировать для Telegram»** button that builds a Markdown winners/prize-winners
+list (🥇/🥈/🥉, `**bold**` headers — double asterisks, which is what the Telegram app
+renders bold on paste) so SMM posts without retyping names — clipboard with an
+http-LAN fallback (`execCommand` then a select-and-copy modal, since `navigator.clipboard`
+needs a secure context). It is NOT the localhost control API opened up — only GET routes over a
+**PII-trimmed projection** (reuses `service.BuildProtocol`, drops `dob` and internal ids;
+no edits, no sync token reachable). Off by default; the operator toggles it per event in
+EventSettings (`BroadcastPanel.svelte`) which calls the localhost control endpoints
+`POST /api/public/start` `{event_id}` / `POST /api/public/stop` / `GET /api/public/status`.
+`lanURLs` enumerates `net.Interfaces()` and **skips virtual NICs** (docker/br-/veth/virbr/
+vmnet/vbox/tun/tap/wg/tailscale/zt/utun + down/loopback/point-to-point/link-local) so a
+QR never points at e.g. docker0's 172.17.x.x; status returns **`endpoints: [{url, qr}]`**
+— one QR PNG data-URI per real address (pure-Go `skip2/go-qrcode`), and the panel shows a
+QR per address so the operator scans the one on the venue network (Ethernet + Wi-Fi can
+both be up). The `publicweb` listener binds only while broadcasting and closes on
+stop/shutdown. Next:
 Run5Stopwatch format, log/journal upload back to the site (v0.3), rfid-hub migration to
 rfid-core. When rfid-sync's engine changes, re-diff
 `internal/processor` against `rfid-sync/internal/syncer/processor` (it is a port, not a
@@ -93,6 +114,8 @@ does NOT use Wails bindings — `app.go` exposes only `APIBaseURL()`, pattern fr
 RaceTorchApp) → `internal/service` (import/recount/ranking/excel) →
 `internal/processor` (checkpoint-matching engine) → `internal/domain` →
 `internal/infrastructure/sqlite`. One event = one portable SQLite file.
+`internal/transport/publicweb` is a second, **read-only** HTTP server for the LAN results
+broadcast (see status above) — same `service` layer, GET-only, PII-trimmed, off by default.
 
 ## Critical contracts
 

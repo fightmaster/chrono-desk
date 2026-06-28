@@ -27,7 +27,8 @@ their current status noted.
 ```
 frontend/ (Svelte + Vite)  — UI, talks HTTP to localhost
    │
-internal/transport/httpapi — REST API (embedded; later exposable to LAN / headless)
+internal/transport/httpapi   — REST API (embedded localhost; control surface for the UI)
+internal/transport/publicweb — separate read-only LAN results board (off by default)
    │
 internal/service           — import, recount orchestration, ranking, excel export
    │
@@ -56,6 +57,15 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    run5 PHP — full spec and source paths in `docs/ranking.md`.
 3. **HTTP API instead of Wails bindings.** Gives LAN access for judges' tablets later,
    headless mode for free, and keeps the frontend decoupled.
+   - **LAN results broadcast is a *separate* read-only server**, not the control API
+     opened up (`internal/transport/publicweb`, default `:8090`, `CHRONO_PUBLIC_PORT`).
+     The control API has many mutating endpoints (recount, edits, manual finishes,
+     deletes, sync **with the run5 token**) that must never reach a public venue Wi-Fi, so
+     the broadcast exposes only GET routes over a **PII-trimmed** projection — no date of
+     birth, no internal ids — built by reusing `service.BuildProtocol`. It is off by
+     default and binds its `0.0.0.0` port only while the operator has the broadcast
+     switched on (per event), closing it again on stop. The settings screen shows the
+     LAN address and a QR code (PNG via the pure-Go `skip2/go-qrcode`).
 4. **Idempotency contract.** `rfid_logs.id = md5(board + epc + timeMillis + ant)`
    (string concatenation, no separators; board like `"Feibot:U659"`, EPC uppercased and
    trimmed, time as unix-millis decimal string, ant as decimal string). For number-based
@@ -90,6 +100,12 @@ finishes and tune checkpoints on the Live screen.
 v0.3 (shipped): chrono-desk ──(sync push/pull, X-SYNC-TOKEN)──▶ run5 — local edits, new
 members, logs and manual finishes sync back; run5 applies them (overwrite-gated where
 destructive). Pull reuses the import path. Site stays the source of truth.
+
+LAN broadcast (shipped): spectators' phones ──HTTP──▶ chrono-desk `publicweb` (read-only,
+PII-trimmed) — distance dropdown + Призёры/Протокол tabs (absolute & age-group podiums,
+searchable protocol), auto-refreshing; the Призёры tab copies a Telegram-ready Markdown
+winners list for SMM. Operator toggles it per event from the settings screen; the port is
+open only while on.
 
 ## Checkpoint semantics (inherited from run5 / rfid-sync)
 

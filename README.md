@@ -46,7 +46,30 @@ Remaining for v0.1: the run5 `event:export` command on the site.
 - **v0.2**: live TCP ingest from Feibot in the local network, live standings
 - **v0.3**: upload collected rfid_logs back to the site · registration edits sync ·
   reader heartbeat monitoring
-- later: RaceTorch integration, multi-tool monitoring/processing center
+- later: RaceTorch integration, multi-tool monitoring/processing center; a machine-readable
+  results feed (e.g. XML/JSON) for IPTV/streaming overlays so a broadcast can show live
+  times and the leaderboard as on-screen text (idea — to be scoped)
+
+## LAN results broadcast
+
+At a venue with no internet the only copy of the live results is on the desk. People who
+sign certificates, engrave medal times or run social media can read them from their own
+phones: in **Настройки события → «Трансляция результатов по сети»** the operator turns the
+broadcast on and shows an address + QR code. Anyone on the same Wi-Fi opens that page and
+gets a read-only results board — a distance dropdown and two tabs like the desktop:
+**Призёры** (absolute M/F top-3 plus age-group podiums) and **Протокол** (full table with
+search by surname/number), auto-refreshing as the judge recounts. The Призёры tab has a
+**copy-for-Telegram** button that puts the winners/prize-winners on the clipboard as
+Markdown, so the SMM person posts without retyping names.
+
+This runs as a **separate read-only HTTP server** (`internal/transport/publicweb`, default
+port `8090`, override `CHRONO_PUBLIC_PORT`), distinct from the localhost control API: only
+GET endpoints with a PII-trimmed projection are exposed (no date of birth, no internal
+ids, no edits, no sync token). The LAN port is opened only while broadcasting and closed
+when it is switched off — nothing is reachable from the network by default. Address
+discovery skips virtual interfaces (Docker bridges, VMs, VPNs) so a QR never points at an
+unreachable address; if the machine has several real NICs up (Ethernet + Wi-Fi), the
+settings screen shows each address with its own QR so the operator picks the venue one.
 
 ## Development
 
