@@ -53,9 +53,8 @@
     try {
       status = await call('GET', `/api/events/${eventId}/live/status`)
       feed = await call('GET', `/api/events/${eventId}/live/feed?limit=${feedLimit}`)
-      if (feedView === 'photos') {
-        try { photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=48`) } catch (_) { /* photos best-effort */ }
-      }
+      // Recent photos drive both the wall and the inline finish-row thumbnails.
+      try { photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=60`) } catch (_) { /* photos best-effort */ }
       if (status.port) port = status.port
       dispatch('status', status)
     } catch (e) {
@@ -143,6 +142,32 @@
       showFlash(`Удалён ручной результат: ${who}`)
       await refresh()
     } catch (e) { manualError = e.message }
+  }
+
+  // Best finish photo for a feed row: by number first (unique → unambiguous),
+  // else nearest in time within ~1.5s. Used for the inline thumbnail.
+  function findPhotoIn(phs, p) {
+    if (!phs.length) return null
+    if (p.number != null) {
+      const byBib = phs.find(ph => String(ph.bib) === String(p.number) && Math.abs(ph.time_ms - p.time_ms) < 5000)
+      if (byBib) return byBib
+    }
+    let best = null, bestD = 1500
+    for (const ph of phs) {
+      const d = Math.abs(ph.time_ms - p.time_ms)
+      if (d < bestD) { bestD = d; best = ph }
+    }
+    return best
+  }
+  // Map log_id → photo, finish rows only (keeps the thumbnail off chip/skip rows).
+  // Args are listed so Svelte re-runs when feed OR photos changes.
+  $: rowPhotos = mapRowPhotos(feed, photos)
+  function mapRowPhotos(rows, phs) {
+    const m = {}
+    for (const p of rows) {
+      if (passClass(p) === 'finish') m[p.log_id] = findPhotoIn(phs, p)
+    }
+    return m
   }
 
   function passClass(p) {
@@ -251,7 +276,7 @@
         </div>
       {/each}
       {#each feed as p (p.log_id)}
-        <div class="row {passClass(p)}" on:click={() => openRow(p)}>
+        <div class="row {passClass(p)}" class:has-photo={rowPhotos[p.log_id]} on:click={() => openRow(p)}>
           <span class="time mono">{fmtTime(p.time_ms)}</span>
           <span class="num mono">{p.number ?? ''}</span>
           <span class="name">{#if p.member_id}{p.last_name ?? ''} {p.first_name ?? ''}{:else}<span class="epc mono">{p.epc}</span>{/if}</span>
@@ -260,6 +285,9 @@
             <button class="del" on:click|stopPropagation={() => deleteManual(p)}>удалить</button>
           {:else}
             <span class="reader-cell mono faint">{p.board}</span>
+          {/if}
+          {#if rowPhotos[p.log_id]}
+            <img class="rowthumb" src={rowPhotos[p.log_id].best_photo_url} alt="кадр финиша" loading="lazy"/>
           {/if}
         </div>
       {/each}
@@ -352,6 +380,8 @@
   .row .epc { color: var(--amber); font-size: 15px; }
   .row .st { font-size: 15px; font-weight: 700; min-width: 130px; }
   .row .reader-cell { min-width: 96px; text-align: right; font-size: 12.5px; }
+  .row.has-photo { padding-top: 8px; padding-bottom: 8px; }
+  .rowthumb { width: 71px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border2); background: #0b1018; flex-shrink: 0; }
   .del {
     min-width: 96px; text-align: right; cursor: pointer;
     background: none; border: none; color: var(--bad); font: inherit; font-size: 13px; font-weight: 600;
