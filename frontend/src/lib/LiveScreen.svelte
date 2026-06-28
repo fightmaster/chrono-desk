@@ -1,6 +1,7 @@
 <script>
   import {createEventDispatcher, onMount, onDestroy} from 'svelte'
   import {call, fmtTime, cleanToMs, timeStrToMs, memberMatches, imgURL} from './api.js'
+  import PhotoLightbox from './PhotoLightbox.svelte'
 
   export let eventId
   export let members = []
@@ -84,20 +85,24 @@
     }).sort((a, b) => b.time_ms - a.time_ms)
   })()
 
-  // Click a finish photo:
-  //  • recognized number that maps to a participant → open their card (the photo
-  //    panel re-shows this frame by time);
-  //  • otherwise → fix the frame's time as a manual capture and jump to Отметки,
-  //    where opening it shows this same photo so the judge can read the number
-  //    off the image and bind it. No dead end for unrecognized finishers.
-  function openPhoto(ph) {
-    if (ph.bib) {
-      const m = members.find(x => String(x.number) === String(ph.bib))
-      if (m) { dispatch('openMember', m.id); return }
-    }
-    dispatch('capture', ph.time_ms)
+  // Click a finish photo → open a read-only preview (scrub the whole series, no
+  // side effects). The judge decides there: open the participant card, or fix a
+  // chosen frame's time. Nothing is created on a mere click anymore.
+  let lightbox = null
+  $: lightboxCanOpenMember = lightbox?.bib
+    ? members.some(x => String(x.number) === String(lightbox.bib))
+    : false
+
+  function openMemberByBib(bib) {
+    const m = members.find(x => String(x.number) === String(bib))
+    if (m) dispatch('openMember', m.id)
+    lightbox = null
+  }
+  function fixFrameTime(timeMs) {
+    dispatch('capture', timeMs)
     feedView = 'chips'
-    showFlash(`Время кадра ${fmtTime(ph.time_ms)} зафиксировано — откройте его в «Отметках», чтобы назначить номер`)
+    lightbox = null
+    showFlash(`Время кадра ${fmtTime(timeMs)} зафиксировано — откройте его в «Отметках», чтобы назначить номер`)
   }
 
   async function loadMore() {
@@ -332,7 +337,7 @@
   {:else}
     <div class="pwall">
       {#each photoGroups as ph (ph.id)}
-        <button class="pcard" on:click={() => openPhoto(ph)} title={ph.bib ? `Открыть №${ph.bib}` : 'Номер не распознан'}>
+        <button class="pcard" on:click={() => lightbox = ph} title="Открыть просмотр серии">
           <div class="pimg">
             {#if ph.best_photo_url}<img src={imgURL(eventId, ph.best_photo_url, 480)} alt="кадр финиша" loading="lazy"/>{:else}<span class="noimg">нет кадра</span>{/if}
             <span class="ptime mono">{fmtTime(ph.time_ms)}</span>
@@ -349,6 +354,13 @@
     {#if !photos.length}
       <p class="faint center">Фото пока нет. Добавьте телефон-источник в «Настройках события» → «Фотофиниш» и включите «Локальную синхронизацию» в приложении Chrono Cam.</p>
     {/if}
+  {/if}
+
+  {#if lightbox}
+    <PhotoLightbox {eventId} photo={lightbox} canOpenMember={lightboxCanOpenMember}
+                   on:openMember={e => openMemberByBib(e.detail)}
+                   on:fixTime={e => fixFrameTime(e.detail)}
+                   on:close={() => lightbox = null}/>
   {/if}
 </div>
 
