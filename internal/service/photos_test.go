@@ -84,6 +84,40 @@ func TestMatchPhotosOrdersByBibThenTime(t *testing.T) {
 	}
 }
 
+func TestMatchPhotosFindsBibOutsideToleranceButInWideWindow(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	if err := store.UpsertEvent(ctx, domain.Event{ID: "e1", Name: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	upsert := func(id string, timeMs int64, bib string) {
+		if err := store.UpsertPhoto(ctx, "e1", sqlite.Photo{ID: id, TimeMs: timeMs, Bib: bib}, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Runner №10's frame is 500ms off the entered time (outside ±100), another
+	// runner is right on it. With the number, №10 must still win.
+	upsert("p10", 1500, "10")
+	upsert("p20", 1000, "20")
+
+	got, err := MatchPhotos(ctx, store, "e1", 1000, 100, "10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != "p10" {
+		t.Errorf("expected bib match p10 first, got %v", ids(got))
+	}
+
+	// Without the number, only the in-window runner is returned.
+	got, err = MatchPhotos(ctx, store, "e1", 1000, 100, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "p20" {
+		t.Errorf("expected only in-window p20, got %v", ids(got))
+	}
+}
+
 func TestListRecentPhotosOrdersByTimeDescAndLimits(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()

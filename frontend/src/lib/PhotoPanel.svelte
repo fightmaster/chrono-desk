@@ -59,10 +59,24 @@
 
   function onSourcesChanged() { loadStatus(); fetchMatch() }
 
-  // Flatten every matched track's burst into a single time-sorted frame list.
+  // Exact bib match wins decisively (the number is unique per event) — this is how
+  // a pack finishing together stays unambiguous. The backend already pulls and
+  // orders it first; we lock onto it explicitly here too.
+  $: hint = bibHint != null && bibHint !== '' ? String(bibHint) : ''
+  $: matchedByBib = hint ? photos.find(p => String(p.bib) === hint) : null
+  // Distinct numbers in the time window — used to warn about a crowded finish
+  // when we have NO number to disambiguate.
+  $: distinctBibs = [...new Set(photos.map(p => p.bib).filter(Boolean).map(String))]
+  $: crowded = !matchedByBib && distinctBibs.length > 1
+
+  // Neighbour frames: when locked on a number, show ONLY that runner's burst so a
+  // pack doesn't mix numbers and frames; otherwise the whole time window.
+  $: frameSourcePhotos = matchedByBib ? photos.filter(p => String(p.bib) === hint) : photos
+
+  // Flatten the relevant tracks' bursts into a single time-sorted frame list.
   $: allFrames = (() => {
     const out = []
-    for (const p of photos) {
+    for (const p of frameSourcePhotos) {
       const frames = (p.frames && p.frames.length)
         ? p.frames
         : (p.best_photo_url ? [{timestamp_epoch_ms: p.time_ms, url: p.best_photo_url}] : [])
@@ -75,7 +89,7 @@
     return out.filter((f, i) => i === 0 || f.ft !== out[i - 1].ft || f.url !== out[i - 1].url)
   })()
 
-  $: best = photos.length ? photos[0] : null
+  $: best = matchedByBib || (photos.length ? photos[0] : null)
   $: bestFrame = best ? {ft: best.time_ms, url: best.best_photo_url, bib: best.bib, source: best.bib_source, camera: best.camera_label} : null
   $: display = selectedFt != null ? (allFrames.find(f => f.ft === selectedFt) || bestFrame) : bestFrame
 
@@ -187,6 +201,17 @@
         </div>
       </div>
 
+      {#if matchedByBib}
+        <div class="matchtag ok">✓ Совпадение по номеру №{hint}</div>
+      {:else if crowded}
+        <div class="warn">
+          <span>⚠</span>
+          <span>Рядом финишировали несколько: {distinctBibs.map(b => '№' + b).join(', ')}. Сверьте кадр — показано ближайшее по времени.</span>
+        </div>
+      {:else if hint}
+        <div class="matchtag note">№{hint} на кадрах не распознан — показано ближайшее по времени</div>
+      {/if}
+
       {#if ocrUncertain}
         <div class="warn">
           <span>⚠</span>
@@ -285,6 +310,9 @@
   .offval { font-size: 16px; font-weight: 700; }
 
   .warn { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 11px 14px; border-radius: 10px; background: rgba(244, 183, 64, .13); border: 1px solid rgba(244, 183, 64, .42); font-size: 12.5px; line-height: 1.45; }
+  .matchtag { margin-top: 12px; padding: 9px 13px; border-radius: 10px; font-size: 12.5px; font-weight: 600; }
+  .matchtag.ok { background: var(--okbg); border: 1px solid var(--okborder); color: var(--ok); }
+  .matchtag.note { background: var(--surface); border: 1px solid var(--border); color: var(--faint); font-weight: 500; }
 
   .bestrow { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 13px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); flex-wrap: wrap; }
   .bestinfo { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 170px; }

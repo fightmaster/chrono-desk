@@ -116,11 +116,37 @@ func MatchPhotos(ctx context.Context, store *sqlite.Store, eventID string, timeM
 		return nil, err
 	}
 	bibHint = strings.TrimSpace(bibHint)
+
+	// The number is unique per event, so an exact bib hit IS this runner — find it
+	// even when the photo time drifted from the chip/manual time (and to cut
+	// through a pack finishing together). Pull exact-bib photos from a wider
+	// window and fold them in.
+	if bibHint != "" {
+		wide := toleranceMs * 4
+		if wide < 3000 {
+			wide = 3000
+		}
+		extra, err := store.GetPhotosInRange(ctx, eventID, timeMs-wide, timeMs+wide)
+		if err != nil {
+			return nil, err
+		}
+		seen := make(map[string]bool, len(photos))
+		for _, p := range photos {
+			seen[p.ID] = true
+		}
+		for _, p := range extra {
+			if p.Bib == bibHint && !seen[p.ID] {
+				photos = append(photos, p)
+				seen[p.ID] = true
+			}
+		}
+	}
+
 	sort.SliceStable(photos, func(i, j int) bool {
 		if bibHint != "" {
 			mi, mj := photos[i].Bib == bibHint, photos[j].Bib == bibHint
 			if mi != mj {
-				return mi // bib-matching photo first
+				return mi // exact bib match wins decisively, even if further in time
 			}
 		}
 		return absInt64(photos[i].TimeMs-timeMs) < absInt64(photos[j].TimeMs-timeMs)
