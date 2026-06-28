@@ -159,14 +159,22 @@
     }
     return best
   }
-  // Map log_id → photo, finish rows only (keeps the thumbnail off chip/skip rows).
-  // Args are listed so Svelte re-runs when feed OR photos changes.
+  // Map log_id → photo for rows that represent a finish: chip finishes AND manual
+  // finishes (incl. ones bound from the photo wall). Args are listed so Svelte
+  // re-runs when feed OR photos changes.
   $: rowPhotos = mapRowPhotos(feed, photos)
   function mapRowPhotos(rows, phs) {
     const m = {}
     for (const p of rows) {
-      if (passClass(p) === 'finish') m[p.log_id] = findPhotoIn(phs, p)
+      if (passClass(p) === 'finish' || p.manual) m[p.log_id] = findPhotoIn(phs, p)
     }
+    return m
+  }
+  // Unbound «Зафиксировать время» captures — match by time (no number yet).
+  $: capturePhotos = mapCapturePhotos(captures, photos)
+  function mapCapturePhotos(rows, phs) {
+    const m = {}
+    for (const c of rows) m[c.id] = findPhotoIn(phs, {time_ms: c.time_ms, number: null})
     return m
   }
 
@@ -267,12 +275,15 @@
   {#if feedView === 'chips'}
     <div class="feed">
       {#each captures as c (c.id)}
-        <div class="row capture" on:click={() => dispatch('openCapture', c)}>
+        <div class="row capture" class:has-photo={capturePhotos[c.id]} on:click={() => dispatch('openCapture', c)}>
           <span class="time mono">{fmtTime(c.time_ms)}</span>
           <span class="num mono">—</span>
           <span class="name">ручной финиш</span>
           <span class="st amber-text">не привязано</span>
           <button class="del" on:click|stopPropagation={() => dispatch('removeCapture', c.id)}>удалить</button>
+          {#if capturePhotos[c.id]}
+            <img class="rowthumb" src={capturePhotos[c.id].best_photo_url} alt="кадр финиша" loading="lazy"/>
+          {/if}
         </div>
       {/each}
       {#each feed as p (p.log_id)}
