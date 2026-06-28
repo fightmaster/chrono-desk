@@ -1,6 +1,6 @@
 <script>
   import {createEventDispatcher, onMount, onDestroy} from 'svelte'
-  import {call, fmtTime} from './api.js'
+  import {call, fmtTime, imgURL} from './api.js'
   import PhotoSources from './PhotoSources.svelte'
 
   export let eventId
@@ -180,7 +180,7 @@
       <!-- big frame -->
       <div class="frame big">
         {#if display?.url}
-          <img src={display.url} alt="кадр финиша" />
+          <img src={imgURL(eventId, display.url)} alt="кадр финиша" />
         {:else}
           <div class="noimg">нет изображения</div>
         {/if}
@@ -244,7 +244,7 @@
         {#each cells as c (c.ft + c.url)}
           <button class="cell" class:sel={display && c.ft === display.ft} on:click={() => selectFrame(c.ft)}>
             <div class="cellimg">
-              {#if c.url}<img src={c.url} alt="" loading="lazy"/>{/if}
+              {#if c.url}<img src={imgURL(eventId, c.url)} alt="" loading="lazy"/>{/if}
               {#if c.ft === centerFt}<span class="centerline"></span>{/if}
             </div>
             <span class="celllab mono">{tlabel(c.ft)}</span>

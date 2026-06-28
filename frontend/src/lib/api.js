@@ -17,6 +17,14 @@ export async function call(method, path, body, contentType) {
   return data
 }
 
+// Route a phone image URL through the desk's caching proxy so each frame is
+// pulled from the smartphone once and then served locally (less load on the
+// phone and the LAN). Returns '' for an empty url.
+export function imgURL(eventId, url) {
+  if (!url) return ''
+  return `${base}/api/events/${eventId}/photos/img?u=${encodeURIComponent(url)}`
+}
+
 // Local-time <input type="datetime-local"> helpers (unix ms ↔ input value).
 export function msToInput(ms) {
   if (ms === null || ms === undefined) return ''

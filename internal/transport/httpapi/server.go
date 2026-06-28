@@ -15,6 +15,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -29,6 +31,7 @@ type Server struct {
 	events     *service.EventManager
 	live       *service.LiveManager
 	photos     *service.PhotoManager
+	photoCache *service.PhotoCache
 	logger     *log.Logger
 }
 
@@ -46,6 +49,17 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 		live:     service.NewLiveManager(logger),
 		photos:   service.NewPhotoManager(logger),
 		logger:   logger,
+	}
+
+	// Local write-once cache for finish-photo JPEGs (served via the image proxy).
+	cacheRoot, err := os.UserCacheDir()
+	if err != nil || cacheRoot == "" {
+		cacheRoot = os.TempDir()
+	}
+	if pc, perr := service.NewPhotoCache(filepath.Join(cacheRoot, "chrono-desk", "photos")); perr != nil {
+		logger.Printf("photo cache disabled: %v", perr)
+	} else {
+		s.photoCache = pc
 	}
 
 	mux := http.NewServeMux()
@@ -90,6 +104,7 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("POST /api/events/{id}/photos/poll", s.handlePollPhotos)
 	mux.HandleFunc("GET /api/events/{id}/photos/status", s.handlePhotoStatus)
 	mux.HandleFunc("GET /api/events/{id}/photos/recent", s.handleRecentPhotos)
+	mux.HandleFunc("GET /api/events/{id}/photos/img", s.handlePhotoImage)
 	mux.HandleFunc("GET /api/events/{id}/photos", s.handleMatchPhotos)
 	mux.HandleFunc("GET /api/events/{id}/sync-config", s.handleGetSyncConfig)
 	mux.HandleFunc("PUT /api/events/{id}/sync-config", s.handleSetSyncConfig)
@@ -413,6 +428,49 @@ func (s *Server) handleRecentPhotos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, photos)
+}
+
+// handlePhotoImage is a caching proxy: it serves a finish-photo JPEG from the
+// local cache, fetching it from the phone once on a miss. The frontend points
+// every <img> here instead of straight at the phone, so the smartphone and LAN
+// aren't hit on every redraw. Query: u = the absolute phone image URL.
+func (s *Server) handlePhotoImage(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	u := r.URL.Query().Get("u")
+	if u == "" {
+		s.fail(w, fmt.Errorf("укажите параметр u (адрес кадра)"))
+		return
+	}
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	sources, err := store.ListPhotoSources(r.Context(), eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	allowed := make([]string, 0, len(sources))
+	for _, src := range sources {
+		allowed = append(allowed, src.BaseURL)
+	}
+	if !service.HostAllowed(u, allowed) {
+		http.Error(w, "источник не зарегистрирован", http.StatusForbidden)
+		return
+	}
+	if s.photoCache == nil {
+		s.fail(w, fmt.Errorf("кэш фото недоступен"))
+		return
+	}
+	data, err := s.photoCache.Get(r.Context(), u)
+	if err != nil {
+		http.Error(w, "кадр недоступен: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	_, _ = w.Write(data)
 }
 
 func (s *Server) handlePhotoStatus(w http.ResponseWriter, r *http.Request) {
