@@ -16,6 +16,11 @@
   let error = ''
   let timer = null
 
+  // Feed view: chip reads (default) or the photo-finish wall (recent finishes
+  // pulled from the phones — same /photos/recent the panel uses).
+  let feedView = 'chips' // 'chips' | 'photos'
+  let photos = []
+
   // manual finish by number
   let query = ''
   let mode = 'clean' // 'clean' | 'wall'
@@ -48,11 +53,23 @@
     try {
       status = await call('GET', `/api/events/${eventId}/live/status`)
       feed = await call('GET', `/api/events/${eventId}/live/feed?limit=${feedLimit}`)
+      if (feedView === 'photos') {
+        try { photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=48`) } catch (_) { /* photos best-effort */ }
+      }
       if (status.port) port = status.port
       dispatch('status', status)
     } catch (e) {
       error = e.message
     }
+  }
+
+  function setView(v) { feedView = v; refresh() }
+
+  // Click a finish photo → open the matching participant (by recognized number).
+  function openPhoto(ph) {
+    if (!ph.bib) return
+    const m = members.find(x => String(x.number) === String(ph.bib))
+    if (m) dispatch('openMember', m.id)
   }
 
   async function loadMore() {
@@ -206,35 +223,63 @@
   {#if manualError}<p class="error">{manualError}</p>{/if}
   {#if flash}<p class="flash">{flash}</p>{/if}
 
-  <div class="feed">
-    {#each captures as c (c.id)}
-      <div class="row capture" on:click={() => dispatch('openCapture', c)}>
-        <span class="time mono">{fmtTime(c.time_ms)}</span>
-        <span class="num mono">—</span>
-        <span class="name">ручной финиш</span>
-        <span class="st amber-text">не привязано</span>
-        <button class="del" on:click|stopPropagation={() => dispatch('removeCapture', c.id)}>удалить</button>
-      </div>
-    {/each}
-    {#each feed as p (p.log_id)}
-      <div class="row {passClass(p)}" on:click={() => openRow(p)}>
-        <span class="time mono">{fmtTime(p.time_ms)}</span>
-        <span class="num mono">{p.number ?? ''}</span>
-        <span class="name">{#if p.member_id}{p.last_name ?? ''} {p.first_name ?? ''}{:else}<span class="epc mono">{p.epc}</span>{/if}</span>
-        <span class="st">{passLabel(p)}</span>
-        {#if p.manual}
-          <button class="del" on:click|stopPropagation={() => deleteManual(p)}>удалить</button>
-        {:else}
-          <span class="reader-cell mono faint">{p.board}</span>
-        {/if}
-      </div>
-    {/each}
+  <div class="feedhead">
+    <div class="seg">
+      <button class="seg-item" class:active={feedView === 'chips'} on:click={() => setView('chips')}>Отметки</button>
+      <button class="seg-item" class:active={feedView === 'photos'} on:click={() => setView('photos')}>Фотофиниш{#if photos.length} · {photos.length}{/if}</button>
+    </div>
   </div>
 
-  {#if !feed.length && !captures.length}
-    <p class="faint center">Прочтений пока нет — лента обновляется каждые 2 секунды.</p>
-  {:else if chipShown >= feedLimit && feedLimit < 1000}
-    <p class="center"><button class="btn" on:click={loadMore}>Загрузить ещё (показано {chipShown})</button></p>
+  {#if feedView === 'chips'}
+    <div class="feed">
+      {#each captures as c (c.id)}
+        <div class="row capture" on:click={() => dispatch('openCapture', c)}>
+          <span class="time mono">{fmtTime(c.time_ms)}</span>
+          <span class="num mono">—</span>
+          <span class="name">ручной финиш</span>
+          <span class="st amber-text">не привязано</span>
+          <button class="del" on:click|stopPropagation={() => dispatch('removeCapture', c.id)}>удалить</button>
+        </div>
+      {/each}
+      {#each feed as p (p.log_id)}
+        <div class="row {passClass(p)}" on:click={() => openRow(p)}>
+          <span class="time mono">{fmtTime(p.time_ms)}</span>
+          <span class="num mono">{p.number ?? ''}</span>
+          <span class="name">{#if p.member_id}{p.last_name ?? ''} {p.first_name ?? ''}{:else}<span class="epc mono">{p.epc}</span>{/if}</span>
+          <span class="st">{passLabel(p)}</span>
+          {#if p.manual}
+            <button class="del" on:click|stopPropagation={() => deleteManual(p)}>удалить</button>
+          {:else}
+            <span class="reader-cell mono faint">{p.board}</span>
+          {/if}
+        </div>
+      {/each}
+    </div>
+
+    {#if !feed.length && !captures.length}
+      <p class="faint center">Прочтений пока нет — лента обновляется каждые 2 секунды.</p>
+    {:else if chipShown >= feedLimit && feedLimit < 1000}
+      <p class="center"><button class="btn" on:click={loadMore}>Загрузить ещё (показано {chipShown})</button></p>
+    {/if}
+  {:else}
+    <div class="pwall">
+      {#each photos as ph (ph.id)}
+        <button class="pcard" on:click={() => openPhoto(ph)} title={ph.bib ? `Открыть №${ph.bib}` : 'Номер не распознан'}>
+          <div class="pimg">
+            {#if ph.best_photo_url}<img src={ph.best_photo_url} alt="кадр финиша" loading="lazy"/>{:else}<span class="noimg">нет кадра</span>{/if}
+            <span class="ptime mono">{fmtTime(ph.time_ms)}</span>
+            {#if ph.bib}<span class="pbib mono" class:ocr={ph.bib_source === 'ocr'}>№{ph.bib}</span>{/if}
+          </div>
+          <div class="pmeta">
+            <span class="mono faint">{ph.camera_label || 'камера'}</span>
+            {#if ph.bib_source === 'ocr'}<span class="ocrtag">OCR</span>{:else if ph.bib_source === 'manual'}<span class="oktag">✓</span>{/if}
+          </div>
+        </button>
+      {/each}
+    </div>
+    {#if !photos.length}
+      <p class="faint center">Фото пока нет. Добавьте телефон-источник в «Настройках события» → «Фотофиниш» и включите «Локальную синхронизацию» в приложении Chrono Cam.</p>
+    {/if}
   {/if}
 </div>
 
@@ -313,4 +358,20 @@
   .row:not(.finish):not(.capture):not(.manual) .st { color: var(--dim); }
 
   .center { text-align: center; margin-top: 20px; }
+
+  .feedhead { margin-bottom: 12px; }
+
+  .pwall { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .pcard { padding: 0; background: none; border: none; cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 6px; }
+  .pimg { position: relative; width: 100%; aspect-ratio: 16/9; border-radius: 11px; overflow: hidden; border: 1px solid var(--border); background: #0b1018; }
+  .pcard:hover .pimg { border-color: var(--accent); }
+  .pimg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .noimg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 12px; }
+  .ptime { position: absolute; left: 8px; bottom: 8px; background: rgba(6, 10, 16, .72); color: #ffd34d; font-size: 13px; font-weight: 600; padding: 3px 7px; border-radius: 6px; }
+  .pbib { position: absolute; right: 8px; top: 8px; background: rgba(6, 10, 16, .72); color: #fff; font-size: 17px; font-weight: 700; padding: 3px 8px; border-radius: 7px; }
+  .pbib.ocr { color: var(--amber); }
+  .pmeta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; }
+  .pmeta .faint { font-size: 11.5px; }
+  .ocrtag { font-size: 10px; font-weight: 700; color: var(--amber); border: 1px solid var(--amber); border-radius: 5px; padding: 1px 5px; }
+  .oktag { font-size: 11px; font-weight: 700; color: var(--ok); }
 </style>

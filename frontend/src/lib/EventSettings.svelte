@@ -1,7 +1,8 @@
 <script>
-  import {createEventDispatcher} from 'svelte'
+  import {createEventDispatcher, onMount} from 'svelte'
   import {call, RU_TIMEZONES} from './api.js'
   import SiteSyncPanel from './SiteSyncPanel.svelte'
+  import PhotoSources from './PhotoSources.svelte'
   import EditsLog from './EditsLog.svelte'
 
   export let eventId
@@ -12,6 +13,14 @@
 
   let msg = ''
   let error = ''
+
+  // Photo-finish (Chrono Cam phones over the LAN).
+  let photoSourcesOpen = false
+  let photoStat = null
+  async function loadPhotoStat() {
+    try { photoStat = await call('GET', `/api/events/${eventId}/photos/status`) } catch (_) { photoStat = null }
+  }
+  onMount(loadPhotoStat)
 
   // CSV flash import (two-step: pick file → set code+tz → load).
   let deviceCode = ''
@@ -98,6 +107,23 @@
     <!-- Sync -->
     <SiteSyncPanel {eventId} on:pulled={() => dispatch('pulled')}/>
 
+    <!-- Photo-finish (Chrono Cam) -->
+    <div class="card">
+      <div class="ctitle mb">Фотофиниш — камеры на телефонах</div>
+      <p class="faint pf-sub">Телефоны Chrono Cam снимают финиш автономно. Десктоп подтягивает кадры по локальной сети — на финише никто не стоит. Кадры видны в ленте «Фотофиниш» на экране Live и в карточке участника при правке времени.</p>
+      <div class="pf-row">
+        <button class="btn primary" on:click={() => photoSourcesOpen = true}>Источники фото…</button>
+        {#if photoStat}
+          <span class="faint pf-stat">
+            Источников: <b>{(photoStat.sources || []).length}</b> ·
+            кадров: <b>{photoStat.photos_count ?? 0}</b> ·
+            опрос: <b>{photoStat.running ? 'идёт' : 'остановлен'}</b>
+          </span>
+        {/if}
+      </div>
+      <p class="faint pf-hint">Как подключить: в приложении на телефоне откройте «Настройки» → включите «Локальная синхронизация», затем впишите показанный адрес (напр. <code class="mono">http://192.168.0.50:8080</code>) здесь в «Источниках».</p>
+    </div>
+
     <!-- CSV import -->
     <div class="card">
       <div class="ctitle mb">Импорт логов с флешки (CSV)</div>
@@ -161,6 +187,10 @@
   </div>
 </div>
 
+{#if photoSourcesOpen}
+  <PhotoSources {eventId} on:changed={loadPhotoStat} on:close={() => { photoSourcesOpen = false; loadPhotoStat() }}/>
+{/if}
+
 <style>
   .screen { padding: 24px; max-width: 880px; }
   h1 { font-size: 22px; font-weight: 700; margin: 0 0 6px; }
@@ -189,4 +219,10 @@
 
   .data-btns { display: flex; gap: 10px; flex-wrap: wrap; }
   .card.edits { padding-top: 18px; padding-bottom: 18px; }
+
+  .pf-sub { font-size: 13.5px; margin: 0 0 14px; line-height: 1.5; }
+  .pf-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .pf-stat { font-size: 13px; }
+  .pf-hint { font-size: 12.5px; margin: 12px 0 0; line-height: 1.5; }
+  .pf-hint code { color: var(--amber); font-size: 12px; }
 </style>
