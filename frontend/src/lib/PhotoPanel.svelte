@@ -86,6 +86,10 @@
     near.sort((a, b) => a.ft - b.ft)
     return near
   })()
+  // The cell nearest the entered time — marked with the centerline.
+  $: centerFt = (timeMs != null && cells.length)
+    ? cells.reduce((m, x) => Math.abs(x.ft - timeMs) < Math.abs(m.ft - timeMs) ? x : m).ft
+    : null
 
   $: offset = display && timeMs != null ? display.ft - timeMs : null
   $: bestOff = bestFrame && timeMs != null ? bestFrame.ft - timeMs : null
@@ -216,9 +220,7 @@
           <button class="cell" class:sel={display && c.ft === display.ft} on:click={() => selectFrame(c.ft)}>
             <div class="cellimg">
               {#if c.url}<img src={c.url} alt="" loading="lazy"/>{/if}
-              {#if timeMs != null && c.ft === cells.reduce((m, x) => Math.abs(x.ft - timeMs) < Math.abs(m.ft - timeMs) ? x : m, cells[0]).ft}
-                <span class="centerline"></span>
-              {/if}
+              {#if c.ft === centerFt}<span class="centerline"></span>{/if}
             </div>
             <span class="celllab mono">{tlabel(c.ft)}</span>
           </button>

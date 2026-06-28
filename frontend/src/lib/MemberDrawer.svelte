@@ -237,7 +237,7 @@
   // Time the panel matches against: the manual-finish time as the judge edits it,
   // else the participant's chip finish. Bib biases the match toward this runner.
   $: matchTimeMs = manualMode
-    ? (timeStrToMs(baseMs, timeStr) ?? baseMs)
+    ? (baseMs != null ? (timeStrToMs(baseMs, timeStr) ?? baseMs) : null)
     : (data?.finish_time_ms ?? null)
   $: photoBibHint = bound ? (data?.number ?? null) : null
   $: photoUnbound = manualMode && !bound
