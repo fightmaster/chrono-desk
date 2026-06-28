@@ -107,13 +107,18 @@ func (m *PhotoManager) PollOnce(ctx context.Context, store *sqlite.Store, eventI
 			continue
 		}
 		stats.Sources++
+		before := time.Now()
 		ev, tracks, err := pullChronoCam(ctx, m.client, src.BaseURL)
 		if err != nil {
 			stats.Errors++
 			m.logger.Printf("photo source %s: %v", src.BaseURL, err)
 			continue
 		}
-		skew := time.Now().UnixMilli() - ev.ServerTimeEpochMs
+		// Anchor to the MIDPOINT of the round trip, not its end, so a slow/jittery
+		// LAN doesn't bias the skew by the full request latency. (Per-photo times are
+		// also frozen at first ingest, so any residual jitter can't move them later.)
+		mid := before.Add(time.Since(before) / 2)
+		skew := mid.UnixMilli() - ev.ServerTimeEpochMs
 		src.SourceID = ev.SourceID
 		src.CameraLabel = ev.CameraLabel
 		src.SkewMs = skew

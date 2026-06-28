@@ -90,13 +90,17 @@ func (s *Store) UpsertPhoto(ctx context.Context, eventID string, p Photo, fetche
 	if frames == "" {
 		frames = "[]"
 	}
+	// time_ms and frames_json are FROZEN at first ingest: re-polling recomputes the
+	// clock skew (which jitters with network latency on a slow LAN), and rewriting
+	// the time would make a finish photo drift out from under a capture/manual
+	// finish created from its earlier value. Only the mutable display fields update.
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO photos (id, event_id, source_id, camera_label, time_ms, bib, bib_source, best_photo_url, frames_json, fetched_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
-			camera_label=excluded.camera_label, time_ms=excluded.time_ms, bib=excluded.bib,
+			camera_label=excluded.camera_label, bib=excluded.bib,
 			bib_source=excluded.bib_source, best_photo_url=excluded.best_photo_url,
-			frames_json=excluded.frames_json, fetched_at=excluded.fetched_at`,
+			fetched_at=excluded.fetched_at`,
 		p.ID, eventID, p.SourceID, p.CameraLabel, p.TimeMs, p.Bib, p.BibSource, p.BestPhotoURL, frames, fetchedAt)
 	if err != nil {
 		return fmt.Errorf("upsert photo %s: %w", p.ID, err)

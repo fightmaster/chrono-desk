@@ -118,6 +118,32 @@ func TestMatchPhotosFindsBibOutsideToleranceButInWideWindow(t *testing.T) {
 	}
 }
 
+func TestUpsertPhotoFreezesTimeButUpdatesBib(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	if err := store.UpsertEvent(ctx, domain.Event{ID: "e1", Name: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertPhoto(ctx, "e1", sqlite.Photo{ID: "p", TimeMs: 1000}, 0); err != nil {
+		t.Fatal(err)
+	}
+	// A re-poll with a drifted (re-skewed) time must NOT move the stored time, but
+	// a newly-recognized number should still land.
+	if err := store.UpsertPhoto(ctx, "e1", sqlite.Photo{ID: "p", TimeMs: 5000, Bib: "77", BibSource: "ocr"}, 1); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetPhotosInRange(ctx, "e1", 0, 100000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].TimeMs != 1000 {
+		t.Errorf("time should be frozen at 1000, got %v", got)
+	}
+	if got[0].Bib != "77" {
+		t.Errorf("bib should update to 77, got %q", got[0].Bib)
+	}
+}
+
 func TestListRecentPhotosOrdersByTimeDescAndLimits(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
