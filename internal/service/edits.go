@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
@@ -42,6 +43,9 @@ var editWhitelist = map[string]map[string]editableField{
 		"sleep_after_prev_seconds": {table: "checkpoints", kind: kindInt, recountNeeded: true},
 		"board":                    {table: "checkpoints", kind: kindText, recountNeeded: true},
 		"sort":                     {table: "checkpoints", kind: kindInt, recountNeeded: true},
+		// 1=START/2=CHECKPOINT/3=FINISH. Editable so a mistyped checkpoint can be
+		// fixed without delete+recreate; changes derivation, so recount.
+		"type": {table: "checkpoints", kind: kindInt, recountNeeded: true},
 	},
 	"member": {
 		"status":        {table: "members", kind: kindInt}, // ranking-only
@@ -50,6 +54,8 @@ var editWhitelist = map[string]map[string]editableField{
 		"category_id":   {table: "members", kind: kindText},
 		"first_name":    {table: "members", kind: kindText},
 		"last_name":     {table: "members", kind: kindText},
+		"gender":        {table: "members", kind: kindText}, // "male" | "female" | null
+		"dob":           {table: "members", kind: kindText}, // ISO date; display-only
 		"team":          {table: "members", kind: kindText},
 		"city":          {table: "members", kind: kindText},
 		"start_time_ms": {table: "members", kind: kindInt, recountNeeded: true},
@@ -100,7 +106,67 @@ func ApplyEdit(ctx context.Context, store *sqlite.Store, req EditRequest) (EditR
 		return EditResult{}, err
 	}
 
+	// Delayed/advanced start: when the race start moves, the whole field moves
+	// with it by the same delta — so chip-less mass starters follow, and a
+	// staggered start keeps its 30s gaps. We need the old start to size the
+	// delta; UpdateEntityField returned it above. Each shift is journaled as a
+	// member edit so it survives re-import and syncs back to the site.
+	if req.Entity == "race" && req.Field == "started_at_ms" {
+		if newStart, ok := value.(int64); ok {
+			if oldStart, ok := asInt64(old); ok {
+				if err := shiftMemberStarts(ctx, store, req.EntityID, newStart-oldStart); err != nil {
+					return EditResult{}, err
+				}
+			}
+		}
+	}
+
 	return EditResult{RecountNeeded: spec.recountNeeded}, nil
+}
+
+// asInt64 coerces a driver scan result (int64, or a numeric []byte/string) to
+// int64; reports false for NULL or non-numeric values.
+func asInt64(v any) (int64, bool) {
+	switch n := v.(type) {
+	case int64:
+		return n, true
+	case float64:
+		return int64(n), true
+	case []byte:
+		i, err := strconv.ParseInt(string(n), 10, 64)
+		return i, err == nil
+	case string:
+		i, err := strconv.ParseInt(n, 10, 64)
+		return i, err == nil
+	default:
+		return 0, false
+	}
+}
+
+// shiftMemberStarts moves every member's start by deltaMs and journals each
+// change (entity "member", field "start_time_ms").
+func shiftMemberStarts(ctx context.Context, store *sqlite.Store, raceID string, deltaMs int64) error {
+	shifts, err := store.ShiftMemberStarts(ctx, raceID, deltaMs)
+	if err != nil {
+		return err
+	}
+	for _, sh := range shifts {
+		oldJSON, err := json.Marshal(sh.OldStartMs)
+		if err != nil {
+			return fmt.Errorf("encode old start: %w", err)
+		}
+		newJSON, err := json.Marshal(sh.NewStartMs)
+		if err != nil {
+			return fmt.Errorf("encode new start: %w", err)
+		}
+		if err := store.InsertLocalChange(ctx, sqlite.LocalChange{
+			Entity: "member", EntityID: sh.MemberID, Field: "start_time_ms",
+			OldValue: string(oldJSON), NewValue: string(newJSON),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ReapplyLocalEdits replays the journal on top of freshly imported site data
@@ -116,6 +182,25 @@ func ReapplyLocalEdits(ctx context.Context, store *sqlite.Store) (applied int, e
 			// Re-imports resurrect site checkpoints; re-delete what the judge
 			// removed (idempotent — no-op when already absent).
 			if err := store.DeleteCheckpointCascade(ctx, c.EntityID); err == nil {
+				applied++
+			}
+			continue
+		}
+		if c.Entity == "race_category" && (c.Field == "_attached" || c.Field == "_detached") {
+			// The import replaced the event's pivot with the site's; replay the
+			// judge's attach/detach on top (local wins). Processed oldest→newest,
+			// so the last action for a pair wins. Both are idempotent.
+			var p categoryRacePair
+			if json.Unmarshal([]byte(c.NewValue), &p) != nil || p.RaceID == "" || p.CategoryID == "" {
+				continue
+			}
+			var e error
+			if c.Field == "_attached" {
+				e = store.AttachRaceCategory(ctx, p.RaceID, p.CategoryID)
+			} else {
+				e = store.DetachRaceCategory(ctx, p.RaceID, p.CategoryID)
+			}
+			if e == nil {
 				applied++
 			}
 			continue

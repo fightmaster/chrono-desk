@@ -29,7 +29,7 @@ func TestEventExportRoundTrip(t *testing.T) {
 	}
 	epc := "E280EEE"
 	if _, _, err := CreateMember(ctx, src, "ev-100", CreateMemberRequest{
-		RaceID: "race-10k", LastName: "Локальный", EPC: &epc,
+		RaceID: "race-10k", LastName: "Локальный", EPC: &epc, DOB: sptr("1992-07-19"),
 	}); err != nil {
 		t.Fatal(err)
 	}

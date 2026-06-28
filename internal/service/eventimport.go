@@ -16,16 +16,17 @@ import (
 // strings; rfid_logs.time is unix milliseconds.
 
 type EventExport struct {
-	SchemaVersion int                `json:"schema_version"`
-	ExportedAt    string             `json:"exported_at"`
-	Timezone      string             `json:"timezone"`
-	Event         exportEvent        `json:"event"`
-	Laps          []exportLap        `json:"laps"`
-	Races         []exportRace       `json:"races"`
-	Categories    []exportCategory   `json:"categories"`
-	Checkpoints   []exportCheckpoint `json:"checkpoints"`
-	Members       []exportMember     `json:"members"`
-	RfidLogs      []exportRfidLog    `json:"rfid_logs"`
+	SchemaVersion int                  `json:"schema_version"`
+	ExportedAt    string               `json:"exported_at"`
+	Timezone      string               `json:"timezone"`
+	Event         exportEvent          `json:"event"`
+	Laps          []exportLap          `json:"laps"`
+	Races         []exportRace         `json:"races"`
+	Categories    []exportCategory     `json:"categories"`
+	CategoryRaces []exportCategoryRace `json:"category_races"`
+	Checkpoints   []exportCheckpoint   `json:"checkpoints"`
+	Members       []exportMember       `json:"members"`
+	RfidLogs      []exportRfidLog      `json:"rfid_logs"`
 }
 
 type exportEvent struct {
@@ -60,6 +61,11 @@ type exportCategory struct {
 	Min    *int    `json:"min"`
 	Max    *int    `json:"max"`
 	Gender *string `json:"gender"`
+}
+
+type exportCategoryRace struct {
+	RaceID     string `json:"race_id"`
+	CategoryID string `json:"category_id"`
 }
 
 type exportCheckpoint struct {
@@ -125,10 +131,20 @@ type ImportStats struct {
 // is an upsert: site-owned data overwrites local rows in place.
 type EventImporter struct {
 	store *sqlite.Store
+	// skipLocalReplay drops the local-edits-win journal replay — used by a
+	// "site wins" pull, where the operator wants the site's values verbatim.
+	skipLocalReplay bool
 }
 
 func NewEventImporter(store *sqlite.Store) *EventImporter {
 	return &EventImporter{store: store}
+}
+
+// WithSkipLocalReplay toggles whether the local_changes journal is replayed on
+// top of the imported data (default: replay = local edits win).
+func (i *EventImporter) WithSkipLocalReplay(skip bool) *EventImporter {
+	i.skipLocalReplay = skip
+	return i
 }
 
 func ParseEventExport(r io.Reader) (*EventExport, error) {
@@ -137,8 +153,10 @@ func ParseEventExport(r io.Reader) (*EventExport, error) {
 	if err := dec.Decode(&export); err != nil {
 		return nil, fmt.Errorf("parse event export: %w", err)
 	}
-	if export.SchemaVersion != 1 {
-		return nil, fmt.Errorf("unsupported schema_version %d (want 1)", export.SchemaVersion)
+	// v1: categories[] are only those used by members, no category_races pivot.
+	// v2: categories[] is the full global catalog + a category_races pivot.
+	if export.SchemaVersion != 1 && export.SchemaVersion != 2 {
+		return nil, fmt.Errorf("unsupported schema_version %d (want 1 or 2)", export.SchemaVersion)
 	}
 	if export.Event.ID == "" {
 		return nil, fmt.Errorf("event export has no event id")
@@ -149,102 +167,143 @@ func ParseEventExport(r io.Reader) (*EventExport, error) {
 func (i *EventImporter) Import(ctx context.Context, export *EventExport) (ImportStats, error) {
 	stats := ImportStats{EventID: export.Event.ID}
 
-	if err := i.store.UpsertEvent(ctx, domain.Event{
-		ID: export.Event.ID, Name: export.Event.Name, Slug: export.Event.Slug, Date: export.Event.Date,
-		Timezone: export.Timezone,
-	}); err != nil {
+	// Validate-first: parse every time field and build the full record set in
+	// memory before touching the DB. A malformed value aborts here, leaving the
+	// .chrono untouched (the apply below is then all-or-nothing).
+	data, err := buildImportData(export)
+	if err != nil {
 		return stats, err
+	}
+	if err := i.store.ApplyEventImport(ctx, data); err != nil {
+		return stats, err
+	}
+	stats.Races = len(data.Races)
+	stats.Categories = len(data.Categories)
+	stats.Checkpoints = len(data.Checkpoints)
+	stats.Members = len(data.Members)
+	stats.RfidLogs = len(data.RfidLogs)
+
+	// Conflict policy: local offline edits beat the re-imported site data —
+	// unless the caller asked for "site wins" (pull with overwrite).
+	if !i.skipLocalReplay {
+		applied, err := ReapplyLocalEdits(ctx, i.store)
+		if err != nil {
+			return stats, err
+		}
+		stats.LocalEditsReapplied = applied
+	}
+
+	return stats, nil
+}
+
+// buildImportData parses and validates the whole export into domain objects in
+// memory. Every time field is parsed here — before any DB write — so a malformed
+// value aborts the import without leaving a partially-written .chrono.
+func buildImportData(export *EventExport) (sqlite.EventImportData, error) {
+	d := sqlite.EventImportData{
+		Event: domain.Event{
+			ID: export.Event.ID, Name: export.Event.Name, Slug: export.Event.Slug,
+			Date: export.Event.Date, Timezone: export.Timezone,
+		},
+		Laps:        make([]domain.Lap, 0, len(export.Laps)),
+		Races:       make([]domain.Race, 0, len(export.Races)),
+		Categories:  make([]domain.Category, 0, len(export.Categories)),
+		Checkpoints: make([]domain.Checkpoint, 0, len(export.Checkpoints)),
+		Members:     make([]domain.Member, 0, len(export.Members)),
+		RfidLogs:    make([]domain.RfidLog, 0, len(export.RfidLogs)),
 	}
 
 	for _, l := range export.Laps {
-		if err := i.store.UpsertLap(ctx, domain.Lap(l)); err != nil {
-			return stats, err
-		}
+		d.Laps = append(d.Laps, domain.Lap(l))
 	}
-
 	for _, r := range export.Races {
 		startedAt, err := parseTimeMs(r.StartedAt)
 		if err != nil {
-			return stats, fmt.Errorf("race %s started_at: %w", r.ID, err)
+			return sqlite.EventImportData{}, fmt.Errorf("race %s started_at: %w", r.ID, err)
 		}
-		if err := i.store.UpsertRace(ctx, domain.Race{
+		d.Races = append(d.Races, domain.Race{
 			ID: r.ID, EventID: r.EventID, Name: r.Name, Date: r.Date,
 			StartedAtMs: startedAt, LapID: r.LapID, Format: domain.RaceFormat(r.Format),
 			TimeLimitSeconds: r.TimeLimitSeconds, CategoryExcludesTopByGender: r.CategoryExcludesTopByGender,
-		}); err != nil {
-			return stats, err
-		}
-		stats.Races++
+		})
 	}
-
 	for _, c := range export.Categories {
-		if err := i.store.UpsertCategory(ctx, domain.Category(c)); err != nil {
-			return stats, err
-		}
-		stats.Categories++
+		d.Categories = append(d.Categories, domain.Category(c))
 	}
-
 	for _, cp := range export.Checkpoints {
 		since, err := parseTimeMs(cp.Since)
 		if err != nil {
-			return stats, fmt.Errorf("checkpoint %s since: %w", cp.ID, err)
+			return sqlite.EventImportData{}, fmt.Errorf("checkpoint %s since: %w", cp.ID, err)
 		}
-		if err := i.store.UpsertCheckpoint(ctx, domain.Checkpoint{
+		d.Checkpoints = append(d.Checkpoints, domain.Checkpoint{
 			ID: cp.ID, EventID: cp.EventID, RaceID: cp.RaceID, Name: cp.Name,
 			Type: domain.CheckpointType(cp.Type), Sort: cp.Sort, Board: cp.Board,
 			SinceMs: since, SinceOffsetSeconds: cp.SinceOffsetSeconds, SleepAfterPrevSeconds: cp.SleepAfterPrevSeconds,
-		}); err != nil {
-			return stats, err
-		}
-		stats.Checkpoints++
+		})
 	}
-
 	for _, m := range export.Members {
 		startMs, err := parseTimeMs(m.StartTime)
 		if err != nil {
-			return stats, fmt.Errorf("member %s start_time: %w", m.ID, err)
+			return sqlite.EventImportData{}, fmt.Errorf("member %s start_time: %w", m.ID, err)
 		}
 		finishMs, err := parseTimeMs(m.FinishTime)
 		if err != nil {
-			return stats, fmt.Errorf("member %s finish_time: %w", m.ID, err)
+			return sqlite.EventImportData{}, fmt.Errorf("member %s finish_time: %w", m.ID, err)
 		}
-		if err := i.store.UpsertMember(ctx, domain.Member{
+		d.Members = append(d.Members, domain.Member{
 			ID: m.ID, EventID: m.EventID, RaceID: m.RaceID, CategoryID: m.CategoryID,
 			Number: m.Number, EPC: m.EPC, RFID: m.RFID,
 			FirstName: m.FirstName, LastName: m.LastName, Gender: m.Gender, DOB: m.DOB,
 			City: m.City, Team: m.Team, Status: domain.MemberStatus(m.Status),
 			StartTimeMs: startMs, FinishTimeMs: finishMs, CleanTime: m.CleanTime,
-		}); err != nil {
-			return stats, err
-		}
-		stats.Members++
+		})
 	}
-
-	logs := make([]domain.RfidLog, 0, len(export.RfidLogs))
 	for _, l := range export.RfidLogs {
 		disabledAt, err := parseTimeMs(l.DisabledAt)
 		if err != nil {
-			return stats, fmt.Errorf("rfid_log %s disabled_at: %w", l.ID, err)
+			return sqlite.EventImportData{}, fmt.Errorf("rfid_log %s disabled_at: %w", l.ID, err)
 		}
-		logs = append(logs, domain.RfidLog{
+		d.RfidLogs = append(d.RfidLogs, domain.RfidLog{
 			ID: l.ID, EventID: l.EventID, Status: l.Status, Number: l.Number,
 			TimeMs: l.Time, Ant: l.Ant, EPC: l.EPC, RSSI: l.RSSI, Board: l.Board,
 			DisabledAt: disabledAt,
 		})
 	}
-	if err := i.store.UpsertRfidLogs(ctx, logs); err != nil {
-		return stats, err
-	}
-	stats.RfidLogs = len(logs)
 
-	// Conflict policy: local offline edits beat the re-imported site data.
-	applied, err := ReapplyLocalEdits(ctx, i.store)
-	if err != nil {
-		return stats, err
+	// Race↔category pivot. A v2 export carries it explicitly (the site is the
+	// source of truth). A pre-v2 export (CategoryRaces == nil) has no pivot, so
+	// seed it from member usage — exactly the set the UI used to infer, so the
+	// attached chips don't regress on an old export.
+	if export.CategoryRaces == nil {
+		d.CategoryRaces = seedPivotFromMembers(d.Members)
+	} else {
+		d.CategoryRaces = make([]sqlite.CategoryRace, 0, len(export.CategoryRaces))
+		for _, cr := range export.CategoryRaces {
+			d.CategoryRaces = append(d.CategoryRaces, sqlite.CategoryRace(cr))
+		}
 	}
-	stats.LocalEditsReapplied = applied
+	return d, nil
+}
 
-	return stats, nil
+// seedPivotFromMembers derives the race↔category pivot from member.category_id —
+// the fallback for pre-v2 exports that carry no explicit pivot. Mirrors run5's
+// Race::categoriesUsedByMembers (the previous inference) so an old export keeps
+// showing the same per-race category chips.
+func seedPivotFromMembers(members []domain.Member) []sqlite.CategoryRace {
+	seen := map[string]bool{}
+	pivot := make([]sqlite.CategoryRace, 0)
+	for _, m := range members {
+		if m.CategoryID == nil || *m.CategoryID == "" {
+			continue
+		}
+		key := m.RaceID + "\x00" + *m.CategoryID
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		pivot = append(pivot, sqlite.CategoryRace{RaceID: m.RaceID, CategoryID: *m.CategoryID})
+	}
+	return pivot
 }
 
 // parseTimeMs accepts RFC 3339 timestamps (with or without fractional

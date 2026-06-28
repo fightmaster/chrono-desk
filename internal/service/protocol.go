@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
@@ -33,12 +34,28 @@ type ProtocolRow struct {
 	ElapsedMs          *int64  `json:"elapsed_ms,omitempty"`
 }
 
+// ProtocolCounts are authoritative race tallies for the distance header
+// («финишировало X из Y»), computed from member status + ranked places so the
+// client need not re-derive them. Started counts everyone who took the start
+// (total minus DNS — did-not-start); a DNF (сошёл) or DSQ started but is not a
+// finisher. Finished counts members with an assigned place (classified
+// finishers — a DSQ/DNF carries no place).
+type ProtocolCounts struct {
+	Total    int `json:"total"`    // start list (all members of the race)
+	Started  int `json:"started"`  // total − DNS
+	Finished int `json:"finished"` // members with a place
+	DNS      int `json:"dns"`
+	DNF      int `json:"dnf"`
+	DSQ      int `json:"dsq"`
+}
+
 // ProtocolResponse bundles the race header with its ranked rows.
 type ProtocolResponse struct {
-	RaceID   string        `json:"race_id"`
-	RaceName string        `json:"race_name"`
-	Format   string        `json:"format"`
-	Rows     []ProtocolRow `json:"rows"`
+	RaceID   string         `json:"race_id"`
+	RaceName string         `json:"race_name"`
+	Format   string         `json:"format"`
+	Counts   ProtocolCounts `json:"counts"`
+	Rows     []ProtocolRow  `json:"rows"`
 }
 
 // BuildProtocol loads the race, ranks its members in memory and renders the
@@ -47,6 +64,14 @@ func BuildProtocol(ctx context.Context, store *sqlite.Store, raceID string) (Pro
 	race, err := store.GetRace(ctx, raceID)
 	if err != nil {
 		return ProtocolResponse{}, err
+	}
+	// Fail closed on formats we don't rank yet (e.g. Run5Stopwatch): ranking
+	// would silently fall back to FixedDistance and produce a plausible but
+	// wrong protocol. Refuse loudly instead of mis-ranking.
+	switch race.Format {
+	case domain.FormatFixedDistance, domain.FormatTimeLimited:
+	default:
+		return ProtocolResponse{}, fmt.Errorf("формат гонки %q пока не поддерживается — протокол не построен", race.Format)
 	}
 	members, err := store.ListMembersByRace(ctx, raceID)
 	if err != nil {
@@ -66,10 +91,24 @@ func BuildProtocol(ctx context.Context, store *sqlite.Store, raceID string) (Pro
 
 	ranked := ranking.Protocol(race, members, lastPasses)
 
+	counts := ProtocolCounts{Total: len(members)}
+	for _, m := range members {
+		switch m.Status {
+		case domain.StatusDNS:
+			counts.DNS++
+		case domain.StatusDNF:
+			counts.DNF++
+		case domain.StatusDSQ:
+			counts.DSQ++
+		}
+	}
+	counts.Started = counts.Total - counts.DNS
+
 	resp := ProtocolResponse{
 		RaceID:   race.ID,
 		RaceName: race.Name,
 		Format:   string(race.Format),
+		Counts:   counts,
 		Rows:     make([]ProtocolRow, 0, len(ranked)),
 	}
 	for _, r := range ranked {
@@ -94,10 +133,12 @@ func BuildProtocol(ctx context.Context, store *sqlite.Store, raceID string) (Pro
 			row.CleanTime = &formatted
 		}
 		// TimeLimited: run5's compat shim renders the in-window elapsed as
-		// the member's clean time.
+		// the member's clean time — including its ms, so the «Отставание» gap
+		// (computed off CleanTimeMs) anchors on the winner like FixedDistance.
 		if r.ElapsedMs != nil {
 			row.ElapsedMs = r.ElapsedMs
 			row.LastCheckpointName = r.LastCheckpointName
+			row.CleanTimeMs = r.ElapsedMs
 			formatted := processor.FormatCleanTime(0, *r.ElapsedMs)
 			row.CleanTime = &formatted
 		}
@@ -106,6 +147,9 @@ func BuildProtocol(ctx context.Context, store *sqlite.Store, raceID string) (Pro
 				name := cat.Name
 				row.CategoryName = &name
 			}
+		}
+		if row.Place != nil {
+			resp.Counts.Finished++
 		}
 		resp.Rows = append(resp.Rows, row)
 	}

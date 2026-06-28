@@ -36,6 +36,20 @@ CREATE TABLE IF NOT EXISTS categories (
     gender TEXT
 );
 
+-- Which categories are attached to which race (run5's category_race pivot).
+-- The catalog (categories) is event-global; this table is what scopes the
+-- "available for assignment" set per distance. Without it, the attached set
+-- could only be inferred from member.category_id, which cannot represent a
+-- category attached to a race but not yet assigned to anyone. Local
+-- attach/detach is journaled (entity "race_category") and syncs back to run5.
+CREATE TABLE IF NOT EXISTS race_categories (
+    race_id     TEXT NOT NULL REFERENCES races(id),
+    category_id TEXT NOT NULL REFERENCES categories(id),
+    PRIMARY KEY (race_id, category_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_race_categories_race ON race_categories(race_id);
+
 CREATE TABLE IF NOT EXISTS checkpoints (
     id                       TEXT PRIMARY KEY,
     event_id                 TEXT NOT NULL REFERENCES events(id),
@@ -121,3 +135,64 @@ CREATE TABLE IF NOT EXISTS local_changes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_local_changes_entity ON local_changes(entity, entity_id);
+
+-- «Зафиксировать время»: wall-clock finishes the judge captured before a
+-- participant number is known. They persist here so a restart doesn't lose
+-- them (the bug: they used to live only in frontend state). Binding a number
+-- turns one into a manual result via the existing manual-finish path (which is
+-- journaled and synced) and the capture row is deleted. Unbound captures have
+-- no run5 representation, so they are intentionally local-only (not journaled).
+CREATE TABLE IF NOT EXISTS pending_captures (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   TEXT NOT NULL REFERENCES events(id),
+    time_ms    INTEGER NOT NULL,
+    created_at INTEGER NOT NULL -- unix ms
+);
+
+-- Finish photos pulled from Chrono Cam phones over the LAN (read-only metadata,
+-- orthogonal to the timing path). A judge matches them to a fixed time to confirm
+-- a number without chasing the runner. See docs and the phone's live API.
+-- photo_sources: registered phones to poll, keyed by the base URL the operator
+-- enters; source_id/camera_label/skew are learned from the phone's GET /event.
+CREATE TABLE IF NOT EXISTS photo_sources (
+    base_url     TEXT PRIMARY KEY,
+    event_id     TEXT NOT NULL REFERENCES events(id),
+    source_id    TEXT NOT NULL DEFAULT '', -- stable phone id (learned)
+    camera_label TEXT NOT NULL DEFAULT '',
+    skew_ms      INTEGER NOT NULL DEFAULT 0, -- deskNow - phoneServerTime at last poll
+    last_seen_at INTEGER,                     -- unix ms of last successful poll
+    enabled      INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_photo_sources_event ON photo_sources(event_id);
+
+-- photos: one row per finish track pulled from a phone. id = source_id+':'+track
+-- id (idempotent). time_ms is the finish time corrected to the desk clock by the
+-- source's measured skew, so it is directly comparable to rfid_logs/results times.
+CREATE TABLE IF NOT EXISTS photos (
+    id             TEXT PRIMARY KEY,
+    event_id       TEXT NOT NULL REFERENCES events(id),
+    source_id      TEXT NOT NULL DEFAULT '',
+    camera_label   TEXT NOT NULL DEFAULT '',
+    time_ms        INTEGER NOT NULL,            -- skew-corrected finish time (unix ms)
+    bib            TEXT NOT NULL DEFAULT '',
+    bib_source     TEXT NOT NULL DEFAULT 'none', -- manual | ocr | none
+    status         INTEGER NOT NULL DEFAULT 0,   -- 0 raw, 1 reviewed, 2 approved (reserved)
+    best_photo_url TEXT NOT NULL DEFAULT '',     -- absolute URL on the phone
+    frames_json    TEXT NOT NULL DEFAULT '[]',   -- [{timestamp_epoch_ms,url}], absolute
+    fetched_at     INTEGER NOT NULL              -- unix ms when pulled
+);
+
+CREATE INDEX IF NOT EXISTS idx_photos_event_time ON photos(event_id, time_ms);
+CREATE INDEX IF NOT EXISTS idx_photos_event_bib ON photos(event_id, bib);
+
+-- Per-event sync target for pushing/pulling to the run5 site (v0.3). One row
+-- (the event's own id). The token authorizes the run5 sync endpoint; it never
+-- leaves the desktop except in the X-SYNC-TOKEN header.
+CREATE TABLE IF NOT EXISTS sync_config (
+    event_id          TEXT PRIMARY KEY,
+    base_url          TEXT NOT NULL DEFAULT '',
+    token             TEXT NOT NULL DEFAULT '',
+    last_synced_at    INTEGER, -- unix ms of last successful push
+    last_payload_hash TEXT     -- sha256 of last pushed payload (skip no-op re-push)
+);

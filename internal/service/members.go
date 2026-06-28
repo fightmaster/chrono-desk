@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
@@ -28,6 +29,7 @@ type CreateMemberRequest struct {
 	EPC        *string `json:"epc"`
 	Gender     *string `json:"gender"`
 	CategoryID *string `json:"category_id"`
+	DOB        *string `json:"dob"` // ISO date (YYYY-MM-DD), required (run5 parity)
 	Team       *string `json:"team"`
 	City       *string `json:"city"`
 }
@@ -38,6 +40,13 @@ type CreateMemberRequest struct {
 func CreateMember(ctx context.Context, store *sqlite.Store, eventID string, req CreateMemberRequest) (memberID string, result EditResult, err error) {
 	if req.LastName == "" && req.FirstName == "" {
 		return "", EditResult{}, fmt.Errorf("укажите имя участника")
+	}
+	// run5 parity: a participant cannot exist without a birth date.
+	if req.DOB == nil || *req.DOB == "" {
+		return "", EditResult{}, fmt.Errorf("укажите дату рождения")
+	}
+	if _, err := time.Parse("2006-01-02", *req.DOB); err != nil {
+		return "", EditResult{}, fmt.Errorf("дата рождения должна быть в формате ГГГГ-ММ-ДД")
 	}
 	race, err := store.GetRace(ctx, req.RaceID)
 	if err != nil || race.EventID != eventID {
@@ -68,7 +77,7 @@ func CreateMember(ctx context.Context, store *sqlite.Store, eventID string, req 
 		ID: memberID, EventID: eventID, RaceID: req.RaceID,
 		FirstName: req.FirstName, LastName: req.LastName,
 		Number: req.Number, EPC: req.EPC, Gender: req.Gender,
-		CategoryID: req.CategoryID, Team: req.Team, City: req.City,
+		CategoryID: req.CategoryID, DOB: req.DOB, Team: req.Team, City: req.City,
 	}
 	if err := store.UpsertMember(ctx, member); err != nil {
 		return "", EditResult{}, err

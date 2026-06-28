@@ -19,6 +19,12 @@ frontend/wailsjs/
 *.db-wal
 *.db-shm
 *.chrono
+*.chrono-wal
+*.chrono-shm
+# Event exports/backups at the repo root carry real participant PII — never
+# commit them (test fixtures live under internal/**/testdata/ and are tracked).
+/event-*.json
+*.xlsx
 
 # OS
 .DS_Store

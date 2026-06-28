@@ -39,11 +39,13 @@ func NewEventManager(dataDir string, logger *log.Logger) (*EventManager, error) 
 
 // EventInfo is a list entry for the UI.
 type EventInfo struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Date     string `json:"date"`
-	Timezone string `json:"timezone"`
-	File     string `json:"file"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Date        string `json:"date"`
+	Timezone    string `json:"timezone"`
+	File        string `json:"file"`
+	RaceCount   int    `json:"race_count"`
+	MemberCount int    `json:"member_count"`
 }
 
 var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
@@ -84,8 +86,15 @@ func (m *EventManager) openLocked(eventID string, create bool) (*sqlite.Store, e
 }
 
 // ImportExport parses a run5 event export and applies it to the event's
-// database file, creating the file on first import.
+// database file, creating the file on first import. Local edits win.
 func (m *EventManager) ImportExport(ctx context.Context, r io.Reader) (ImportStats, error) {
+	return m.ImportExportOpts(ctx, r, false)
+}
+
+// ImportExportOpts is ImportExport with control over the conflict policy:
+// siteWins=true skips the local-edits-win journal replay (the site's values are
+// taken verbatim) — used by a "site wins" pull.
+func (m *EventManager) ImportExportOpts(ctx context.Context, r io.Reader, siteWins bool) (ImportStats, error) {
 	export, err := ParseEventExport(r)
 	if err != nil {
 		return ImportStats{}, err
@@ -98,7 +107,7 @@ func (m *EventManager) ImportExport(ctx context.Context, r io.Reader) (ImportSta
 		return ImportStats{}, err
 	}
 
-	return NewEventImporter(store).Import(ctx, export)
+	return NewEventImporter(store).WithSkipLocalReplay(siteWins).Import(ctx, export)
 }
 
 // List scans the data directory and reads each event's header row.
@@ -119,20 +128,28 @@ func (m *EventManager) List(ctx context.Context) ([]EventInfo, error) {
 			m.logger.Printf("skip event file %s: %v", e.Name(), err)
 			continue
 		}
-		event, err := firstEvent(ctx, store)
+		event, err := FirstEvent(ctx, store)
+		if err != nil {
+			m.logger.Printf("skip event file %s: %v", e.Name(), err)
+			continue
+		}
+		raceCount, memberCount, err := store.CountRacesAndMembers(ctx)
 		if err != nil {
 			m.logger.Printf("skip event file %s: %v", e.Name(), err)
 			continue
 		}
 		infos = append(infos, EventInfo{
 			ID: event.ID, Name: event.Name, Date: event.Date, Timezone: event.Timezone, File: e.Name(),
+			RaceCount: raceCount, MemberCount: memberCount,
 		})
 	}
 	sort.Slice(infos, func(i, j int) bool { return infos[i].Date > infos[j].Date })
 	return infos, nil
 }
 
-func firstEvent(ctx context.Context, store *sqlite.Store) (domain.Event, error) {
+// FirstEvent reads the single event header row from a store (one .chrono file
+// holds exactly one event). Used by the event list and the public LAN server.
+func FirstEvent(ctx context.Context, store *sqlite.Store) (domain.Event, error) {
 	var e domain.Event
 	err := store.DB().QueryRowContext(ctx,
 		`SELECT id, name, slug, date, timezone FROM events LIMIT 1`).

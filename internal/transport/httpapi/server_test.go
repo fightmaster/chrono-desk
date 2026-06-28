@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
+	"gitlab.com/fightmaster1/chrono-desk/internal/transport/publicweb"
 )
 
 func startTestServer(t *testing.T) *Server {
@@ -23,7 +25,12 @@ func startTestServer(t *testing.T) *Server {
 	}
 	t.Cleanup(events.Close)
 
-	srv, err := New("127.0.0.1:0", events, logger)
+	// The public LAN server binds an OS-chosen free port (only on Publish) so
+	// tests never collide on the fixed default port.
+	pub := publicweb.New(events, logger, freePort(t))
+	t.Cleanup(pub.Unpublish)
+
+	srv, err := New("127.0.0.1:0", events, pub, logger)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -34,6 +41,18 @@ func startTestServer(t *testing.T) *Server {
 		_ = srv.Shutdown(ctx)
 	})
 	return srv
+}
+
+// freePort grabs an unused TCP port for the public broadcast in tests.
+func freePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("free port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	return port
 }
 
 func TestHealthEndpoint(t *testing.T) {
@@ -175,6 +194,82 @@ func decodeBody(t *testing.T, resp *http.Response, v any) {
 
 // Regression: the webview preflights non-simple methods; DELETE must be in
 // Access-Control-Allow-Methods or checkpoint deletion dies with "Load failed".
+// Feibot CSV is zoneless: importing without a timezone must fail closed, not
+// silently assume UTC (which would shift every read by the venue's offset).
+func TestRfidImportRequiresTimezone(t *testing.T) {
+	srv := startTestServer(t)
+	base := srv.BaseURL()
+
+	fixture, err := os.ReadFile("../../service/testdata/event-export.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	mustPost(t, base+"/api/events/import", "application/json", strings.NewReader(string(fixture)))
+
+	resp, err := http.Post(base+"/api/events/ev-100/rfid-import?device=U659", "text/csv", strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("import without tz returned 200 — must fail closed")
+	}
+}
+
+// The /api/public/* control endpoints (localhost-only) switch the separate
+// read-only LAN broadcast on and off, and a live status carries a scannable QR.
+func TestPublicBroadcastControl(t *testing.T) {
+	srv := startTestServer(t)
+	base := srv.BaseURL()
+
+	fixture, err := os.ReadFile("../../service/testdata/event-export.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	mustPost(t, base+"/api/events/import", "application/json", strings.NewReader(string(fixture)))
+
+	// Off by default.
+	var st map[string]any
+	decodeBody(t, mustGet(t, base+"/api/public/status"), &st)
+	if st["running"] != false {
+		t.Fatalf("status before start = %+v, want running:false", st)
+	}
+
+	// Start broadcasting the imported event.
+	decodeBody(t, mustPost(t, base+"/api/public/start", "application/json",
+		strings.NewReader(`{"event_id":"ev-100"}`)), &st)
+	if st["running"] != true || st["event_id"] != "ev-100" {
+		t.Fatalf("status after start = %+v, want running:true ev-100", st)
+	}
+	// Each LAN address carries its own scannable QR (no single guessed primary).
+	eps, _ := st["endpoints"].([]any)
+	for _, e := range eps {
+		ep, _ := e.(map[string]any)
+		if qr, _ := ep["qr"].(string); !strings.HasPrefix(qr, "data:image/png;base64,") {
+			t.Fatalf("endpoint %+v missing a QR data-URI", ep)
+		}
+	}
+
+	// Stop.
+	decodeBody(t, mustPost(t, base+"/api/public/stop", "application/json", nil), &st)
+	if st["running"] != false {
+		t.Fatalf("status after stop = %+v, want running:false", st)
+	}
+}
+
+// Starting a broadcast with no event must fail closed rather than open a port.
+func TestPublicBroadcastStartRequiresEvent(t *testing.T) {
+	srv := startTestServer(t)
+	resp, err := http.Post(srv.BaseURL()+"/api/public/start", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("start without event_id returned 200 — must fail")
+	}
+}
+
 func TestCORSAllowsDelete(t *testing.T) {
 	srv := startTestServer(t)
 

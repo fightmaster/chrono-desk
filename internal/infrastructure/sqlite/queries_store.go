@@ -90,6 +90,19 @@ func (s *Store) ListCategories(ctx context.Context) (map[string]domain.Category,
 	return categories, rows.Err()
 }
 
+// CountRacesAndMembers returns the race and member tallies for the event list
+// card. One event per file, so the counts are unfiltered — two cheap COUNTs
+// instead of the client fetching full lists for their length.
+func (s *Store) CountRacesAndMembers(ctx context.Context) (races, members int, err error) {
+	if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM races`).Scan(&races); err != nil {
+		return 0, 0, fmt.Errorf("count races: %w", err)
+	}
+	if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM members`).Scan(&members); err != nil {
+		return 0, 0, fmt.Errorf("count members: %w", err)
+	}
+	return races, members, nil
+}
+
 // ExistingRfidLogKeys returns the content keys (epc|time_ms|ant) of logs
 // already stored for a board — the flash-import dedup set (run5's
 // loadExistingKeys analog; legacy rows may carry non-formula ids).

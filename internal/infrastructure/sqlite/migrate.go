@@ -15,6 +15,30 @@ func migrate(db *sql.DB) error {
 	return nil
 }
 
+// seedRaceCategories backfills the race↔category pivot from member.category_id
+// for events imported before the pivot existed (pre-schema_version 2). It runs
+// only when the pivot is empty, so it never fights a judge's later attach/detach
+// — a detach is refused while members are still assigned, so an empty pivot
+// alongside assigned members can only mean a pre-pivot database. A fresh or
+// member-less event seeds nothing. Called from New() after the schema applies
+// (the table must already exist).
+func seedRaceCategories(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM race_categories`).Scan(&n); err != nil {
+		return fmt.Errorf("count race_categories: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	if _, err := db.Exec(`
+		INSERT INTO race_categories (race_id, category_id)
+		SELECT DISTINCT race_id, category_id FROM members
+		WHERE category_id IS NOT NULL AND category_id != ''`); err != nil {
+		return fmt.Errorf("seed race_categories: %w", err)
+	}
+	return nil
+}
+
 // relaxResultsCheckpointNotNull drops the NOT NULL constraint from
 // results.checkpoint_id (manual judge entries carry no checkpoint). SQLite
 // cannot alter a constraint, so the table is rebuilt once.

@@ -22,7 +22,7 @@ func TestCreateMemberOnSite(t *testing.T) {
 	number := int64(999)
 	memberID, res, err := CreateMember(ctx, store, "ev-100", CreateMemberRequest{
 		RaceID: "race-10k", FirstName: "Олег", LastName: "Местный",
-		Number: &number, EPC: &epc, Gender: sptrT("male"),
+		Number: &number, EPC: &epc, Gender: sptrT("male"), DOB: sptrT("1985-03-12"),
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -55,12 +55,12 @@ func TestCreateMemberOnSite(t *testing.T) {
 
 	// Duplicate bib and tag are rejected.
 	if _, _, err := CreateMember(ctx, store, "ev-100", CreateMemberRequest{
-		RaceID: "race-10k", LastName: "Дубль", Number: &number,
+		RaceID: "race-10k", LastName: "Дубль", Number: &number, DOB: sptrT("1985-03-12"),
 	}); err == nil {
 		t.Error("duplicate bib must be rejected")
 	}
 	if _, _, err := CreateMember(ctx, store, "ev-100", CreateMemberRequest{
-		RaceID: "race-10k", LastName: "Дубль", EPC: &epc,
+		RaceID: "race-10k", LastName: "Дубль", EPC: &epc, DOB: sptrT("1985-03-12"),
 	}); err == nil {
 		t.Error("duplicate EPC must be rejected")
 	}
@@ -95,3 +95,39 @@ func TestCreateMemberOnSite(t *testing.T) {
 }
 
 func sptrT(s string) *string { return &s }
+
+// run5 parity: a locally created participant must carry a valid birth date.
+func TestCreateMemberRequiresDOB(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+
+	base := func() CreateMemberRequest {
+		return CreateMemberRequest{RaceID: "race-10k", FirstName: "Без", LastName: "Даты"}
+	}
+
+	// Missing DOB → rejected.
+	if _, _, err := CreateMember(ctx, store, "ev-100", base()); err == nil {
+		t.Error("member without dob must be rejected")
+	}
+	// Malformed DOB → rejected.
+	bad := base()
+	bad.DOB = sptrT("12.05.1990")
+	if _, _, err := CreateMember(ctx, store, "ev-100", bad); err == nil {
+		t.Error("non-ISO dob must be rejected")
+	}
+	// Valid ISO DOB → stored.
+	ok := base()
+	ok.DOB = sptrT("1990-05-01")
+	id, _, err := CreateMember(ctx, store, "ev-100", ok)
+	if err != nil {
+		t.Fatalf("valid dob: %v", err)
+	}
+	var got *string
+	if err := store.DB().QueryRow(`SELECT dob FROM members WHERE id = ?`, id).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || *got != "1990-05-01" {
+		t.Errorf("stored dob = %v, want 1990-05-01", got)
+	}
+}

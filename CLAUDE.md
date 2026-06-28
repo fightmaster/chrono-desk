@@ -20,8 +20,25 @@ parity notes in `docs/ranking.md`. Excel export mirrors run5's column layout. Th
 engine is golden-tested against a real production event (8474 logs) byte-for-byte —
 `internal/service/golden_test.go` explains how to regenerate fixtures (anonymize PII!).
 Offline edits (delayed start, checkpoint tuning, judge mode: passes view / log disable /
-statuses / manual starts) are journaled in `local_changes`; **conflict policy: local
-edits win** — re-imports replay the journal on top (`ReapplyLocalEdits`). The journal is
+statuses / manual starts, birth-date `dob` edit, per-race category attach/detach) are
+journaled in `local_changes`;
+**conflict policy: local edits win** — re-imports replay the journal on top
+(`ReapplyLocalEdits`). **Delayed/advanced start**: editing `race.started_at_ms`
+shifts every member of that race by the same delta (`ShiftMemberStarts`, using the old
+start returned by `UpdateEntityField`), journaling each as a `member.start_time_ms` diff
+— so a mass start follows and a **staggered start keeps its 30s gaps** (relative shift,
+not snapping everyone to one time). The diffs sync to run5 as `member_edits`
+(`start_time_ms`→`start_time`), where they apply **only on an overwrite push** and the
+finalize recount keeps the non-null start. This is a deliberate deviation from run5's
+`RecountRfid` (which only resets `finish_time`/`clean_time`, so the recount alone would
+leave the stale backfilled start — the backfill in `UpdateMemberTimes` only fires on a
+NULL start). NULL starts are left alone (they re-derive to the current race start on
+recount); a member with a START read keeps the read time (the recount re-derives it). A
+future per-event toggle may guard events with assigned individual starts. On-site registration (`CreateMember`) requires a birth date
+(`dob`, ISO `YYYY-MM-DD`) — run5 parity; imported members keep whatever the export carried.
+CSV flash import is a two-step UI (pick file → set reader code + pick timezone from the
+Russian-zone selectbox → «Загрузить») and shows the `FeibotImportResult` report
+(parsed/inserted/duplicates + skipped-line errors) inline. The journal is
 also the future to-site sync list. macOS Intel builds run via GitHub Actions
 (`.github/workflows/build.yml`); the remote repo must never receive real participants'
 PII. **v0.2 live ingest is in**: the shared TCP/adapters code lives in the
@@ -29,7 +46,39 @@ PII. **v0.2 live ingest is in**: the shared TCP/adapters code lives in the
 go.mod — CI checks it out next to the repo; rfid-hub should migrate to it too).
 `LiveManager` runs a Feibot listener per event (reads land in SQLite and derive results
 in-process), the Live screen polls feed/status; manual judge finishes are authoritative
-(`results` rows with NULL checkpoint/log survive recounts and re-apply on top). Next:
+(`results` rows with NULL checkpoint/log survive recounts and re-apply on top). The judge
+enters a manual finish by participant number/name on the Live screen in two modes — clean
+elapsed time (`clean_ms`, run5's ManualTimeEntry: `finish = start + clean`) or wall-clock
+(`time_ms`); the start reference is the member's start, falling back to the race start
+(matching `processor_repo.go`), so a chip-less finisher without a START read still gets a
+clean time. Entered manual results appear inline in the live feed as «ручной финиш»
+rows with inline delete (`ListRecentPasses` UNIONs manual `results` rows — always
+appended, never truncated by the chip-read limit — flagged `manual`/`result_id`;
+`DELETE .../results/{id}`); a successful add/delete shows a self-dismissing toast under
+the form, and input errors render directly under the manual input row. The
+`GET .../manual-results` endpoint remains for any review tooling but the UI no longer
+renders a separate list. **LAN results broadcast is in**: a SEPARATE read-only server
+(`internal/transport/publicweb`, `0.0.0.0:8090`, override `CHRONO_PUBLIC_PORT`) serves a
+self-contained mobile page so spectators/engravers/SMM read results from their phones
+with no internet. The page has a **distance dropdown** (not scrolling pills) and two tabs
+mirroring the desktop ResultsScreen: **Призёры** (absolute M/Ж top-3 + age-group podiums)
+and **Протокол** (full table with name/number search), ~20s auto-refresh. The Призёры tab
+has a **«Скопировать для Telegram»** button that builds a Markdown winners/prize-winners
+list (🥇/🥈/🥉, `**bold**` headers — double asterisks, which is what the Telegram app
+renders bold on paste) so SMM posts without retyping names — clipboard with an
+http-LAN fallback (`execCommand` then a select-and-copy modal, since `navigator.clipboard`
+needs a secure context). It is NOT the localhost control API opened up — only GET routes over a
+**PII-trimmed projection** (reuses `service.BuildProtocol`, drops `dob` and internal ids;
+no edits, no sync token reachable). Off by default; the operator toggles it per event in
+EventSettings (`BroadcastPanel.svelte`) which calls the localhost control endpoints
+`POST /api/public/start` `{event_id}` / `POST /api/public/stop` / `GET /api/public/status`.
+`lanURLs` enumerates `net.Interfaces()` and **skips virtual NICs** (docker/br-/veth/virbr/
+vmnet/vbox/tun/tap/wg/tailscale/zt/utun + down/loopback/point-to-point/link-local) so a
+QR never points at e.g. docker0's 172.17.x.x; status returns **`endpoints: [{url, qr}]`**
+— one QR PNG data-URI per real address (pure-Go `skip2/go-qrcode`), and the panel shows a
+QR per address so the operator scans the one on the venue network (Ethernet + Wi-Fi can
+both be up). The `publicweb` listener binds only while broadcasting and closes on
+stop/shutdown. Next:
 Run5Stopwatch format, log/journal upload back to the site (v0.3), rfid-hub migration to
 rfid-core. When rfid-sync's engine changes, re-diff
 `internal/processor` against `rfid-sync/internal/syncer/processor` (it is a port, not a
@@ -65,6 +114,8 @@ does NOT use Wails bindings — `app.go` exposes only `APIBaseURL()`, pattern fr
 RaceTorchApp) → `internal/service` (import/recount/ranking/excel) →
 `internal/processor` (checkpoint-matching engine) → `internal/domain` →
 `internal/infrastructure/sqlite`. One event = one portable SQLite file.
+`internal/transport/publicweb` is a second, **read-only** HTTP server for the LAN results
+broadcast (see status above) — same `service` layer, GET-only, PII-trimmed, off by default.
 
 ## Critical contracts
 
@@ -80,16 +131,32 @@ RaceTorchApp) → `internal/service` (import/recount/ranking/excel) →
 - **Disabled logs** (`disabled_at != null`) are imported but excluded from recounts
   (run5 ADR-0007).
 - Times are unix milliseconds internally; Feibot flash CSV is zoneless local time —
-  imports require an explicit timezone.
+  imports require an explicit timezone. The CSV import API (`POST .../rfid-import`)
+  **fails closed on a missing `tz`** (no silent UTC, which would shift every read by
+  the venue offset).
+- **Atomic import**: the event importer parses the whole export into memory first
+  (`buildImportData`), then writes it in one transaction (`Store.ApplyEventImport`) —
+  a malformed/inconsistent export can never leave a half-updated `.chrono`. Entity
+  upserts share their SQL via the `execer` interface (the pool is capped at one
+  connection, so the import must route every write through its own tx). The
+  local-edits replay runs after that commit.
+- **Unsupported race formats fail closed**: `BuildProtocol` errors on any format it
+  doesn't rank (currently anything but FixedDistance/TimeLimited, e.g. Run5Stopwatch)
+  instead of silently materializing FixedDistance and emitting a wrong protocol.
+- **TimeLimited protocol** sets `CleanTimeMs = ElapsedMs` (run5's compat shim renders
+  elapsed as clean time), so the Excel «Отставание» gap column anchors on the winner
+  like FixedDistance rather than staying blank.
 
 ## Sibling projects (read before reinventing)
 
 - `../rfid-sync/internal/syncer/processor/` — **the result-derivation engine this app
   ports** (Repository interface + processor.go + table-driven `processor_flow_test.go`).
   Ranking is NOT there (site-side); chrono-desk implements its own for display.
-- `../rfid-hub/internal/tcp/` + `internal/ingest/` — TCP listeners, Feibot/MyRaceNano/
-  ChronoEvents adapters, `Publisher` interface. Planned for v0.2 live ingest: copy
-  (internal packages aren't importable cross-module), implement a SQLite `Publisher`.
+- `../rfid-core/` — the shared TCP/adapters module chrono-desk uses for live ingest
+  (`replace ../rfid-core` in go.mod). **v0.2 live ingest is built on it** (a SQLite
+  `Publisher`). `../rfid-hub/internal/tcp/` + `internal/ingest/` is the original TCP
+  listener / Feibot–MyRaceNano–ChronoEvents adapter source; it should migrate to
+  rfid-core too.
 - `~/projects/run5` — Laravel site; data model in `app/Models`, derivation reference in
   `app/Services/PushResult.php` + `RecountRfid.php`, protocol columns in
   `RaceResultsExportRowBuilder`. **The ranking system is ported from here** (format
@@ -102,8 +169,12 @@ RaceTorchApp) → `internal/service` (import/recount/ranking/excel) →
 ## Conventions
 
 - English code/comments/docs; Russian UI strings (run5 convention).
-- Behavior/config/API/schema changes update the matching docs (`README.md`, `docs/*`)
-  in the same change.
+- **Docs are always kept current.** Any behavior/config/API/schema/UI change updates the
+  matching docs in the SAME change — `README.md`, `docs/*`, and the judge guide
+  (`docs/judge-guide.html`). Never leave a doc describing an older state; if a change makes
+  a doc stale, fix the doc as part of that change.
 - Golden tests are the safety net for the recount engine: real exported events in
   `testdata/` with reference results; Go recount must reproduce them exactly.
-- Small focused commits, imperative summaries (`Add Feibot CSV importer`).
+- Small focused commits, imperative summaries (`Add Feibot CSV importer`). **No AI/assistant
+  attribution** in commit messages or PR bodies — no `Co-Authored-By` trailers, no
+  "Generated with …" lines, no mention of AI tooling.
