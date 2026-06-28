@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -20,8 +21,10 @@ import (
 	"sort"
 	"time"
 
+	qrcode "github.com/skip2/go-qrcode"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
+	"gitlab.com/fightmaster1/chrono-desk/internal/transport/publicweb"
 	"gitlab.com/fightmaster1/chrono-desk/internal/version"
 )
 
@@ -32,12 +35,14 @@ type Server struct {
 	live       *service.LiveManager
 	photos     *service.PhotoManager
 	photoCache *service.PhotoCache
+	public     *publicweb.Server
 	logger     *log.Logger
 }
 
 // New binds addr (use "127.0.0.1:0" for an ephemeral local port) and builds
-// the route table. Call Start to begin serving.
-func New(addr string, events *service.EventManager, logger *log.Logger) (*Server, error) {
+// the route table. Call Start to begin serving. public is the read-only LAN
+// results broadcaster controlled by the /api/public/* endpoints.
+func New(addr string, events *service.EventManager, public *publicweb.Server, logger *log.Logger) (*Server, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listen %s: %w", addr, err)
@@ -48,6 +53,7 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 		events:   events,
 		live:     service.NewLiveManager(logger),
 		photos:   service.NewPhotoManager(logger),
+		public:   public,
 		logger:   logger,
 	}
 
@@ -106,6 +112,9 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("GET /api/events/{id}/photos/recent", s.handleRecentPhotos)
 	mux.HandleFunc("GET /api/events/{id}/photos/img", s.handlePhotoImage)
 	mux.HandleFunc("GET /api/events/{id}/photos", s.handleMatchPhotos)
+	mux.HandleFunc("POST /api/public/start", s.handlePublicStart)
+	mux.HandleFunc("POST /api/public/stop", s.handlePublicStop)
+	mux.HandleFunc("GET /api/public/status", s.handlePublicStatus)
 	mux.HandleFunc("GET /api/events/{id}/sync-config", s.handleGetSyncConfig)
 	mux.HandleFunc("PUT /api/events/{id}/sync-config", s.handleSetSyncConfig)
 	mux.HandleFunc("POST /api/events/{id}/sync", s.handleSyncPush)
@@ -1068,6 +1077,60 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"imported": stats, "site_wins": siteWins})
+}
+
+// ─── Public LAN results broadcast (operator-only control) ─────────────────────
+// These run on the localhost API; they switch the SEPARATE read-only publicweb
+// server on/off. Only that server is reachable from the network, and only its
+// GET endpoints.
+
+func (s *Server) handlePublicStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		EventID string `json:"event_id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil && err != io.EOF {
+		s.fail(w, err)
+		return
+	}
+	if err := s.public.Publish(req.EventID); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.publicStatus())
+}
+
+func (s *Server) handlePublicStop(w http.ResponseWriter, _ *http.Request) {
+	s.public.Unpublish()
+	writeJSON(w, http.StatusOK, s.publicStatus())
+}
+
+func (s *Server) handlePublicStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.publicStatus())
+}
+
+// publicStatus wraps the broadcast status with one scannable QR data-URI per LAN
+// address. The machine may expose several real NICs (Ethernet + Wi-Fi), so the
+// settings screen shows every candidate with its own QR and the operator picks
+// the one on the venue network — no guessing a single "primary" that might be
+// the wrong (e.g. Docker) interface.
+func (s *Server) publicStatus() map[string]any {
+	st := s.public.Status()
+	endpoints := make([]map[string]string, 0, len(st.URLs))
+	if st.Running {
+		for _, url := range st.URLs {
+			ep := map[string]string{"url": url}
+			if png, err := qrcode.Encode(url, qrcode.Medium, 320); err == nil {
+				ep["qr"] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+			}
+			endpoints = append(endpoints, ep)
+		}
+	}
+	return map[string]any{
+		"running":   st.Running,
+		"event_id":  st.EventID,
+		"port":      st.Port,
+		"endpoints": endpoints,
+	}
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {
