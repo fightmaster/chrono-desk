@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Результаты</title>
+<style>
+  :root {
+    --bg: #0f1622; --panel: #18222f; --panel2: #1f2a39; --border: #2b3a4d;
+    --text: #eaf0f7; --dim: #9fb0c3; --faint: #6f8197; --accent: #4da3ff;
+    --bad: #ff6b6b; --gold: #f7c948; --silver: #c9d2dc; --bronze: #d8915a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.4;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 40px env(safe-area-inset-left);
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 14px; }
+  header { padding: 18px 0 10px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 700; }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
+  .off { text-align: center; padding: 60px 20px; color: var(--dim); }
+  .off .big { font-size: 18px; color: var(--text); margin-bottom: 8px; }
+
+  select.dist {
+    width: 100%; padding: 12px 14px; border-radius: 12px; font-size: 17px; font-weight: 600;
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    appearance: none; -webkit-appearance: none; outline: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--dim) 50%), linear-gradient(135deg, var(--dim) 50%, transparent 50%);
+    background-position: calc(100% - 20px) 1.3em, calc(100% - 14px) 1.3em;
+    background-size: 6px 6px, 6px 6px; background-repeat: no-repeat;
+  }
+  .counts { color: var(--faint); font-size: 13px; margin: 8px 2px 0; }
+
+  .seg { display: flex; gap: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 4px; margin: 14px 0 16px; }
+  .seg-item { flex: 1 1 0; padding: 10px 8px; border-radius: 9px; cursor: pointer; border: none; background: transparent; color: var(--dim); font-size: 14.5px; font-weight: 600; }
+  .seg-item.active { background: var(--accent); color: #06121f; }
+
+  .search { position: relative; margin-bottom: 14px; }
+  .search input {
+    width: 100%; padding: 12px 14px; border-radius: 12px; font-size: 16px;
+    background: var(--panel); border: 1px solid var(--border); color: var(--text); outline: none;
+  }
+  .search input:focus { border-color: var(--accent); }
+
+  .copybtn {
+    width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--accent);
+    background: transparent; color: var(--accent); font-size: 15px; font-weight: 700;
+    cursor: pointer; margin-bottom: 16px;
+  }
+  .copybtn:active { background: rgba(77,163,255,.12); }
+
+  .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); margin: 20px 0 8px; }
+
+  .awards-cols { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 560px) { .awards-cols.two { grid-template-columns: 1fr 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; }
+  .card h3 { margin: 0 0 6px; font-size: 14px; color: var(--dim); font-weight: 600; }
+  .prow { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .prow:last-child { border-bottom: none; }
+  .medal {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 13px; font-weight: 800; color: #06121f;
+  }
+  .m1 { background: var(--gold); } .m2 { background: var(--silver); } .m3 { background: var(--bronze); }
+  .pname { flex: 1 1 auto; min-width: 0; }
+  .pname .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pname .meta { color: var(--faint); font-size: 12px; }
+  .ptime { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+  .groups { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 560px) { .groups { grid-template-columns: 1fr 1fr; } }
+  .group .gname { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
+  th { color: var(--faint); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; position: sticky; top: 0; background: var(--bg); }
+  td.num, td.place, td.time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.place { font-weight: 700; }
+  .nm { font-weight: 600; }
+  .cat { color: var(--faint); font-size: 12px; }
+  tr.nok td { color: var(--faint); }
+  .badge { font-size: 11px; font-weight: 800; color: var(--bad); }
+  .empty { color: var(--faint); text-align: center; padding: 28px 0; }
+  .updated { color: var(--faint); font-size: 12px; text-align: center; margin-top: 22px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    background: var(--accent); color: #06121f; font-weight: 700; font-size: 14px;
+    padding: 10px 18px; border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.4);
+    opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 30;
+  }
+  .toast.show { opacity: 1; }
+
+  .modal { position: fixed; inset: 0; background: rgba(4,8,14,.7); display: grid; place-items: center; padding: 16px; z-index: 40; }
+  .modal .box { background: var(--panel2); border: 1px solid var(--border); border-radius: 14px; padding: 16px; width: 100%; max-width: 560px; }
+  .modal h2 { margin: 0 0 6px; font-size: 16px; }
+  .modal p { margin: 0 0 10px; color: var(--dim); font-size: 13px; }
+  .modal textarea {
+    width: 100%; height: 230px; resize: vertical; border-radius: 10px; padding: 10px;
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;
+  }
+  .modal .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+  .modal button { padding: 10px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-weight: 600; cursor: pointer; }
+  .modal button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="title">Результаты</h1>
+    <div class="sub" id="subtitle"></div>
+  </header>
+  <div id="app"></div>
+  <div class="updated" id="updated"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const app = document.getElementById('app')
+const elTitle = document.getElementById('title')
+const elSub = document.getElementById('subtitle')
+const elUpdated = document.getElementById('updated')
+const elToast = document.getElementById('toast')
+
+let races = []
+let currentRaceId = null
+let protocol = null
+let query = ''
+let tab = 'awards'
+let published = false
+let eventName = ''
+
+const MEDALS = ['🥇', '🥈', '🥉']
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+const fullName = r => `${r.last_name ?? ''} ${r.first_name ?? ''}`.trim()
+const statusLabel = s => ({dns: 'DNS', dnf: 'DNF', dq: 'DSQ'}[s] ?? '')
+const timeOf = r => r.clean_time ? r.clean_time : ''
+const timeSec = r => { const t = timeOf(r); return t ? t.split('.')[0] : '' } // drop .mmm for posts
+const medal = n => MEDALS[n - 1] || `${n}.`
+
+async function getJSON(path) {
+  const resp = await fetch(path, {cache: 'no-store'})
+  return resp.json()
+}
+
+// Top-3 per gender; falls back to an overall top-3 when gender isn't marked
+// (mirrors the desktop ResultsScreen podium logic).
+function top3ByGender(rows, g) {
+  const byGender = rows.filter(r => r.gender === g && r.gender_place && r.gender_place <= 3)
+  if (byGender.length) return byGender.sort((a, b) => a.gender_place - b.gender_place)
+  if (g === 'male' && !rows.some(r => r.gender)) {
+    return rows.filter(r => r.place && r.place <= 3).sort((a, b) => a.place - b.place)
+  }
+  return []
+}
+
+// Age-group podiums: category_place ≤ 3, grouped by category name.
+function categoryGroups(rows) {
+  const byCat = new Map()
+  for (const r of rows) {
+    if (!r.category_place || r.category_place > 3) continue
+    const key = r.category_name || '—'
+    if (!byCat.has(key)) byCat.set(key, [])
+    byCat.get(key).push(r)
+  }
+  return [...byCat.entries()].map(([name, list]) =>
+    [name, list.sort((a, b) => a.category_place - b.category_place)])
+}
+
+function matches(r, q) {
+  if (!q) return true
+  return (r.last_name && r.last_name.toLowerCase().includes(q)) ||
+    (r.first_name && r.first_name.toLowerCase().includes(q)) ||
+    (r.number != null && String(r.number).includes(q))
+}
+
+function podiumRow(r, idx) {
+  const meta = [r.category_name, r.team || r.city].filter(Boolean).map(esc).join(' · ')
+  return `<div class="prow">
+    <span class="medal m${idx + 1}">${idx + 1}</span>
+    <span class="pname"><div class="nm">${esc(fullName(r))}${r.number != null ? ` <span class="cat">№${r.number}</span>` : ''}</div>${meta ? `<div class="meta">${meta}</div>` : ''}</span>
+    <span class="ptime">${esc(timeOf(r))}</span>
+  </div>`
+}
+
+function podiumCard(title, rows) {
+  return `<div class="card"><h3>${esc(title)}</h3>${
+    rows.length ? rows.map(podiumRow).join('') : '<p class="empty">нет данных</p>'
+  }</div>`
+}
+
+function groupCard(cat, list) {
+  const rows = list.map(r => `<div class="prow">
+    <span class="medal m${r.category_place}">${r.category_place}</span>
+    <span class="pname"><div class="nm">${esc(fullName(r))}${r.number != null ? ` <span class="cat">№${r.number}</span>` : ''}</div></span>
+    <span class="ptime">${esc(timeOf(r))}</span>
+  </div>`).join('')
+  return `<div class="card group"><div class="gname">${esc(cat)}</div>${rows}</div>`
+}
+
+function renderAwards(rows) {
+  const hasGender = rows.some(r => r.gender)
+  const men = top3ByGender(rows, 'male')
+  const women = top3ByGender(rows, 'female')
+  const groups = categoryGroups(rows)
+
+  if (!men.length && !women.length && !groups.length) {
+    return `<div class="empty">Призёров пока нет.</div>`
+  }
+
+  let cols
+  if (hasGender) {
+    cols = `<div class="awards-cols two">${podiumCard('Абсолют · Мужчины', men)}${podiumCard('Абсолют · Женщины', women)}</div>`
+  } else {
+    cols = `<div class="awards-cols">${podiumCard('Абсолют', men)}</div>`
+  }
+
+  const groupsHtml = groups.length
+    ? `<div class="section-title">Призёры по группам</div><div class="groups">${groups.map(([c, l]) => groupCard(c, l)).join('')}</div>`
+    : ''
+
+  return `<button class="copybtn" id="copymd">📋 Скопировать список призёров (для Telegram)</button>${cols}${groupsHtml}`
+}
+
+function renderProtocol(rows) {
+  const filtered = rows.filter(r => matches(r, query))
+  const body = filtered.length ? filtered.map(r => `
+    <tr class="${r.status !== 'ok' ? 'nok' : ''}">
+      <td class="place">${r.place ?? '—'}</td>
+      <td class="num">${r.number != null ? r.number : ''}</td>
+      <td><span class="nm">${esc(fullName(r))}</span>${r.category_name ? `<div class="cat">${esc(r.category_name)}${r.team || r.city ? ' · ' + esc(r.team || r.city) : ''}</div>` : (r.team || r.city ? `<div class="cat">${esc(r.team || r.city)}</div>` : '')}</td>
+      <td class="time">${r.status !== 'ok' ? `<span class="badge">${statusLabel(r.status)}</span>` : esc(timeOf(r))}</td>
+    </tr>`).join('')
+    : `<tr><td colspan="4" class="empty">${query ? 'Никого не нашлось' : 'Пока нет результатов'}</td></tr>`
+
+  return `<div class="search"><input id="q" type="search" inputmode="search" placeholder="Поиск по фамилии или номеру" value="${esc(query)}"></div>
+    <table>
+      <thead><tr><th>Место</th><th>№</th><th>Участник</th><th>Время</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>`
+}
+
+function render() {
+  if (!published) {
+    elSub.textContent = ''
+    app.innerHTML = `<div class="off"><div class="big">Трансляция результатов выключена</div>Результаты появятся, когда судья включит трансляцию.</div>`
+    elUpdated.textContent = ''
+    return
+  }
+
+  const options = races.map(rc =>
+    `<option value="${esc(rc.id)}" ${rc.id === currentRaceId ? 'selected' : ''}>${esc(rc.name)}</option>`).join('')
+  const selector = `<select class="dist" id="dist">${options}</select>`
+
+  let content = '<div class="empty">Загрузка…</div>'
+  if (protocol) {
+    const c = protocol.counts || {}
+    const rows = protocol.rows || []
+    const tabs = `<div class="seg">
+      <button class="seg-item ${tab === 'awards' ? 'active' : ''}" data-tab="awards">Призёры</button>
+      <button class="seg-item ${tab === 'protocol' ? 'active' : ''}" data-tab="protocol">Протокол</button>
+    </div>`
+    const counts = `<div class="counts">Финишировало ${c.finished ?? 0} из ${c.started ?? 0}</div>`
+    content = `${counts}${tabs}${tab === 'awards' ? renderAwards(rows) : renderProtocol(rows)}`
+  }
+
+  app.innerHTML = `${selector}${content}`
+
+  const dist = document.getElementById('dist')
+  if (dist) dist.addEventListener('change', e => selectRace(e.target.value))
+  app.querySelectorAll('.seg-item').forEach(b =>
+    b.addEventListener('click', () => { tab = b.dataset.tab; render() }))
+  const copy = document.getElementById('copymd')
+  if (copy) copy.addEventListener('click', copyMarkdown)
+  const q = document.getElementById('q')
+  if (q) {
+    q.addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); render() })
+    if (query) { q.focus(); q.setSelectionRange(q.value.length, q.value.length) }
+  }
+  elUpdated.textContent = 'Обновлено ' + new Date().toLocaleTimeString('ru-RU')
+}
+
+// ── Markdown for SMM ──────────────────────────────────────────────────────────
+// Pasted into the Telegram app, bold is **double asterisks** (single * stays
+// literal). Names are plain Cyrillic, so no escaping of control chars is needed.
+function buildMarkdown() {
+  const rows = (protocol && protocol.rows) || []
+  const lines = []
+  lines.push(`🏁 **${protocol.race_name || 'Результаты'}**`)
+  if (eventName) lines.push(eventName)
+  lines.push('')
+
+  const hasGender = rows.some(r => r.gender)
+  const men = top3ByGender(rows, 'male')
+  const women = top3ByGender(rows, 'female')
+
+  const block = (title, list) => {
+    if (!list.length) return
+    lines.push(`🏆 **${title}**`)
+    list.forEach((r, i) => lines.push(`${medal(i + 1)} ${fullName(r)}${timeSec(r) ? ' — ' + timeSec(r) : ''}`))
+    lines.push('')
+  }
+  if (hasGender) { block('Абсолют — Мужчины', men); block('Абсолют — Женщины', women) }
+  else block('Абсолют', men)
+
+  const groups = categoryGroups(rows)
+  if (groups.length) {
+    lines.push('👥 **Призёры по группам**')
+    lines.push('')
+    for (const [cat, list] of groups) {
+      lines.push(`**${cat}**`)
+      list.forEach(r => lines.push(`${medal(r.category_place)} ${fullName(r)}${timeSec(r) ? ' — ' + timeSec(r) : ''}`))
+      lines.push('')
+    }
+  }
+  return lines.join('\n').trim()
+}
+
+async function copyMarkdown() {
+  const text = buildMarkdown()
+  let ok = false
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text); ok = true
+    }
+  } catch (_) { /* fall through */ }
+  if (!ok) ok = legacyCopy(text)
+  if (ok) showToast('Скопировано — вставьте в пост')
+  else showCopyModal(text) // last resort on http: let the user select & copy
+}
+
+function legacyCopy(text) {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'; ta.style.top = '0'; ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.focus(); ta.select()
+  let ok = false
+  try { ok = document.execCommand('copy') } catch (_) { ok = false }
+  document.body.removeChild(ta)
+  return ok
+}
+
+function showToast(msg) {
+  elToast.textContent = msg
+  elToast.classList.add('show')
+  setTimeout(() => elToast.classList.remove('show'), 1800)
+}
+
+function showCopyModal(text) {
+  const modal = document.createElement('div')
+  modal.className = 'modal'
+  modal.innerHTML = `<div class="box">
+    <h2>Скопируйте текст</h2>
+    <p>Выделите весь текст и скопируйте (долгое нажатие → «Выделить всё» → «Копировать»).</p>
+    <textarea readonly></textarea>
+    <div class="row"><button class="copy">Копировать</button><button class="primary close">Готово</button></div>
+  </div>`
+  const ta = modal.querySelector('textarea')
+  ta.value = text
+  modal.querySelector('.close').addEventListener('click', () => modal.remove())
+  modal.querySelector('.copy').addEventListener('click', () => {
+    ta.focus(); ta.select()
+    let ok = false
+    try { ok = document.execCommand('copy') } catch (_) {}
+    if (ok) showToast('Скопировано')
+  })
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
+  document.body.appendChild(modal)
+  ta.focus(); ta.select()
+}
+
+// ── Data loading ──────────────────────────────────────────────────────────────
+async function selectRace(id) {
+  currentRaceId = id
+  protocol = null
+  render()
+  await loadProtocol()
+}
+
+async function loadProtocol() {
+  if (!currentRaceId) return
+  try {
+    protocol = await getJSON('/api/races/' + encodeURIComponent(currentRaceId))
+  } catch (e) {
+    protocol = {rows: [], counts: {}}
+  }
+  render()
+}
+
+async function loadMeta() {
+  try {
+    const meta = await getJSON('/api/meta')
+    published = !!meta.published
+    if (published) {
+      eventName = meta.event_name || ''
+      elTitle.textContent = eventName || 'Результаты'
+      elSub.textContent = meta.event_date || ''
+      document.title = eventName || 'Результаты'
+    }
+  } catch (e) { published = false }
+}
+
+async function loadRaces() {
+  try {
+    const data = await getJSON('/api/races')
+    published = !!data.published
+    races = data.races || []
+    if (published && races.length && !races.some(r => r.id === currentRaceId)) {
+      currentRaceId = races[0].id
+    }
+  } catch (e) { /* keep previous */ }
+}
+
+async function refresh() {
+  // Don't yank the page out from under an open copy dialog.
+  if (document.querySelector('.modal')) return
+  await loadMeta()
+  await loadRaces()
+  if (published && currentRaceId) await loadProtocol()
+  else render()
+}
+
+refresh()
+// Results change as the judge recounts — poll periodically.
+setInterval(refresh, 20000)
+</script>
+</body>
+</html>

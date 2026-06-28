@@ -128,7 +128,7 @@ func (m *EventManager) List(ctx context.Context) ([]EventInfo, error) {
 			m.logger.Printf("skip event file %s: %v", e.Name(), err)
 			continue
 		}
-		event, err := firstEvent(ctx, store)
+		event, err := FirstEvent(ctx, store)
 		if err != nil {
 			m.logger.Printf("skip event file %s: %v", e.Name(), err)
 			continue
@@ -147,7 +147,9 @@ func (m *EventManager) List(ctx context.Context) ([]EventInfo, error) {
 	return infos, nil
 }
 
-func firstEvent(ctx context.Context, store *sqlite.Store) (domain.Event, error) {
+// FirstEvent reads the single event header row from a store (one .chrono file
+// holds exactly one event). Used by the event list and the public LAN server.
+func FirstEvent(ctx context.Context, store *sqlite.Store) (domain.Event, error) {
 	var e domain.Event
 	err := store.DB().QueryRowContext(ctx,
 		`SELECT id, name, slug, date, timezone FROM events LIMIT 1`).
