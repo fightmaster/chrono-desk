@@ -89,6 +89,7 @@ func New(addr string, events *service.EventManager, logger *log.Logger) (*Server
 	mux.HandleFunc("DELETE /api/events/{id}/photos/sources", s.handleDeletePhotoSource)
 	mux.HandleFunc("POST /api/events/{id}/photos/poll", s.handlePollPhotos)
 	mux.HandleFunc("GET /api/events/{id}/photos/status", s.handlePhotoStatus)
+	mux.HandleFunc("GET /api/events/{id}/photos/recent", s.handleRecentPhotos)
 	mux.HandleFunc("GET /api/events/{id}/photos", s.handleMatchPhotos)
 	mux.HandleFunc("GET /api/events/{id}/sync-config", s.handleGetSyncConfig)
 	mux.HandleFunc("PUT /api/events/{id}/sync-config", s.handleSetSyncConfig)
@@ -379,10 +380,34 @@ func (s *Server) handleMatchPhotos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tolerance := int64(1500)
+	// Accept both tolerance_ms (preferred) and the shorthand tolerance.
 	if v := r.URL.Query().Get("tolerance_ms"); v != "" {
+		fmt.Sscanf(v, "%d", &tolerance) //nolint:errcheck
+	} else if v := r.URL.Query().Get("tolerance"); v != "" {
 		fmt.Sscanf(v, "%d", &tolerance) //nolint:errcheck
 	}
 	photos, err := service.MatchPhotos(r.Context(), store, eventID, timeMs, tolerance, r.URL.Query().Get("bib"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, photos)
+}
+
+// handleRecentPhotos returns the newest finishes (desc by time) — backs the
+// optional live wall. Query: limit (default 50).
+func (s *Server) handleRecentPhotos(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		fmt.Sscanf(v, "%d", &limit) //nolint:errcheck
+	}
+	photos, err := store.ListRecentPhotos(r.Context(), eventID, limit)
 	if err != nil {
 		s.fail(w, err)
 		return

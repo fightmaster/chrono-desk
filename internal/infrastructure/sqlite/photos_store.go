@@ -117,6 +117,22 @@ func (s *Store) GetPhotosInRange(ctx context.Context, eventID string, startMs, e
 	return scanPhotos(rows)
 }
 
+// ListRecentPhotos returns the newest photos by finish time (desc) — backs the
+// optional "live wall" of finishes as they arrive.
+func (s *Store) ListRecentPhotos(ctx context.Context, eventID string, limit int) ([]Photo, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, source_id, camera_label, time_ms, bib, bib_source, best_photo_url, frames_json
+		FROM photos WHERE event_id = ? ORDER BY time_ms DESC LIMIT ?`,
+		eventID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list recent photos: %w", err)
+	}
+	return scanPhotos(rows)
+}
+
 // CountPhotos reports how many photos are stored for an event.
 func (s *Store) CountPhotos(ctx context.Context, eventID string) (int64, error) {
 	var n int64

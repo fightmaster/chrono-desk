@@ -84,6 +84,36 @@ func TestMatchPhotosOrdersByBibThenTime(t *testing.T) {
 	}
 }
 
+func TestListRecentPhotosOrdersByTimeDescAndLimits(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	if err := store.UpsertEvent(ctx, domain.Event{ID: "e1", Name: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	for i, tm := range []int64{1000, 3000, 2000} {
+		id := string(rune('a' + i))
+		if err := store.UpsertPhoto(ctx, "e1", sqlite.Photo{ID: id, TimeMs: tm}, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Newest first.
+	got, err := store.ListRecentPhotos(ctx, "e1", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0].TimeMs != 3000 || got[1].TimeMs != 2000 || got[2].TimeMs != 1000 {
+		t.Errorf("order = %v", ids(got))
+	}
+	// Limit applies.
+	got, err = store.ListRecentPhotos(ctx, "e1", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].TimeMs != 3000 {
+		t.Errorf("limit not applied: %v", ids(got))
+	}
+}
+
 func ids(photos []sqlite.Photo) []string {
 	out := make([]string, len(photos))
 	for i, p := range photos {
