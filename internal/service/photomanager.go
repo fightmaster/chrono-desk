@@ -107,28 +107,28 @@ func (m *PhotoManager) PollOnce(ctx context.Context, store *sqlite.Store, eventI
 			continue
 		}
 		stats.Sources++
-		before := time.Now()
 		ev, tracks, err := pullChronoCam(ctx, m.client, src.BaseURL)
 		if err != nil {
 			stats.Errors++
 			m.logger.Printf("photo source %s: %v", src.BaseURL, err)
 			continue
 		}
-		// Anchor to the MIDPOINT of the round trip, not its end, so a slow/jittery
-		// LAN doesn't bias the skew by the full request latency. (Per-photo times are
-		// also frozen at first ingest, so any residual jitter can't move them later.)
-		mid := before.Add(time.Since(before) / 2)
-		skew := mid.UnixMilli() - ev.ServerTimeEpochMs
+		// The finish time is the phone's own crossing time — it does NOT depend on
+		// when we pull the data (could be an hour later). We add only src.SkewMs, an
+		// optional manual per-source calibration (default 0) for the rare case the
+		// phone clock is off vs the timing system. No network-latency adjustment.
+		offset := src.SkewMs
 		src.SourceID = ev.SourceID
 		src.CameraLabel = ev.CameraLabel
-		src.SkewMs = skew
 		src.LastSeenAt = time.Now().UnixMilli()
+		// For diagnostics only: how far the phone clock sits from this desk right now.
+		m.logger.Printf("photo source %s: phone clock vs desk ≈ %d ms (info; not applied)", src.BaseURL, time.Now().UnixMilli()-ev.ServerTimeEpochMs)
 		if err := store.UpsertPhotoSource(ctx, eventID, src); err != nil {
 			m.logger.Printf("update photo source %s: %v", src.BaseURL, err)
 		}
 		now := time.Now().UnixMilli()
 		for _, t := range tracks {
-			p := toStoredPhoto(ev, src.BaseURL, t, skew)
+			p := toStoredPhoto(ev, src.BaseURL, t, offset)
 			if err := store.UpsertPhoto(ctx, eventID, p, now); err != nil {
 				stats.Errors++
 				m.logger.Printf("store photo %s: %v", p.ID, err)

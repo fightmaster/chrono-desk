@@ -77,9 +77,10 @@ func absoluteURL(base, ref string) string {
 	return strings.TrimRight(base, "/") + ref
 }
 
-// toStoredPhoto converts a pulled track into a Photo with desk-clock-corrected
-// times (by [skewMs]) and absolute image URLs.
-func toStoredPhoto(ev chronoCamEvent, baseURL string, t chronoCamTrack, skewMs int64) sqlite.Photo {
+// toStoredPhoto converts a pulled track into a Photo. Times are the phone's own
+// crossing/frame times (transfer-independent) plus an optional manual calibration
+// [offsetMs] (default 0); image URLs are absolutized.
+func toStoredPhoto(ev chronoCamEvent, baseURL string, t chronoCamTrack, offsetMs int64) sqlite.Photo {
 	sourceID := ev.SourceID
 	if sourceID == "" {
 		sourceID = baseURL
@@ -87,7 +88,7 @@ func toStoredPhoto(ev chronoCamEvent, baseURL string, t chronoCamTrack, skewMs i
 	frames := make([]chronoCamFrame, 0, len(t.Frames))
 	for _, f := range t.Frames {
 		frames = append(frames, chronoCamFrame{
-			TimestampEpochMs: f.TimestampEpochMs + skewMs,
+			TimestampEpochMs: f.TimestampEpochMs + offsetMs,
 			URL:              absoluteURL(baseURL, f.URL),
 		})
 	}
@@ -96,7 +97,7 @@ func toStoredPhoto(ev chronoCamEvent, baseURL string, t chronoCamTrack, skewMs i
 		ID:           sourceID + ":" + t.ID,
 		SourceID:     sourceID,
 		CameraLabel:  ev.CameraLabel,
-		TimeMs:       t.FirstSeenEpochMs + skewMs,
+		TimeMs:       t.FirstSeenEpochMs + offsetMs,
 		Bib:          t.Bib,
 		BibSource:    t.BibSource,
 		BestPhotoURL: absoluteURL(baseURL, t.BestPhotoURL),

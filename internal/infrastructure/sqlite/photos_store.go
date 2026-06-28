@@ -15,9 +15,12 @@ type PhotoSource struct {
 	BaseURL     string `json:"base_url"`
 	SourceID    string `json:"source_id"`
 	CameraLabel string `json:"camera_label"`
-	SkewMs      int64  `json:"skew_ms"`
-	LastSeenAt  int64  `json:"last_seen_at"`
-	Enabled     bool   `json:"enabled"`
+	// SkewMs is an OPTIONAL manual calibration offset (ms) added to the phone's
+	// own crossing time — default 0. It is NOT derived from network latency; the
+	// finish time comes from the phone and is independent of transfer timing.
+	SkewMs     int64 `json:"skew_ms"`
+	LastSeenAt int64 `json:"last_seen_at"`
+	Enabled    bool  `json:"enabled"`
 }
 
 // Photo is one finish track pulled from a phone, time-corrected to the desk clock.

@@ -121,7 +121,7 @@
           <div class="cell"><span class="k">Адрес</span><span class="v mono">{p.base_url}</span></div>
           <div class="cell"><span class="k">Камера</span><span class="v mono">{p.camera_label || '—'}</span></div>
           <div class="cell"><span class="k">Посл. кадр</span><span class="v mono">{ago(p.last_seen_at)}</span></div>
-          <div class="cell"><span class="k">Рассинхрон</span><span class="v mono" class:warn={Math.abs(p.skew_ms) > 200}>{fmtSkew(p.skew_ms)}</span></div>
+          <div class="cell"><span class="k">Калибровка</span><span class="v mono" class:warn={Math.abs(p.skew_ms) > 200}>{fmtSkew(p.skew_ms)}</span></div>
         </div>
       </div>
     {/each}
