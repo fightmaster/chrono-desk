@@ -9,9 +9,13 @@
   export let manualUnbound = false  // manual finish with no number bound yet
 
   const dispatch = createEventDispatcher()
-  const TOL_STEPS = [100, 200, 400, 800, 1500, 3000, 5000]
+  const TOL_STEPS = [200, 400, 800, 1500, 2000, 3000, 5000]
 
-  let tol = 400
+  // ±2s by default: a manual/chip finish time rarely matches the photo instant to
+  // the millisecond (judge reaction, detector-vs-frame latency, motion-mode entry
+  // vs the line, clock skew). A tight window made photos "disappear"; the bib match
+  // and nearest-time sort still surface the right frame first inside the window.
+  let tol = 2000
   let photos = []
   let sourcesCount = 0
   let photosInBase = 0
@@ -127,7 +131,7 @@
     const a = Math.abs(ms), s = ms >= 0 ? '+' : '−'
     return a < 1000 ? `${s}${a} мс` : `${s}${(a / 1000).toFixed(2)} с`
   }
-  function offColor(ms) { return ms != null && Math.abs(ms) <= 100 ? 'var(--ok)' : 'var(--amber)' }
+  function offColor(ms) { return ms != null && Math.abs(ms) <= 500 ? 'var(--ok)' : 'var(--amber)' }
   $: tolText = tol < 1000 ? `±${tol} мс` : `±${(tol / 1000).toFixed(tol % 1000 ? 2 : 1)} с`
   function tolStep(dir) {
     const i = TOL_STEPS.indexOf(tol)

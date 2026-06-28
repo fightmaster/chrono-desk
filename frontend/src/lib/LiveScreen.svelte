@@ -177,7 +177,7 @@
       const byBib = phs.find(ph => String(ph.bib) === String(p.number) && Math.abs(ph.time_ms - p.time_ms) < 5000)
       if (byBib) return byBib
     }
-    let best = null, bestD = 1500
+    let best = null, bestD = 2500
     for (const ph of phs) {
       const d = Math.abs(ph.time_ms - p.time_ms)
       if (d < bestD) { bestD = d; best = ph }
