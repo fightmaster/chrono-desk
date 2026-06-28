@@ -1,6 +1,7 @@
 <script>
   import {createEventDispatcher} from 'svelte'
   import {call, fmtTime, fmtDateTime, msToInput, inputToMs, timeStrToMs, memberMatches} from './api.js'
+  import PhotoPanel from './PhotoPanel.svelte'
 
   export let eventId
   export let races = []
@@ -231,6 +232,47 @@
   $: title = manualMode
     ? (bound ? `№${data?.number ?? '—'} ${data?.last_name ?? ''} ${data?.first_name ?? ''}`.trim() : 'Ручной финиш')
     : (data ? `№${data.number ?? '—'} ${data.last_name ?? ''} ${data.first_name ?? ''}`.trim() : 'Участник')
+
+  // ── Photo-finish companion ────────────────────────────────────────────────
+  // Time the panel matches against: the manual-finish time as the judge edits it,
+  // else the participant's chip finish. Bib biases the match toward this runner.
+  $: matchTimeMs = manualMode
+    ? (timeStrToMs(baseMs, timeStr) ?? baseMs)
+    : (data?.finish_time_ms ?? null)
+  $: photoBibHint = bound ? (data?.number ?? null) : null
+  $: photoUnbound = manualMode && !bound
+
+  // Adopt a frame's exact time. Manual+bound → re-stamp the row; manual+unbound →
+  // seed the time so binding uses it; chip finish → pin the photo time as a manual
+  // finish (the "the chip time is wrong, use the photo" case).
+  async function adoptPhotoTime(ms) {
+    baseMs = ms
+    timeStr = fmtTime(ms)
+    timeSeeded = true
+    if (manualMode) {
+      if (bound && createdResultId) await maybeSaveTime()
+      return
+    }
+    if (!boundMemberId) return
+    error = ''
+    try {
+      const res = await call('POST', `/api/events/${eventId}/members/${boundMemberId}/manual-finish`,
+        JSON.stringify({time_ms: ms}))
+      createdResultId = res.result_id
+      manualMode = true
+      dispatch('changed', {recount: true})
+      await load()
+    } catch (e) {
+      error = e.message
+    }
+  }
+
+  // OCR read a number off the frame: bind it (uses the current finish time).
+  function bindGuessNumber(bib) {
+    const m = members.find(x => String(x.number) === String(bib))
+    if (m) bindNumber(m)
+    else error = `Участник №${bib} не найден в этом событии`
+  }
 </script>
 
 <div class="overlay" on:click={closeDrawer}></div>
@@ -379,6 +421,12 @@
     <button class="btn" on:click={closeDrawer}>Отмена</button>
   </div>
 </aside>
+
+{#if matchTimeMs != null}
+  <PhotoPanel {eventId} timeMs={matchTimeMs} bibHint={photoBibHint} manualUnbound={photoUnbound}
+              on:adopt={e => adoptPhotoTime(e.detail)}
+              on:bindGuess={e => bindGuessNumber(e.detail)}/>
+{/if}
 
 <style>
   .overlay { position: fixed; inset: 0; background: rgba(4, 9, 18, .55); z-index: 50; }
