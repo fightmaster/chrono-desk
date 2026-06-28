@@ -2,6 +2,7 @@
   import {createEventDispatcher, onMount} from 'svelte'
   import {call, RU_TIMEZONES} from './api.js'
   import SiteSyncPanel from './SiteSyncPanel.svelte'
+  import BroadcastPanel from './BroadcastPanel.svelte'
   import PhotoSources from './PhotoSources.svelte'
   import EditsLog from './EditsLog.svelte'
 
@@ -106,6 +107,9 @@
 
     <!-- Sync -->
     <SiteSyncPanel {eventId} on:pulled={() => dispatch('pulled')}/>
+
+    <!-- Read-only LAN results broadcast -->
+    <BroadcastPanel {eventId}/>
 
     <!-- Photo-finish (Chrono Cam) -->
     <div class="card">
