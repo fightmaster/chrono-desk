@@ -21,6 +21,8 @@
   // pulled from the phones — same /photos/recent the panel uses).
   let feedView = 'chips' // 'chips' | 'photos'
   let photos = []
+  let photosTotal = 0     // true count of stored finish photos (not just the loaded page)
+  let photoLimit = 60     // how many of the newest photos the wall currently pulls
 
   // manual finish by number
   let query = ''
@@ -55,7 +57,12 @@
       status = await call('GET', `/api/events/${eventId}/live/status`)
       feed = await call('GET', `/api/events/${eventId}/live/feed?limit=${feedLimit}`)
       // Recent photos drive both the wall and the inline finish-row thumbnails.
-      try { photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=60`) } catch (_) { /* photos best-effort */ }
+      // photos_count is the true stored total — the wall only holds the newest page.
+      try {
+        photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=${photoLimit}`)
+        const pstatus = await call('GET', `/api/events/${eventId}/photos/status`)
+        photosTotal = pstatus.photos_count || 0
+      } catch (_) { /* photos best-effort */ }
       if (status.port) port = status.port
       dispatch('status', status)
     } catch (e) {
@@ -107,6 +114,11 @@
 
   async function loadMore() {
     feedLimit = Math.min(feedLimit + 60, 1000)
+    await refresh()
+  }
+
+  async function loadMorePhotos() {
+    photoLimit = Math.min(photoLimit + 60, 2000)
     await refresh()
   }
 
@@ -293,7 +305,7 @@
   <div class="feedhead">
     <div class="seg">
       <button class="seg-item" class:active={feedView === 'chips'} on:click={() => setView('chips')}>Отметки</button>
-      <button class="seg-item" class:active={feedView === 'photos'} on:click={() => setView('photos')}>Фотофиниш{#if photoGroups.length} · {photoGroups.length}{/if}</button>
+      <button class="seg-item" class:active={feedView === 'photos'} on:click={() => setView('photos')}>Фотофиниш{#if photosTotal} · {photosTotal}{/if}</button>
     </div>
   </div>
 
@@ -353,6 +365,8 @@
     </div>
     {#if !photos.length}
       <p class="faint center">Фото пока нет. Добавьте телефон-источник в «Настройках события» → «Фотофиниш» и включите «Локальную синхронизацию» в приложении Chrono Cam.</p>
+    {:else if photos.length < photosTotal}
+      <p class="center"><button class="btn" on:click={loadMorePhotos}>Загрузить ещё (показано {photos.length} из {photosTotal})</button></p>
     {/if}
   {/if}
 
