@@ -21,6 +21,7 @@
   // pulled from the phones — same /photos/recent the panel uses).
   let feedView = 'chips' // 'chips' | 'photos'
   let photos = []
+  let merged = []         // wall cards: same crossing from several cameras, merged server-side
   let photosTotal = 0     // true count of stored finish photos (not just the loaded page)
   let photoLimit = 60     // how many of the newest photos the wall currently pulls
 
@@ -56,10 +57,13 @@
     try {
       status = await call('GET', `/api/events/${eventId}/live/status`)
       feed = await call('GET', `/api/events/${eventId}/live/feed?limit=${feedLimit}`)
-      // Recent photos drive both the wall and the inline finish-row thumbnails.
-      // photos_count is the true stored total — the wall only holds the newest page.
+      // Raw photos back the inline finish-row thumbnails (matched by time/number);
+      // the wall uses the server-merged list so multi-camera copies collapse the same
+      // way everywhere. photos_count is the true stored total (the page holds only the
+      // newest photoLimit).
       try {
         photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=${photoLimit}`)
+        merged = await call('GET', `/api/events/${eventId}/photos/merged?limit=${photoLimit}`)
         const pstatus = await call('GET', `/api/events/${eventId}/photos/status`)
         photosTotal = pstatus.photos_count || 0
       } catch (_) { /* photos best-effort */ }
@@ -72,25 +76,11 @@
 
   function setView(v) { feedView = v; refresh() }
 
-  // Collapse the same finish from multiple phones into one card: group by number
-  // (unique per event) when known, else by a ~1.5s time bucket (same crossing seen
-  // by two cameras). Keeps the wall free of doubles; the card notes how many
-  // cameras caught it. Re-runs when photos changes.
-  $: photoGroups = (() => {
-    const groups = new Map()
-    for (const ph of photos) {
-      const key = ph.bib ? `b:${ph.bib}` : `t:${Math.round(ph.time_ms / 1500)}`
-      const g = groups.get(key) || {items: []}
-      g.items.push(ph)
-      groups.set(key, g)
-    }
-    return [...groups.values()].map(g => {
-      const items = g.items.slice().sort((a, b) => b.time_ms - a.time_ms)
-      const rep = items.find(p => p.bib_source === 'manual') || items[0]
-      const cams = [...new Set(items.map(p => p.camera_label).filter(Boolean))]
-      return {...rep, cams}
-    }).sort((a, b) => b.time_ms - a.time_ms)
-  })()
+  // The wall shows one card per crossing. Collapsing the same finish seen by several
+  // cameras now happens server-side (GET /photos/merged) so the wall, matching and
+  // export agree and it can enforce "never merge two photos from one camera". Each
+  // card carries the representative photo's fields plus `cams` (contributing cameras).
+  $: photoGroups = merged
 
   // Click a finish photo → open a read-only preview (scrub the whole series, no
   // side effects). The judge decides there: open the participant card, or fix a

@@ -110,6 +110,7 @@ func New(addr string, events *service.EventManager, public *publicweb.Server, lo
 	mux.HandleFunc("POST /api/events/{id}/photos/poll", s.handlePollPhotos)
 	mux.HandleFunc("GET /api/events/{id}/photos/status", s.handlePhotoStatus)
 	mux.HandleFunc("GET /api/events/{id}/photos/recent", s.handleRecentPhotos)
+	mux.HandleFunc("GET /api/events/{id}/photos/merged", s.handleMergedPhotos)
 	mux.HandleFunc("GET /api/events/{id}/photos/img", s.handlePhotoImage)
 	mux.HandleFunc("GET /api/events/{id}/photos", s.handleMatchPhotos)
 	mux.HandleFunc("POST /api/public/start", s.handlePublicStart)
@@ -437,6 +438,32 @@ func (s *Server) handleRecentPhotos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, photos)
+}
+
+// handleMergedPhotos returns the recent finishes with the same crossing seen by
+// several cameras collapsed into one (authoritative server-side merge, so the wall,
+// matching, and export agree). Query: limit (default 200), window_ms (merge window).
+func (s *Server) handleMergedPhotos(w http.ResponseWriter, r *http.Request) {
+	eventID := r.PathValue("id")
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	limit := 200
+	if v := r.URL.Query().Get("limit"); v != "" {
+		fmt.Sscanf(v, "%d", &limit) //nolint:errcheck
+	}
+	windowMs := int64(service.MergeWindowMs)
+	if v := r.URL.Query().Get("window_ms"); v != "" {
+		fmt.Sscanf(v, "%d", &windowMs) //nolint:errcheck
+	}
+	photos, err := store.ListRecentPhotos(r.Context(), eventID, limit)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, service.MergeFinishes(photos, windowMs))
 }
 
 // handlePhotoImage is a caching proxy: it serves a finish-photo JPEG from the
