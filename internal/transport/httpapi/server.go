@@ -111,6 +111,7 @@ func New(addr string, events *service.EventManager, public *publicweb.Server, lo
 	mux.HandleFunc("GET /api/events/{id}/photos/status", s.handlePhotoStatus)
 	mux.HandleFunc("GET /api/events/{id}/photos/recent", s.handleRecentPhotos)
 	mux.HandleFunc("GET /api/events/{id}/photos/merged", s.handleMergedPhotos)
+	mux.HandleFunc("POST /api/events/{id}/photos/export-csv", s.handleExportFinishesCSV)
 	mux.HandleFunc("GET /api/events/{id}/photos/img", s.handlePhotoImage)
 	mux.HandleFunc("GET /api/events/{id}/photos", s.handleMatchPhotos)
 	mux.HandleFunc("POST /api/public/start", s.handlePublicStart)
@@ -526,11 +527,40 @@ func (s *Server) handlePhotoStatus(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	// finishes_count is the distinct crossings after merging multi-camera copies —
+	// the honest "finishes" total, vs photos_count which counts every raw copy.
+	finishes, err := service.CountMergedFinishes(r.Context(), store, eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"running":      s.photos.Running(eventID),
-		"sources":      sources,
-		"photos_count": count,
+		"running":        s.photos.Running(eventID),
+		"sources":        sources,
+		"photos_count":   count,
+		"finishes_count": finishes,
 	})
+}
+
+// handleExportFinishesCSV writes the coordinated merged-finishes CSV (all cameras in
+// one file) to the user's Downloads directory and returns its path.
+func (s *Server) handleExportFinishesCSV(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	data, name, err := service.BuildMergedFinishesCSV(r.Context(), store, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	path, err := service.SaveToDownloads(name, data)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": path})
 }
 
 func cors(next http.Handler) http.Handler {

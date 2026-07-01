@@ -22,7 +22,8 @@
   let feedView = 'chips' // 'chips' | 'photos'
   let photos = []
   let merged = []         // wall cards: same crossing from several cameras, merged server-side
-  let photosTotal = 0     // true count of stored finish photos (not just the loaded page)
+  let photosTotal = 0     // true count of stored raw finish photos (all cameras, incl. copies)
+  let finishesTotal = 0   // distinct crossings after merging multi-camera copies
   let photoLimit = 60     // how many of the newest photos the wall currently pulls
 
   // manual finish by number
@@ -66,6 +67,7 @@
         merged = await call('GET', `/api/events/${eventId}/photos/merged?limit=${photoLimit}`)
         const pstatus = await call('GET', `/api/events/${eventId}/photos/status`)
         photosTotal = pstatus.photos_count || 0
+        finishesTotal = pstatus.finishes_count || 0
       } catch (_) { /* photos best-effort */ }
       if (status.port) port = status.port
       dispatch('status', status)
@@ -110,6 +112,17 @@
   async function loadMorePhotos() {
     photoLimit = Math.min(photoLimit + 60, 2000)
     await refresh()
+  }
+
+  // Coordinated export: one CSV of merged finishes across all cameras, saved to
+  // Downloads (Wails webviews are unreliable at direct file downloads).
+  async function exportFinishes() {
+    try {
+      const res = await call('POST', `/api/events/${eventId}/photos/export-csv`)
+      showFlash(`✓ CSV финишей сохранён: ${res.path}`)
+    } catch (e) {
+      showFlash('Ошибка экспорта: ' + e.message)
+    }
   }
 
   onMount(() => { refresh(); timer = setInterval(refresh, 2000) })
@@ -295,7 +308,7 @@
   <div class="feedhead">
     <div class="seg">
       <button class="seg-item" class:active={feedView === 'chips'} on:click={() => setView('chips')}>Отметки</button>
-      <button class="seg-item" class:active={feedView === 'photos'} on:click={() => setView('photos')}>Фотофиниш{#if photosTotal} · {photosTotal}{/if}</button>
+      <button class="seg-item" class:active={feedView === 'photos'} on:click={() => setView('photos')}>Фотофиниш{#if finishesTotal} · {finishesTotal}{/if}</button>
     </div>
   </div>
 
@@ -337,6 +350,9 @@
       <p class="center"><button class="btn" on:click={loadMore}>Загрузить ещё (показано {chipShown})</button></p>
     {/if}
   {:else}
+    {#if merged.length}
+      <div class="pwall-tools"><button class="srclink" on:click={exportFinishes}>⤓ Экспорт финишей (CSV)</button></div>
+    {/if}
     <div class="pwall">
       {#each photoGroups as ph (ph.id)}
         <button class="pcard" on:click={() => lightbox = ph} title="Открыть просмотр серии">
@@ -448,6 +464,7 @@
 
   .feedhead { margin-bottom: 12px; }
 
+  .pwall-tools { display: flex; justify-content: flex-end; margin-bottom: 8px; }
   .pwall { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
   .pcard { padding: 0; background: none; border: none; cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 6px; }
   .pimg { position: relative; width: 100%; aspect-ratio: 16/9; border-radius: 11px; overflow: hidden; border: 1px solid var(--border); background: #0b1018; }

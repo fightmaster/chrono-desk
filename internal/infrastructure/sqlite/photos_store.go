@@ -140,6 +140,28 @@ func (s *Store) ListRecentPhotos(ctx context.Context, eventID string, limit int)
 	return scanPhotos(rows)
 }
 
+// ListPhotosForMerge returns the event's photos with only the fields MergeFinishes
+// needs (no frames_json) — cheap enough to run on every status poll and for the
+// combined-finishes export.
+func (s *Store) ListPhotosForMerge(ctx context.Context, eventID string) ([]Photo, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, source_id, camera_label, time_ms, bib, bib_source, best_photo_url
+		FROM photos WHERE event_id = ? ORDER BY time_ms DESC`, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("list photos for merge: %w", err)
+	}
+	defer rows.Close()
+	photos := make([]Photo, 0)
+	for rows.Next() {
+		var p Photo
+		if err := rows.Scan(&p.ID, &p.SourceID, &p.CameraLabel, &p.TimeMs, &p.Bib, &p.BibSource, &p.BestPhotoURL); err != nil {
+			return nil, err
+		}
+		photos = append(photos, p)
+	}
+	return photos, rows.Err()
+}
+
 // CountPhotos reports how many photos are stored for an event.
 func (s *Store) CountPhotos(ctx context.Context, eventID string) (int64, error) {
 	var n int64
