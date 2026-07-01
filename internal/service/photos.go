@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
@@ -36,17 +37,34 @@ type chronoCamTrack struct {
 	Frames           []chronoCamFrame `json:"frames"`
 }
 
-// pullChronoCam fetches /event and /tracks from a phone source.
-func pullChronoCam(ctx context.Context, client *http.Client, baseURL string) (chronoCamEvent, []chronoCamTrack, error) {
+// pullChronoCam fetches /event and /tracks from a phone source. sinceMs>0 asks the
+// phone for only finishes at/after that time (incremental). It also returns the
+// measured clock offset — the ms to ADD to the phone's times to reach this desk's
+// clock — estimated with Cristian's algorithm from the /event round-trip.
+func pullChronoCam(ctx context.Context, client *http.Client, baseURL string, sinceMs int64) (chronoCamEvent, []chronoCamTrack, int64, error) {
 	var ev chronoCamEvent
+	before := time.Now()
 	if err := getJSON(ctx, client, absoluteURL(baseURL, "/event"), &ev); err != nil {
-		return ev, nil, fmt.Errorf("get /event: %w", err)
+		return ev, nil, 0, fmt.Errorf("get /event: %w", err)
+	}
+	after := time.Now()
+	// Estimate this desk's clock at the instant the phone stamped server_time as the
+	// midpoint of the round-trip (RTT/2), then offset = deskAtStamp - phoneStamp.
+	var clockOffset int64
+	if ev.ServerTimeEpochMs > 0 {
+		deskAtStamp := before.Add(after.Sub(before) / 2).UnixMilli()
+		clockOffset = deskAtStamp - ev.ServerTimeEpochMs
+	}
+
+	tracksURL := absoluteURL(baseURL, "/tracks")
+	if sinceMs > 0 {
+		tracksURL += fmt.Sprintf("?since_ms=%d", sinceMs)
 	}
 	var tracks []chronoCamTrack
-	if err := getJSON(ctx, client, absoluteURL(baseURL, "/tracks"), &tracks); err != nil {
-		return ev, nil, fmt.Errorf("get /tracks: %w", err)
+	if err := getJSON(ctx, client, tracksURL, &tracks); err != nil {
+		return ev, nil, clockOffset, fmt.Errorf("get /tracks: %w", err)
 	}
-	return ev, tracks, nil
+	return ev, tracks, clockOffset, nil
 }
 
 func getJSON(ctx context.Context, client *http.Client, url string, out any) error {
