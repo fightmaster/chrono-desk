@@ -21,6 +21,7 @@
   // pulled from the phones — same /photos/recent the panel uses).
   let feedView = 'chips' // 'chips' | 'photos'
   let photos = []
+  let photosTotal = 0     // true count of stored finish photos (not just the loaded page)
 
   // manual finish by number
   let query = ''
@@ -55,7 +56,12 @@
       status = await call('GET', `/api/events/${eventId}/live/status`)
       feed = await call('GET', `/api/events/${eventId}/live/feed?limit=${feedLimit}`)
       // Recent photos drive both the wall and the inline finish-row thumbnails.
-      try { photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=60`) } catch (_) { /* photos best-effort */ }
+      // photos_count is the true stored total — the wall only holds the newest page.
+      try {
+        photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=60`)
+        const pstatus = await call('GET', `/api/events/${eventId}/photos/status`)
+        photosTotal = pstatus.photos_count || 0
+      } catch (_) { /* photos best-effort */ }
       if (status.port) port = status.port
       dispatch('status', status)
     } catch (e) {
@@ -293,7 +299,7 @@
   <div class="feedhead">
     <div class="seg">
       <button class="seg-item" class:active={feedView === 'chips'} on:click={() => setView('chips')}>Отметки</button>
-      <button class="seg-item" class:active={feedView === 'photos'} on:click={() => setView('photos')}>Фотофиниш{#if photoGroups.length} · {photoGroups.length}{/if}</button>
+      <button class="seg-item" class:active={feedView === 'photos'} on:click={() => setView('photos')}>Фотофиниш{#if photosTotal} · {photosTotal}{/if}</button>
     </div>
   </div>
 
