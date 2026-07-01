@@ -22,6 +22,7 @@
   let feedView = 'chips' // 'chips' | 'photos'
   let photos = []
   let photosTotal = 0     // true count of stored finish photos (not just the loaded page)
+  let photoLimit = 60     // how many of the newest photos the wall currently pulls
 
   // manual finish by number
   let query = ''
@@ -58,7 +59,7 @@
       // Recent photos drive both the wall and the inline finish-row thumbnails.
       // photos_count is the true stored total — the wall only holds the newest page.
       try {
-        photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=60`)
+        photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=${photoLimit}`)
         const pstatus = await call('GET', `/api/events/${eventId}/photos/status`)
         photosTotal = pstatus.photos_count || 0
       } catch (_) { /* photos best-effort */ }
@@ -113,6 +114,11 @@
 
   async function loadMore() {
     feedLimit = Math.min(feedLimit + 60, 1000)
+    await refresh()
+  }
+
+  async function loadMorePhotos() {
+    photoLimit = Math.min(photoLimit + 60, 2000)
     await refresh()
   }
 
@@ -359,6 +365,8 @@
     </div>
     {#if !photos.length}
       <p class="faint center">Фото пока нет. Добавьте телефон-источник в «Настройках события» → «Фотофиниш» и включите «Локальную синхронизацию» в приложении Chrono Cam.</p>
+    {:else if photos.length < photosTotal}
+      <p class="center"><button class="btn" on:click={loadMorePhotos}>Загрузить ещё (показано {photos.length} из {photosTotal})</button></p>
     {/if}
   {/if}
 
