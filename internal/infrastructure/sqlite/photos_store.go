@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Finish photos pulled from Chrono Cam phones (see schema.sql). Read-only metadata
@@ -160,6 +161,39 @@ func (s *Store) ListPhotosForMerge(ctx context.Context, eventID string) ([]Photo
 		photos = append(photos, p)
 	}
 	return photos, rows.Err()
+}
+
+// GetFramesByIDs returns the burst frames_json for the given photo ids, keyed by id.
+// It re-hydrates only the representative photos the merged wall actually shows, so the
+// lightbox can scrub the full series without loading every event photo's frames.
+func (s *Store) GetFramesByIDs(ctx context.Context, eventID string, ids []string) (map[string]json.RawMessage, error) {
+	out := make(map[string]json.RawMessage, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, eventID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, frames_json FROM photos WHERE event_id = ? AND id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get frames by ids: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, frames string
+		if err := rows.Scan(&id, &frames); err != nil {
+			return nil, err
+		}
+		if frames == "" {
+			frames = "[]"
+		}
+		out[id] = json.RawMessage(frames)
+	}
+	return out, rows.Err()
 }
 
 // CountPhotos reports how many photos are stored for an event.

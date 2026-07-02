@@ -111,7 +111,7 @@ func New(addr string, events *service.EventManager, public *publicweb.Server, lo
 	mux.HandleFunc("GET /api/events/{id}/photos/status", s.handlePhotoStatus)
 	mux.HandleFunc("GET /api/events/{id}/photos/recent", s.handleRecentPhotos)
 	mux.HandleFunc("GET /api/events/{id}/photos/merged", s.handleMergedPhotos)
-	mux.HandleFunc("POST /api/events/{id}/photos/export-csv", s.handleExportFinishesCSV)
+	mux.HandleFunc("POST /api/events/{id}/photos/export", s.handleExportFinishes)
 	mux.HandleFunc("GET /api/events/{id}/photos/img", s.handlePhotoImage)
 	mux.HandleFunc("GET /api/events/{id}/photos", s.handleMatchPhotos)
 	mux.HandleFunc("POST /api/public/start", s.handlePublicStart)
@@ -459,12 +459,36 @@ func (s *Server) handleMergedPhotos(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("window_ms"); v != "" {
 		fmt.Sscanf(v, "%d", &windowMs) //nolint:errcheck
 	}
-	photos, err := store.ListRecentPhotos(r.Context(), eventID, limit)
+	// Merge over ALL of the event's photos (the same set the badge counts), THEN
+	// paginate the collapsed finishes. Merging the raw page first would split a
+	// crossing straddling the limit boundary into two half-cards with the wrong
+	// camera list/count. Frames aren't needed to merge, so this stays cheap.
+	photos, err := store.ListPhotosForMerge(r.Context(), eventID)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, service.MergeFinishes(photos, windowMs))
+	finishes := service.MergeFinishes(photos, windowMs)
+	if limit > 0 && len(finishes) > limit {
+		finishes = finishes[:limit]
+	}
+	// Re-hydrate burst frames for just the representatives shown, so the lightbox
+	// can still scrub the whole series.
+	ids := make([]string, len(finishes))
+	for i := range finishes {
+		ids[i] = finishes[i].ID
+	}
+	framesByID, err := store.GetFramesByIDs(r.Context(), eventID, ids)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	for i := range finishes {
+		if fr, ok := framesByID[finishes[i].ID]; ok {
+			finishes[i].Frames = fr
+		}
+	}
+	writeJSON(w, http.StatusOK, finishes)
 }
 
 // handlePhotoImage is a caching proxy: it serves a finish-photo JPEG from the
@@ -542,15 +566,16 @@ func (s *Server) handlePhotoStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleExportFinishesCSV writes the coordinated merged-finishes CSV (all cameras in
-// one file) to the user's Downloads directory and returns its path.
-func (s *Server) handleExportFinishesCSV(w http.ResponseWriter, r *http.Request) {
+// handleExportFinishes writes the coordinated merged-finishes archive (all cameras in
+// one self-contained ZIP: a CSV plus the bundled best JPEGs) to the user's Downloads
+// directory and returns its path.
+func (s *Server) handleExportFinishes(w http.ResponseWriter, r *http.Request) {
 	store, err := s.events.Open(r.PathValue("id"))
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	data, name, err := service.BuildMergedFinishesCSV(r.Context(), store, r.PathValue("id"))
+	data, name, err := service.BuildMergedFinishesZip(r.Context(), store, s.photoCache, r.PathValue("id"))
 	if err != nil {
 		s.fail(w, err)
 		return

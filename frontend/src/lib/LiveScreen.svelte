@@ -114,12 +114,13 @@
     await refresh()
   }
 
-  // Coordinated export: one CSV of merged finishes across all cameras, saved to
-  // Downloads (Wails webviews are unreliable at direct file downloads).
+  // Coordinated export: one self-contained ZIP of merged finishes across all cameras
+  // (CSV + bundled best photos), saved to Downloads (Wails webviews are unreliable at
+  // direct file downloads).
   async function exportFinishes() {
     try {
-      const res = await call('POST', `/api/events/${eventId}/photos/export-csv`)
-      showFlash(`✓ CSV финишей сохранён: ${res.path}`)
+      const res = await call('POST', `/api/events/${eventId}/photos/export`)
+      showFlash(`✓ Финиши сохранены: ${res.path}`)
     } catch (e) {
       showFlash('Ошибка экспорта: ' + e.message)
     }
@@ -351,7 +352,7 @@
     {/if}
   {:else}
     {#if merged.length}
-      <div class="pwall-tools"><button class="srclink" on:click={exportFinishes}>⤓ Экспорт финишей (CSV)</button></div>
+      <div class="pwall-tools"><button class="srclink" on:click={exportFinishes}>⤓ Экспорт финишей (ZIP)</button></div>
     {/if}
     <div class="pwall">
       {#each photoGroups as ph (ph.id)}
