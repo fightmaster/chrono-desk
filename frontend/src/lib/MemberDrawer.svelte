@@ -43,6 +43,7 @@
   let member = null // registration fields
   let error = ''
   let onlyHits = true
+  let selectedCategoryId = ''
 
   // A manual finish already attached to the bound member (reopen case): expose
   // the same time-edit / reassign controls as a fresh capture. Skipped in
@@ -95,6 +96,7 @@
     }
     return opts
   })()
+  $: selectedCategoryId = member?.category_id ?? ''
 
   $: passes = data ? data.passes : []
   $: hitCount = passes.filter(p => p.checkpoint_name).length
@@ -372,7 +374,7 @@
         <input class="input mono" value={member.epc ?? ''}
                on:change={e => edit('epc', e.target.value ? e.target.value.toUpperCase() : null)}/></div>
       <div class="field"><span>Группа</span>
-        <select class="input" value={member.category_id ?? ''} on:change={e => edit('category_id', e.target.value || null)}>
+        <select class="input" bind:value={selectedCategoryId} on:change={e => edit('category_id', e.target.value || null)}>
           <option value="">—</option>
           {#each categoryOptions as c}<option value={c.id}>{c.name}</option>{/each}
         </select></div>
