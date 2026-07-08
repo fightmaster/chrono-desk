@@ -17,8 +17,12 @@
   let exportOpen = false
   let exportMsg = ''
   let error = ''
+  let protocolQuery = ''
+  let protocolGender = 'all'
+  let protocolCategory = 'all'
 
   const genderNames = {male: 'Мужчины', female: 'Женщины'}
+  const genderMarks = {male: 'М', female: 'Ж'}
 
   $: rows = protocol ? protocol.rows : []
   // TimeLimited races report which checkpoint each member last reached in-window
@@ -61,7 +65,33 @@
       [name, list.sort((a, b) => a.category_place - b.category_place)])
   })()
 
+  $: categoryOptions = (() => {
+    const byKey = new Map()
+    for (const r of rows) {
+      const key = categoryKey(r)
+      if (!key) continue
+      if (!byKey.has(key)) byKey.set(key, r.category_name || key)
+    }
+    return [...byKey.entries()]
+      .map(([value, label]) => ({value, label}))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+  })()
+  $: if (protocolCategory !== 'all' && !categoryOptions.some(c => c.value === protocolCategory)) {
+    protocolCategory = 'all'
+  }
+  $: filteredRows = rows.filter(matchesProtocol)
+
   function name(r) { return `${r.last_name ?? ''} ${r.first_name ?? ''}`.trim() }
+  function categoryKey(r) { return r.category_id || r.category_name || '' }
+  function genderMark(r) { return r.gender ? (genderMarks[r.gender] || r.gender) : '' }
+  function matchesProtocol(r) {
+    if (protocolGender !== 'all' && r.gender !== protocolGender) return false
+    if (protocolCategory !== 'all' && categoryKey(r) !== protocolCategory) return false
+    if (!protocolQuery.trim()) return true
+    const q = protocolQuery.trim().toLowerCase()
+    return name(r).toLowerCase().includes(q) ||
+      (r.number != null && String(r.number).includes(q))
+  }
 
   async function exportExcel() {
     exportOpen = false
@@ -228,27 +258,47 @@
 
     {:else if tab === 'protocol'}
       <p class="faint hint">Клик по строке — карточка участника и режим судьи.</p>
+      <div class="proto-tools">
+        <input class="input" type="search" bind:value={protocolQuery}
+               placeholder="Поиск по фамилии или номеру"/>
+        <select class="input" bind:value={protocolGender}>
+          <option value="all">Все</option>
+          <option value="male">Мужчины</option>
+          <option value="female">Женщины</option>
+        </select>
+        <select class="input" bind:value={protocolCategory}>
+          <option value="all">Все группы</option>
+          {#each categoryOptions as c (c.value)}
+            <option value={c.value}>{c.label}</option>
+          {/each}
+        </select>
+      </div>
       <div class="table" class:cp={showCheckpoint}>
         <div class="thead">
-          <span>Место</span><span>Номер</span><span>Участник</span><span>Группа</span>
-          <span>Место в гр.</span><span>Пол</span><span>Время</span>
+          <span>Абс</span><span>М/Ж</span><span>Гр.</span><span>Номер</span>
+          <span>Участник</span><span>Группа</span><span>Пол</span><span>Время</span>
           {#if showCheckpoint}<span>Чекпоинт</span>{/if}
           <span>Статус</span>
         </div>
-        {#each rows as r (r.member_id)}
-          <button class="trow" class:nok={r.status !== 'ok'}
-                  on:click={() => dispatch('openMember', r.member_id)}>
-            <span class="mono dim">{r.place ?? '—'}</span>
-            <span class="mono num">{r.number ?? ''}</span>
-            <span class="pname">{name(r)}</span>
-            <span class="dim sm">{r.category_name ?? ''}</span>
-            <span class="mono dim">{r.category_place ?? ''}</span>
-            <span class="mono faint">{r.gender_place ?? ''}</span>
-            <span class="mono ptime">{r.clean_time ?? ''}</span>
-            {#if showCheckpoint}<span class="dim sm">{r.last_checkpoint_name ?? ''}</span>{/if}
-            <span class="status">{({dns: 'DNS', dnf: 'DNF', dq: 'DSQ'})[r.status] ?? ''}</span>
-          </button>
-        {/each}
+        {#if filteredRows.length}
+          {#each filteredRows as r (r.member_id)}
+            <button class="trow" class:nok={r.status !== 'ok'}
+                    on:click={() => dispatch('openMember', r.member_id)}>
+              <span class="mono dim">{r.place ?? '—'}</span>
+              <span class="mono faint">{r.gender_place ?? '—'}</span>
+              <span class="mono dim">{r.category_place ?? '—'}</span>
+              <span class="mono num">{r.number ?? ''}</span>
+              <span class="pname">{name(r)}</span>
+              <span class="dim sm">{r.category_name ?? ''}</span>
+              <span class="mono faint">{genderMark(r)}</span>
+              <span class="mono ptime">{r.clean_time ?? ''}</span>
+              {#if showCheckpoint}<span class="dim sm">{r.last_checkpoint_name ?? ''}</span>{/if}
+              <span class="status">{({dns: 'DNS', dnf: 'DNF', dq: 'DSQ'})[r.status] ?? ''}</span>
+            </button>
+          {/each}
+        {:else}
+          <div class="empty-row">{protocolQuery || protocolGender !== 'all' || protocolCategory !== 'all' ? 'Никого не нашлось' : 'Пока нет результатов'}</div>
+        {/if}
       </div>
 
     {:else if tab === 'dset'}
@@ -370,14 +420,20 @@
 
   /* protocol */
   .hint { font-size: 12.5px; margin: 0 0 10px; }
-  .table { border: 1px solid var(--border); border-radius: 13px; overflow: hidden; }
+  .proto-tools {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) 160px 220px;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .table { border: 1px solid var(--border); border-radius: 13px; overflow: auto; }
   .thead, .trow {
     display: grid;
-    grid-template-columns: 64px 70px 1fr 120px 100px 60px 130px 70px;
+    grid-template-columns: 56px 56px 56px 72px minmax(180px, 1fr) 130px 56px 130px 70px;
     align-items: center; gap: 8px; padding: 12px 18px;
   }
   .table.cp .thead, .table.cp .trow {
-    grid-template-columns: 64px 70px 1fr 120px 100px 60px 130px 130px 70px;
+    grid-template-columns: 56px 56px 56px 72px minmax(180px, 1fr) 130px 56px 130px 130px 70px;
   }
   .thead {
     background: var(--surface2);
@@ -396,6 +452,15 @@
   .trow .sm { font-size: 13px; }
   .trow .ptime { font-weight: 600; }
   .trow .status { font-size: 12.5px; font-weight: 700; color: var(--bad); }
+  .empty-row { padding: 18px; color: var(--faint); }
+
+  @media (max-width: 980px) {
+    .proto-tools { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 760px) {
+    .proto-tools { grid-template-columns: 1fr; }
+  }
 
   /* distance settings */
   .dset { display: flex; flex-direction: column; gap: 14px; max-width: 1080px; }

@@ -46,6 +46,15 @@
     background: var(--panel); border: 1px solid var(--border); color: var(--text); outline: none;
   }
   .search input:focus { border-color: var(--accent); }
+  .filters {
+    display: grid; gap: 10px; margin-bottom: 14px;
+    grid-template-columns: minmax(0, 1fr) 140px 180px;
+  }
+  @media (max-width: 640px) { .filters { grid-template-columns: 1fr; } }
+  .filters select {
+    width: 100%; padding: 12px 14px; border-radius: 12px; font-size: 15px;
+    background: var(--panel); border: 1px solid var(--border); color: var(--text); outline: none;
+  }
 
   .copybtn {
     width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--accent);
@@ -76,17 +85,35 @@
   @media (min-width: 560px) { .groups { grid-template-columns: 1fr 1fr; } }
   .group .gname { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
 
+  .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; margin-top: 6px; }
   th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
   th { color: var(--faint); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; position: sticky; top: 0; background: var(--bg); }
   td.num, td.place, td.time { font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.place { font-weight: 700; }
+  .proto-list { display: none; gap: 10px; margin-top: 6px; }
+  .proto-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; }
+  .proto-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .proto-name { font-weight: 700; font-size: 15px; }
+  .proto-sub { color: var(--faint); font-size: 12px; margin-top: 3px; }
+  .proto-time { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+  .proto-grid {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px; margin-top: 10px;
+  }
+  .proto-cell .k { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .proto-cell .v { margin-top: 2px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .nm { font-weight: 600; }
   .cat { color: var(--faint); font-size: 12px; }
   tr.nok td { color: var(--faint); }
   .badge { font-size: 11px; font-weight: 800; color: var(--bad); }
   .empty { color: var(--faint); text-align: center; padding: 28px 0; }
   .updated { color: var(--faint); font-size: 12px; text-align: center; margin-top: 22px; }
+  @media (max-width: 640px) {
+    .table-wrap { display: none; }
+    .proto-list { display: grid; }
+    .proto-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
 
   .toast {
     position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
@@ -135,6 +162,8 @@ let query = ''
 let tab = 'awards'
 let published = false
 let eventName = ''
+let genderFilter = 'all'
+let categoryFilter = 'all'
 
 const MEDALS = ['🥇', '🥈', '🥉']
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
@@ -143,6 +172,7 @@ const statusLabel = s => ({dns: 'DNS', dnf: 'DNF', dq: 'DSQ'}[s] ?? '')
 const timeOf = r => r.clean_time ? r.clean_time : ''
 const timeSec = r => { const t = timeOf(r); return t ? t.split('.')[0] : '' } // drop .mmm for posts
 const medal = n => MEDALS[n - 1] || `${n}.`
+const genderMark = r => ({male: 'М', female: 'Ж'}[r.gender] || '')
 
 async function getJSON(path) {
   const resp = await fetch(path, {cache: 'no-store'})
@@ -178,6 +208,30 @@ function matches(r, q) {
   return (r.last_name && r.last_name.toLowerCase().includes(q)) ||
     (r.first_name && r.first_name.toLowerCase().includes(q)) ||
     (r.number != null && String(r.number).includes(q))
+}
+
+function categoryKey(r) {
+  return r.category_id || r.category_name || ''
+}
+
+function categoryOptions(rows) {
+  const byKey = new Map()
+  for (const r of rows) {
+    const key = categoryKey(r)
+    if (!key) continue
+    if (!byKey.has(key)) byKey.set(key, r.category_name || key)
+  }
+  return [...byKey.entries()]
+    .map(([value, label]) => ({value, label}))
+    .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+}
+
+function filterRows(rows) {
+  return rows.filter(r => {
+    if (genderFilter !== 'all' && r.gender !== genderFilter) return false
+    if (categoryFilter !== 'all' && categoryKey(r) !== categoryFilter) return false
+    return matches(r, query)
+  })
 }
 
 function podiumRow(r, idx) {
@@ -229,21 +283,56 @@ function renderAwards(rows) {
 }
 
 function renderProtocol(rows) {
-  const filtered = rows.filter(r => matches(r, query))
+  const cats = categoryOptions(rows)
+  if (categoryFilter !== 'all' && !cats.some(c => c.value === categoryFilter)) categoryFilter = 'all'
+  const filtered = filterRows(rows)
+  const catOptions = cats.map(c =>
+    `<option value="${esc(c.value)}" ${c.value === categoryFilter ? 'selected' : ''}>${esc(c.label)}</option>`).join('')
   const body = filtered.length ? filtered.map(r => `
     <tr class="${r.status !== 'ok' ? 'nok' : ''}">
       <td class="place">${r.place ?? '—'}</td>
+      <td class="place">${r.gender_place ?? '—'}</td>
+      <td class="place">${r.category_place ?? '—'}</td>
       <td class="num">${r.number != null ? r.number : ''}</td>
       <td><span class="nm">${esc(fullName(r))}</span>${r.category_name ? `<div class="cat">${esc(r.category_name)}${r.team || r.city ? ' · ' + esc(r.team || r.city) : ''}</div>` : (r.team || r.city ? `<div class="cat">${esc(r.team || r.city)}</div>` : '')}</td>
+      <td>${esc(genderMark(r))}</td>
       <td class="time">${r.status !== 'ok' ? `<span class="badge">${statusLabel(r.status)}</span>` : esc(timeOf(r))}</td>
     </tr>`).join('')
-    : `<tr><td colspan="4" class="empty">${query ? 'Никого не нашлось' : 'Пока нет результатов'}</td></tr>`
+    : `<tr><td colspan="7" class="empty">${query || genderFilter !== 'all' || categoryFilter !== 'all' ? 'Никого не нашлось' : 'Пока нет результатов'}</td></tr>`
+  const cards = filtered.length ? filtered.map(r => `
+    <div class="proto-card ${r.status !== 'ok' ? 'nok' : ''}">
+      <div class="proto-top">
+        <div>
+          <div class="proto-name">${esc(fullName(r))}${r.number != null ? ` <span class="cat">№${r.number}</span>` : ''}</div>
+          <div class="proto-sub">${esc(r.category_name || 'Без группы')}${r.team || r.city ? ` · ${esc(r.team || r.city)}` : ''}</div>
+        </div>
+        <div class="proto-time">${r.status !== 'ok' ? `<span class="badge">${statusLabel(r.status)}</span>` : esc(timeOf(r))}</div>
+      </div>
+      <div class="proto-grid">
+        <div class="proto-cell"><div class="k">Абс</div><div class="v">${r.place ?? '—'}</div></div>
+        <div class="proto-cell"><div class="k">М/Ж</div><div class="v">${r.gender_place ?? '—'}</div></div>
+        <div class="proto-cell"><div class="k">Гр.</div><div class="v">${r.category_place ?? '—'}</div></div>
+        <div class="proto-cell"><div class="k">Пол</div><div class="v">${esc(genderMark(r) || '—')}</div></div>
+      </div>
+    </div>`).join('')
+    : `<div class="empty">${query || genderFilter !== 'all' || categoryFilter !== 'all' ? 'Никого не нашлось' : 'Пока нет результатов'}</div>`
 
-  return `<div class="search"><input id="q" type="search" inputmode="search" placeholder="Поиск по фамилии или номеру" value="${esc(query)}"></div>
-    <table>
-      <thead><tr><th>Место</th><th>№</th><th>Участник</th><th>Время</th></tr></thead>
+  return `<div class="filters">
+      <div class="search"><input id="q" type="search" inputmode="search" placeholder="Поиск по фамилии или номеру" value="${esc(query)}"></div>
+      <select id="gender-filter">
+        <option value="all">Все</option>
+        <option value="male" ${genderFilter === 'male' ? 'selected' : ''}>Мужчины</option>
+        <option value="female" ${genderFilter === 'female' ? 'selected' : ''}>Женщины</option>
+      </select>
+      <select id="category-filter">
+        <option value="all">Все группы</option>${catOptions}
+      </select>
+    </div>
+    <div class="proto-list">${cards}</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Абс</th><th>М/Ж</th><th>Гр.</th><th>№</th><th>Участник</th><th>Пол</th><th>Время</th></tr></thead>
       <tbody>${body}</tbody>
-    </table>`
+    </table></div>`
 }
 
 function render() {
@@ -283,6 +372,10 @@ function render() {
     q.addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); render() })
     if (query) { q.focus(); q.setSelectionRange(q.value.length, q.value.length) }
   }
+  const gf = document.getElementById('gender-filter')
+  if (gf) gf.addEventListener('change', e => { genderFilter = e.target.value; render() })
+  const cf = document.getElementById('category-filter')
+  if (cf) cf.addEventListener('change', e => { categoryFilter = e.target.value; render() })
   elUpdated.textContent = 'Обновлено ' + new Date().toLocaleTimeString('ru-RU')
 }
 
