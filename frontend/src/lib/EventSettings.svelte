@@ -6,6 +6,7 @@
   import PhotoSources from './PhotoSources.svelte'
   import EditsLog from './EditsLog.svelte'
 
+  export let event = null
   export let eventId
   export let currentRace = null
   export let reloadToken = 0
@@ -14,6 +15,14 @@
 
   let msg = ''
   let error = ''
+  let ageRuleSaving = false
+  let useRaceDateForAge = false
+  let ageRuleLoadedForEventId = null
+
+  $: if (eventId && ageRuleLoadedForEventId !== eventId) {
+    useRaceDateForAge = Boolean(event?.use_race_date_for_age)
+    ageRuleLoadedForEventId = eventId
+  }
 
   // Photo-finish (Chrono Cam phones over the LAN).
   let photoSourcesOpen = false
@@ -83,6 +92,29 @@
       msg = `Резервная копия сохранена: ${res.path}`
     } catch (err) { error = `Бэкап: ${err.message}` }
   }
+
+  async function saveAgeRule() {
+    msg = ''; error = ''
+    ageRuleSaving = true
+    try {
+      const res = await call('POST', `/api/events/${eventId}/edits`, JSON.stringify({
+        entity: 'event',
+        entity_id: eventId,
+        field: 'use_race_date_for_age',
+        value: useRaceDateForAge ? 1 : 0,
+      }))
+      if (event) event.use_race_date_for_age = useRaceDateForAge
+      msg = useRaceDateForAge
+        ? 'Возрастные группы теперь определяются на дату забега.'
+        : 'Возрастные группы теперь определяются только по году рождения.'
+      dispatch('changed', {recount: res.recount_needed === true})
+    } catch (err) {
+      error = `Настройка возрастных групп: ${err.message}`
+      useRaceDateForAge = Boolean(event?.use_race_date_for_age)
+    } finally {
+      ageRuleSaving = false
+    }
+  }
 </script>
 
 <div class="screen">
@@ -93,6 +125,21 @@
   {#if msg}<p class="ok-text msg">{msg}</p>{/if}
 
   <div class="cards">
+    <div class="card">
+      <div class="ctitle mb">Возрастные категории</div>
+      <p class="faint age-sub">По умолчанию возраст считается только по году рождения. Включите режим даты забега, если организатор требует учитывать полный день рождения на дату старта.</p>
+      <label class="toggle-row">
+        <input type="checkbox" bind:checked={useRaceDateForAge}/>
+        <span>Определять возраст на дату забега, а не только по году рождения</span>
+      </label>
+      <div class="age-actions">
+        <button class="btn primary" disabled={ageRuleSaving} on:click={saveAgeRule}>
+          {ageRuleSaving ? 'Сохраняю…' : 'Сохранить правило'}
+        </button>
+        <span class="faint age-hint">Используется при автоназначении возрастной группы у новых участников и при пересчёте группы после правки пола, даты рождения или дистанции.</span>
+      </div>
+    </div>
+
     <!-- Recount -->
     <div class="card recount">
       <div class="info">
@@ -204,6 +251,17 @@
   .cards { display: flex; flex-direction: column; gap: 14px; }
   .ctitle { font-size: 16px; font-weight: 700; }
   .ctitle.mb { display: block; margin-bottom: 14px; }
+  .age-sub { font-size: 13.5px; margin: 0 0 12px; line-height: 1.5; }
+  .toggle-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: 14px; font-weight: 600;
+  }
+  .toggle-row input { margin-top: 2px; }
+  .age-actions {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  .age-hint { font-size: 12.5px; max-width: 540px; line-height: 1.45; }
 
   .card.recount { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .recount .info { display: flex; flex-direction: column; gap: 4px; max-width: 520px; }

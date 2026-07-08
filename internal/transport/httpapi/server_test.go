@@ -98,7 +98,7 @@ func TestImportRecountProtocolFlow(t *testing.T) {
 	resp = mustGet(t, base+"/api/events")
 	var infos []service.EventInfo
 	decodeBody(t, resp, &infos)
-	if len(infos) != 1 || infos[0].ID != "ev-100" || infos[0].Timezone != "Europe/Moscow" {
+	if len(infos) != 1 || infos[0].ID != "ev-100" || infos[0].Timezone != "Europe/Moscow" || infos[0].UseRaceDateForAge {
 		t.Fatalf("events = %+v", infos)
 	}
 
@@ -153,6 +153,32 @@ func TestImportRecountProtocolFlow(t *testing.T) {
 	second := protocol.Rows[1]
 	if second.MemberID != "mem-2" || second.Status != "dns" || second.Place != nil {
 		t.Fatalf("second row = %+v", second)
+	}
+}
+
+func TestEventAgeRuleEditShowsInEventList(t *testing.T) {
+	srv := startTestServer(t)
+	base := srv.BaseURL()
+
+	fixture, err := os.ReadFile("../../service/testdata/event-export.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	mustPost(t, base+"/api/events/import", "application/json", strings.NewReader(string(fixture)))
+
+	resp := mustPost(t, base+"/api/events/ev-100/edits", "application/json",
+		strings.NewReader(`{"entity":"event","entity_id":"ev-100","field":"use_race_date_for_age","value":1}`))
+	var res service.EditResult
+	decodeBody(t, resp, &res)
+	if res.RecountNeeded {
+		t.Fatal("event age rule edit must not demand recount")
+	}
+
+	resp = mustGet(t, base+"/api/events")
+	var infos []service.EventInfo
+	decodeBody(t, resp, &infos)
+	if len(infos) != 1 || !infos[0].UseRaceDateForAge {
+		t.Fatalf("events after edit = %+v", infos)
 	}
 }
 

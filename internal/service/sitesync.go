@@ -20,10 +20,16 @@ const syncSchemaVersion = 1
 
 // Fields that round-trip to run5, mirroring the edit whitelist in edits.go.
 var (
+	syncEventFields      = set("use_race_date_for_age")
 	syncMemberFields     = set("status", "number", "epc", "category_id", "first_name", "last_name", "gender", "dob", "team", "city", "start_time_ms", "race_id")
 	syncRaceFields       = set("started_at_ms", "name", "category_excludes_top_by_gender")
 	syncCheckpointFields = set("since_ms", "since_offset_seconds", "sleep_after_prev_seconds", "board", "sort", "type")
 )
+
+type syncEventEdit struct {
+	EventID string                     `json:"event_id"`
+	Fields  map[string]json.RawMessage `json:"fields"`
+}
 
 type syncMemberRef struct {
 	MemberID *string `json:"member_id"` // run5 id (nil for local- members)
@@ -104,6 +110,7 @@ type syncPayload struct {
 	MemberEdits          []syncMemberEdit       `json:"member_edits"`
 	ManualResults        []syncManualResult     `json:"manual_results"`
 	CheckpointEdits      []syncCheckpointEdit   `json:"checkpoint_edits"`
+	EventEdits           []syncEventEdit        `json:"event_edits"`
 	RaceEdits            []syncRaceEdit         `json:"race_edits"`
 	DeletedManualResults []syncManualResult     `json:"deleted_manual_results"`
 	CheckpointCreates    []syncCheckpointCreate `json:"checkpoint_creates"`
@@ -123,6 +130,7 @@ type SyncSummary struct {
 	ManualResults     int `json:"manual_results"`
 	CheckpointCreates int `json:"checkpoint_creates"`
 	CheckpointEdits   int `json:"checkpoint_edits"`
+	EventEdits        int `json:"event_edits"`
 	RaceEdits         int `json:"race_edits"`
 	CategoryAttaches  int `json:"category_attaches"`
 	CategoryDetaches  int `json:"category_detaches"`
@@ -133,7 +141,7 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	p := syncPayload{
 		SchemaVersion: syncSchemaVersion, EventID: eventID, Source: "chrono-desk", Overwrite: overwrite,
 		RfidLogs: []syncRfidLog{}, NewMembers: []syncNewMember{}, MemberEdits: []syncMemberEdit{},
-		ManualResults: []syncManualResult{}, CheckpointEdits: []syncCheckpointEdit{}, RaceEdits: []syncRaceEdit{},
+		ManualResults: []syncManualResult{}, CheckpointEdits: []syncCheckpointEdit{}, EventEdits: []syncEventEdit{}, RaceEdits: []syncRaceEdit{},
 		DeletedManualResults: []syncManualResult{}, CheckpointCreates: []syncCheckpointCreate{}, CheckpointDeletes: []string{},
 		CategoryAttaches: []categoryRacePair{}, CategoryDetaches: []categoryRacePair{},
 	}
@@ -208,6 +216,7 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 		return nil, SyncSummary{}, err
 	}
 	memberEdits := map[string]map[string]json.RawMessage{}
+	eventEdits := map[string]map[string]json.RawMessage{}
 	raceEdits := map[string]map[string]json.RawMessage{}
 	cpEdits := map[string]map[string]json.RawMessage{}
 	cpDeleted := map[string]bool{}
@@ -215,6 +224,8 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	catDetached := map[string]categoryRacePair{}
 	for _, c := range changes {
 		switch {
+		case c.Entity == "event" && syncEventFields[c.Field]:
+			putEdit(eventEdits, c.EntityID, c.Field, c.NewValue)
 		case c.Entity == "member" && c.Field == "_manual_finish_deleted":
 			var d struct {
 				MemberID string `json:"member_id"`
@@ -312,6 +323,9 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	for _, id := range sortedKeys(memberEdits) {
 		p.MemberEdits = append(p.MemberEdits, syncMemberEdit{MemberRef: ref(id), Fields: memberEdits[id]})
 	}
+	for _, id := range sortedKeys(eventEdits) {
+		p.EventEdits = append(p.EventEdits, syncEventEdit{EventID: id, Fields: eventEdits[id]})
+	}
 	for _, id := range sortedKeys(raceEdits) {
 		p.RaceEdits = append(p.RaceEdits, syncRaceEdit{RaceID: id, Fields: raceEdits[id]})
 	}
@@ -326,7 +340,7 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	summary := SyncSummary{
 		RfidLogs: len(p.RfidLogs), NewMembers: len(p.NewMembers), MemberEdits: len(p.MemberEdits),
 		ManualResults: len(p.ManualResults), CheckpointCreates: len(p.CheckpointCreates),
-		CheckpointEdits: len(p.CheckpointEdits), RaceEdits: len(p.RaceEdits),
+		CheckpointEdits: len(p.CheckpointEdits), EventEdits: len(p.EventEdits), RaceEdits: len(p.RaceEdits),
 		CategoryAttaches: len(p.CategoryAttaches), CategoryDetaches: len(p.CategoryDetaches),
 	}
 	return data, summary, nil

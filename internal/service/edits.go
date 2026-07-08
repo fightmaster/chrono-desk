@@ -30,6 +30,9 @@ type editableField struct {
 }
 
 var editWhitelist = map[string]map[string]editableField{
+	"event": {
+		"use_race_date_for_age": {table: "events", kind: kindInt},
+	},
 	"race": {
 		"started_at_ms": {table: "races", kind: kindInt, recountNeeded: true},
 		"name":          {table: "races", kind: kindText},

@@ -39,13 +39,14 @@ func NewEventManager(dataDir string, logger *log.Logger) (*EventManager, error) 
 
 // EventInfo is a list entry for the UI.
 type EventInfo struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Date        string `json:"date"`
-	Timezone    string `json:"timezone"`
-	File        string `json:"file"`
-	RaceCount   int    `json:"race_count"`
-	MemberCount int    `json:"member_count"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Date              string `json:"date"`
+	Timezone          string `json:"timezone"`
+	File              string `json:"file"`
+	RaceCount         int    `json:"race_count"`
+	MemberCount       int    `json:"member_count"`
+	UseRaceDateForAge bool   `json:"use_race_date_for_age"`
 }
 
 var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
@@ -140,7 +141,7 @@ func (m *EventManager) List(ctx context.Context) ([]EventInfo, error) {
 		}
 		infos = append(infos, EventInfo{
 			ID: event.ID, Name: event.Name, Date: event.Date, Timezone: event.Timezone, File: e.Name(),
-			RaceCount: raceCount, MemberCount: memberCount,
+			RaceCount: raceCount, MemberCount: memberCount, UseRaceDateForAge: event.UseRaceDateForAge,
 		})
 	}
 	sort.Slice(infos, func(i, j int) bool { return infos[i].Date > infos[j].Date })
@@ -152,8 +153,8 @@ func (m *EventManager) List(ctx context.Context) ([]EventInfo, error) {
 func FirstEvent(ctx context.Context, store *sqlite.Store) (domain.Event, error) {
 	var e domain.Event
 	err := store.DB().QueryRowContext(ctx,
-		`SELECT id, name, slug, date, timezone FROM events LIMIT 1`).
-		Scan(&e.ID, &e.Name, &e.Slug, &e.Date, &e.Timezone)
+		`SELECT id, name, slug, date, timezone, use_race_date_for_age FROM events LIMIT 1`).
+		Scan(&e.ID, &e.Name, &e.Slug, &e.Date, &e.Timezone, &e.UseRaceDateForAge)
 	if err != nil {
 		return domain.Event{}, fmt.Errorf("read event header: %w", err)
 	}

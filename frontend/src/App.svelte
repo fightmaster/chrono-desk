@@ -210,7 +210,7 @@
                      on:openMember={e => openMember(e.detail)}
                      on:changed={onEdited}/>
     {:else if view === 'settings'}
-      <EventSettings eventId={currentEvent.id} {currentRace} {reloadToken}
+      <EventSettings event={currentEvent} eventId={currentEvent.id} {currentRace} {reloadToken}
                      on:recount={recount}
                      on:changed={onEdited}
                      on:pulled={() => openEvent(currentEvent)}/>

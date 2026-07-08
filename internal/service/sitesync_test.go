@@ -17,6 +17,8 @@ func TestBuildSyncPayload(t *testing.T) {
 	ctx := context.Background()
 	importFixture(t, store)
 
+	// Event-level age rule edit.
+	mustEdit(t, store, EditRequest{Entity: "event", EntityID: "ev-100", Field: "use_race_date_for_age", Value: json.RawMessage(`1`)})
 	// Race start edit.
 	mustEdit(t, store, EditRequest{Entity: "race", EntityID: "race-10k", Field: "started_at_ms", Value: json.RawMessage(`1780812300000`)})
 	// Member status edited twice → last value wins on collapse.
@@ -83,6 +85,11 @@ func TestBuildSyncPayload(t *testing.T) {
 		t.Errorf("mem-2 status edit = %+v", statusEdit)
 	}
 
+	// Event edit present.
+	if len(p.EventEdits) != 1 || p.EventEdits[0].EventID != "ev-100" || string(p.EventEdits[0].Fields["use_race_date_for_age"]) != "1" {
+		t.Errorf("event_edits = %+v", p.EventEdits)
+	}
+
 	// Walk-in present as a local member.
 	if len(p.NewMembers) != 1 || p.NewMembers[0].LocalID != localID || p.NewMembers[0].EPC == nil || *p.NewMembers[0].EPC != "E280WALK" {
 		t.Errorf("new_members = %+v", p.NewMembers)
@@ -93,7 +100,7 @@ func TestBuildSyncPayload(t *testing.T) {
 		t.Errorf("race_edits = %+v", p.RaceEdits)
 	}
 
-	if summary.RfidLogs == 0 || summary.ManualResults != 1 || summary.NewMembers != 1 {
+	if summary.RfidLogs == 0 || summary.ManualResults != 1 || summary.NewMembers != 1 || summary.EventEdits != 1 {
 		t.Errorf("summary = %+v", summary)
 	}
 
