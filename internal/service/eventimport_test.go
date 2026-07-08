@@ -144,3 +144,17 @@ func TestParseEventExportRejectsUnknownSchema(t *testing.T) {
 		t.Errorf("err = %v, want schema_version error", err)
 	}
 }
+
+func TestParseEventExportAcceptsSchemaVersion3(t *testing.T) {
+	export, err := ParseEventExport(strings.NewReader(`{
+		"schema_version": 3,
+		"timezone": "Europe/Moscow",
+		"event": {"id": "ev-1", "name": "Test", "use_race_date_for_age": true}
+	}`))
+	if err != nil {
+		t.Fatalf("parse schema v3: %v", err)
+	}
+	if !export.Event.UseRaceDateForAge {
+		t.Error("UseRaceDateForAge = false, want true")
+	}
+}

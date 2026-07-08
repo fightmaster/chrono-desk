@@ -8,7 +8,7 @@ a no-op, importing a newer export overwrites site-owned data and triggers a reco
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "exported_at": "2026-06-05T12:00:00+03:00",
   "timezone": "Europe/Moscow",
   "event": {},
@@ -25,8 +25,10 @@ a no-op, importing a newer export overwrites site-owned data and triggers a reco
 **Schema versions.** v1: `categories` carried only the groups referenced by the
 event's members, and there was no `category_races`. v2: `categories` is the **full
 global catalog** (so a judge can attach a not-yet-used group offline), plus a
-`category_races` pivot mapping which categories are attached to which race. The
-importer accepts both; a v1 export (no `category_races`) seeds the pivot from
+`category_races` pivot mapping which categories are attached to which race. v3:
+`event.use_race_date_for_age` tells the desktop whether age groups use only the
+birth year (legacy default) or the full birth date on the race date. The importer
+accepts v1/v2/v3; a v1 export (no `category_races`) seeds the pivot from
 `member.category_id` so per-race chips don't regress.
 
 `timezone` — IANA zone of the event; used as the default when importing Feibot
@@ -39,7 +41,11 @@ strings with offset unless noted; `rfid_logs.time` is unix milliseconds.
 
 ### event
 
-`id`, `name`, `slug`, `date`
+`id`, `name`, `slug`, `date`, `use_race_date_for_age`
+
+`use_race_date_for_age` — when `false`, age categories use `race_year - birth_year`
+(legacy run5 behavior). When `true`, age is calculated on the race date with the
+full birth date.
 
 ### laps
 

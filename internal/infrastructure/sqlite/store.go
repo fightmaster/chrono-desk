@@ -20,11 +20,11 @@ type Store struct {
 // New runs the embedded schema (idempotent), applies in-place migrations for
 // pre-existing databases and returns a Store.
 func New(db *sql.DB) (*Store, error) {
-	if err := migrate(db); err != nil {
-		return nil, err
-	}
 	if _, err := db.Exec(schemaSQL); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
+	}
+	if err := migrate(db); err != nil {
+		return nil, err
 	}
 	// Backfill needs the schema applied first (it touches the new pivot table),
 	// so it runs here rather than in migrate().
@@ -53,9 +53,11 @@ func (s *Store) UpsertEvent(ctx context.Context, e domain.Event) error {
 
 func upsertEvent(ctx context.Context, ex execer, e domain.Event) error {
 	_, err := ex.ExecContext(ctx, `
-		INSERT INTO events (id, name, slug, date, timezone) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, slug=excluded.slug, date=excluded.date, timezone=excluded.timezone`,
-		e.ID, e.Name, e.Slug, e.Date, e.Timezone)
+		INSERT INTO events (id, name, slug, date, timezone, use_race_date_for_age) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			name=excluded.name, slug=excluded.slug, date=excluded.date,
+			timezone=excluded.timezone, use_race_date_for_age=excluded.use_race_date_for_age`,
+		e.ID, e.Name, e.Slug, e.Date, e.Timezone, e.UseRaceDateForAge)
 	if err != nil {
 		return fmt.Errorf("upsert event %s: %w", e.ID, err)
 	}
@@ -65,8 +67,8 @@ func upsertEvent(ctx context.Context, ex execer, e domain.Event) error {
 func (s *Store) GetEvent(ctx context.Context, id string) (domain.Event, error) {
 	var e domain.Event
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, slug, date, timezone FROM events WHERE id = ?`, id).
-		Scan(&e.ID, &e.Name, &e.Slug, &e.Date, &e.Timezone)
+		`SELECT id, name, slug, date, timezone, use_race_date_for_age FROM events WHERE id = ?`, id).
+		Scan(&e.ID, &e.Name, &e.Slug, &e.Date, &e.Timezone, &e.UseRaceDateForAge)
 	if err != nil {
 		return domain.Event{}, fmt.Errorf("get event %s: %w", id, err)
 	}

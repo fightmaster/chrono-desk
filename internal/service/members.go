@@ -79,6 +79,12 @@ func CreateMember(ctx context.Context, store *sqlite.Store, eventID string, req 
 		Number: req.Number, EPC: req.EPC, Gender: req.Gender,
 		CategoryID: req.CategoryID, DOB: req.DOB, Team: req.Team, City: req.City,
 	}
+	if member.CategoryID == nil {
+		member.CategoryID, err = resolveCategoryIDForMember(ctx, store, member)
+		if err != nil {
+			return "", EditResult{}, err
+		}
+	}
 	if err := store.UpsertMember(ctx, member); err != nil {
 		return "", EditResult{}, err
 	}

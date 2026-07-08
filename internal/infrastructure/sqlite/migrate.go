@@ -12,6 +12,9 @@ func migrate(db *sql.DB) error {
 	if err := relaxResultsCheckpointNotNull(db); err != nil {
 		return err
 	}
+	if err := addEventUseRaceDateForAge(db); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -79,6 +82,20 @@ func relaxResultsCheckpointNotNull(db *sql.DB) error {
 			_, _ = db.Exec(`ROLLBACK`)
 			return fmt.Errorf("relax results.checkpoint_id (%q): %w", stmt[:min(40, len(stmt))], err)
 		}
+	}
+	return nil
+}
+
+func addEventUseRaceDateForAge(db *sql.DB) error {
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('events') WHERE name = 'use_race_date_for_age'`).Scan(&count); err != nil {
+		return fmt.Errorf("inspect events schema: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE events ADD COLUMN use_race_date_for_age INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("add events.use_race_date_for_age: %w", err)
 	}
 	return nil
 }

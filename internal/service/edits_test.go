@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
@@ -179,6 +180,85 @@ func TestApplyEditRejectsNonWhitelisted(t *testing.T) {
 		Entity: "race", EntityID: "race-10k", Field: "started_at_ms", Value: json.RawMessage(`"text"`),
 	}); err == nil {
 		t.Fatal("type mismatch must be rejected")
+	}
+}
+
+func TestApplyEditRecalculatesCategoryFromDOB(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	male := "male"
+	min18, max39 := 18, 39
+	min40, max49 := 40, 49
+	if err := store.UpsertEvent(ctx, domain.Event{
+		ID: "ev-1", Name: "Event", Date: "2026-06-05", UseRaceDateForAge: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertRace(ctx, domain.Race{
+		ID: "race-1", EventID: "ev-1", Name: "10K", Date: "2026-06-05 09:00:00",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []domain.Category{
+		{ID: "cat-18-39", Name: "18-39", Gender: &male, Min: &min18, Max: &max39},
+		{ID: "cat-40-49", Name: "40-49", Gender: &male, Min: &min40, Max: &max49},
+	} {
+		if err := store.UpsertCategory(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.AttachRaceCategory(ctx, "race-1", "cat-18-39"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AttachRaceCategory(ctx, "race-1", "cat-40-49"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertMember(ctx, domain.Member{
+		ID:         "mem-1",
+		EventID:    "ev-1",
+		RaceID:     "race-1",
+		FirstName:  "Ivan",
+		LastName:   "Runner",
+		Gender:     &male,
+		DOB:        sptrT("1986-06-10"),
+		CategoryID: sptrT("cat-18-39"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ApplyEdit(ctx, store, EditRequest{
+		Entity: "member", EntityID: "mem-1", Field: "dob", Value: json.RawMessage(`"1986-06-01"`),
+	}); err != nil {
+		t.Fatalf("edit dob: %v", err)
+	}
+
+	member, err := store.GetMember(ctx, "mem-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.CategoryID == nil || *member.CategoryID != "cat-40-49" {
+		t.Fatalf("category = %v, want cat-40-49", member.CategoryID)
+	}
+
+	changes, err := store.ListLocalChanges(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundDOB, foundCategory := false, false
+	for _, c := range changes {
+		if c.EntityID != "mem-1" {
+			continue
+		}
+		if c.Field == "dob" && c.NewValue == `"1986-06-01"` {
+			foundDOB = true
+		}
+		if c.Field == "category_id" && c.OldValue == `"cat-18-39"` && c.NewValue == `"cat-40-49"` {
+			foundCategory = true
+		}
+	}
+	if !foundDOB || !foundCategory {
+		t.Fatalf("journal missing recalculation entries: dob=%v category=%v", foundDOB, foundCategory)
 	}
 }
 

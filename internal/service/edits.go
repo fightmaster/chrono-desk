@@ -106,6 +106,10 @@ func ApplyEdit(ctx context.Context, store *sqlite.Store, req EditRequest) (EditR
 		return EditResult{}, err
 	}
 
+	if err := maybeRecalculateMemberCategory(ctx, store, req); err != nil {
+		return EditResult{}, err
+	}
+
 	// Delayed/advanced start: when the race start moves, the whole field moves
 	// with it by the same delta — so chip-less mass starters follow, and a
 	// staggered start keeps its 30s gaps. We need the old start to size the
@@ -122,6 +126,53 @@ func ApplyEdit(ctx context.Context, store *sqlite.Store, req EditRequest) (EditR
 	}
 
 	return EditResult{RecountNeeded: spec.recountNeeded}, nil
+}
+
+func maybeRecalculateMemberCategory(ctx context.Context, store *sqlite.Store, req EditRequest) error {
+	if req.Entity != "member" {
+		return nil
+	}
+	if req.Field == "category_id" && string(req.Value) != "null" {
+		return nil
+	}
+	switch req.Field {
+	case "dob", "gender", "race_id", "category_id":
+	default:
+		return nil
+	}
+
+	member, err := store.GetMember(ctx, req.EntityID)
+	if err != nil {
+		return err
+	}
+	oldCategoryID := member.CategoryID
+	newCategoryID, err := resolveCategoryIDForMember(ctx, store, member)
+	if err != nil {
+		return err
+	}
+	if stringPtrEqual(oldCategoryID, newCategoryID) {
+		return nil
+	}
+
+	oldJSON, err := json.Marshal(oldCategoryID)
+	if err != nil {
+		return fmt.Errorf("encode old category_id: %w", err)
+	}
+	newJSON, err := json.Marshal(newCategoryID)
+	if err != nil {
+		return fmt.Errorf("encode new category_id: %w", err)
+	}
+
+	if _, err := store.UpdateEntityField(ctx, "members", "category_id", req.EntityID, newCategoryID); err != nil {
+		return err
+	}
+	return store.InsertLocalChange(ctx, sqlite.LocalChange{
+		Entity:   "member",
+		EntityID: req.EntityID,
+		Field:    "category_id",
+		OldValue: string(oldJSON),
+		NewValue: string(newJSON),
+	})
 }
 
 // asInt64 coerces a driver scan result (int64, or a numeric []byte/string) to
@@ -167,6 +218,13 @@ func shiftMemberStarts(ctx context.Context, store *sqlite.Store, raceID string, 
 		}
 	}
 	return nil
+}
+
+func stringPtrEqual(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
 
 // ReapplyLocalEdits replays the journal on top of freshly imported site data

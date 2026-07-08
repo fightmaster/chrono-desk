@@ -30,10 +30,11 @@ type EventExport struct {
 }
 
 type exportEvent struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
-	Date string `json:"date"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Slug              string `json:"slug"`
+	Date              string `json:"date"`
+	UseRaceDateForAge bool   `json:"use_race_date_for_age"`
 }
 
 type exportLap struct {
@@ -155,8 +156,9 @@ func ParseEventExport(r io.Reader) (*EventExport, error) {
 	}
 	// v1: categories[] are only those used by members, no category_races pivot.
 	// v2: categories[] is the full global catalog + a category_races pivot.
-	if export.SchemaVersion != 1 && export.SchemaVersion != 2 {
-		return nil, fmt.Errorf("unsupported schema_version %d (want 1 or 2)", export.SchemaVersion)
+	// v3: event.use_race_date_for_age adds the event-level age rule.
+	if export.SchemaVersion != 1 && export.SchemaVersion != 2 && export.SchemaVersion != 3 {
+		return nil, fmt.Errorf("unsupported schema_version %d (want 1, 2 or 3)", export.SchemaVersion)
 	}
 	if export.Event.ID == "" {
 		return nil, fmt.Errorf("event export has no event id")
@@ -204,6 +206,7 @@ func buildImportData(export *EventExport) (sqlite.EventImportData, error) {
 		Event: domain.Event{
 			ID: export.Event.ID, Name: export.Event.Name, Slug: export.Event.Slug,
 			Date: export.Event.Date, Timezone: export.Timezone,
+			UseRaceDateForAge: export.Event.UseRaceDateForAge,
 		},
 		Laps:        make([]domain.Lap, 0, len(export.Laps)),
 		Races:       make([]domain.Race, 0, len(export.Races)),

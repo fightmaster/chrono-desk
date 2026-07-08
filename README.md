@@ -88,4 +88,4 @@ make check            # full quality gate: gofmt, vet, staticcheck, govulncheck,
 
 - [docs/architecture.md](docs/architecture.md) — components, data flow, key decisions
 - [docs/event-export-format.md](docs/event-export-format.md) — the run5 → chrono-desk
-  event export contract (JSON, schema_version 1)
+  event export contract (JSON, schema_version 3)

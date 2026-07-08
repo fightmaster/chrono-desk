@@ -34,7 +34,13 @@ func TestUpsertAndGetEvent(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 
-	e := domain.Event{ID: "ev1", Name: "Test Marathon", Slug: "test-marathon", Date: "2026-06-05"}
+	e := domain.Event{
+		ID:                "ev1",
+		Name:              "Test Marathon",
+		Slug:              "test-marathon",
+		Date:              "2026-06-05",
+		UseRaceDateForAge: true,
+	}
 	if err := store.UpsertEvent(ctx, e); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
@@ -51,6 +57,9 @@ func TestUpsertAndGetEvent(t *testing.T) {
 	}
 	if got.Name != "Renamed Marathon" {
 		t.Errorf("name = %q, want %q", got.Name, "Renamed Marathon")
+	}
+	if !got.UseRaceDateForAge {
+		t.Error("UseRaceDateForAge = false, want true")
 	}
 }
 

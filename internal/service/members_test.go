@@ -131,3 +131,105 @@ func TestCreateMemberRequiresDOB(t *testing.T) {
 		t.Errorf("stored dob = %v, want 1990-05-01", got)
 	}
 }
+
+func TestCreateMemberAutoAssignsCategoryByEventAgeMode(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("birth year only stays in older bucket", func(t *testing.T) {
+		store := newTestStore(t)
+		if err := store.UpsertEvent(ctx, domain.Event{
+			ID: "ev-1", Name: "Event", Date: "2026-06-05", UseRaceDateForAge: false,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.UpsertRace(ctx, domain.Race{
+			ID: "race-1", EventID: "ev-1", Name: "10K", Date: "2026-06-05 09:00:00",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		male := "male"
+		min18, max39 := 18, 39
+		min40, max49 := 40, 49
+		for _, c := range []domain.Category{
+			{ID: "cat-18-39", Name: "18-39", Gender: &male, Min: &min18, Max: &max39},
+			{ID: "cat-40-49", Name: "40-49", Gender: &male, Min: &min40, Max: &max49},
+		} {
+			if err := store.UpsertCategory(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := store.AttachRaceCategory(ctx, "race-1", "cat-18-39"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.AttachRaceCategory(ctx, "race-1", "cat-40-49"); err != nil {
+			t.Fatal(err)
+		}
+
+		memberID, _, err := CreateMember(ctx, store, "ev-1", CreateMemberRequest{
+			RaceID:    "race-1",
+			FirstName: "Ivan",
+			LastName:  "Runner",
+			Gender:    sptrT("male"),
+			DOB:       sptrT("1986-06-10"),
+		})
+		if err != nil {
+			t.Fatalf("create member: %v", err)
+		}
+		member, err := store.GetMember(ctx, memberID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if member.CategoryID == nil || *member.CategoryID != "cat-40-49" {
+			t.Fatalf("category = %v, want cat-40-49", member.CategoryID)
+		}
+	})
+
+	t.Run("race date mode uses full birth date", func(t *testing.T) {
+		store := newTestStore(t)
+		if err := store.UpsertEvent(ctx, domain.Event{
+			ID: "ev-2", Name: "Event", Date: "2026-06-05", UseRaceDateForAge: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.UpsertRace(ctx, domain.Race{
+			ID: "race-2", EventID: "ev-2", Name: "10K", Date: "2026-06-05 09:00:00",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		male := "male"
+		min18, max39 := 18, 39
+		min40, max49 := 40, 49
+		for _, c := range []domain.Category{
+			{ID: "cat-18-39", Name: "18-39", Gender: &male, Min: &min18, Max: &max39},
+			{ID: "cat-40-49", Name: "40-49", Gender: &male, Min: &min40, Max: &max49},
+		} {
+			if err := store.UpsertCategory(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := store.AttachRaceCategory(ctx, "race-2", "cat-18-39"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.AttachRaceCategory(ctx, "race-2", "cat-40-49"); err != nil {
+			t.Fatal(err)
+		}
+
+		memberID, _, err := CreateMember(ctx, store, "ev-2", CreateMemberRequest{
+			RaceID:    "race-2",
+			FirstName: "Ivan",
+			LastName:  "Runner",
+			Gender:    sptrT("male"),
+			DOB:       sptrT("1986-06-10"),
+		})
+		if err != nil {
+			t.Fatalf("create member: %v", err)
+		}
+		member, err := store.GetMember(ctx, memberID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if member.CategoryID == nil || *member.CategoryID != "cat-18-39" {
+			t.Fatalf("category = %v, want cat-18-39", member.CategoryID)
+		}
+	})
+}

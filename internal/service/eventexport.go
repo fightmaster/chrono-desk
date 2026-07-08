@@ -10,7 +10,7 @@ import (
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
-// BuildEventExport renders the event back into the schema_version 2 contract
+// BuildEventExport renders the event back into the schema_version 3 contract
 // (docs/event-export-format.md) — the JSON backup. The current local state is
 // exported as-is: edited start times, judge-disabled logs, locally created
 // members/checkpoints, the full category catalog and the race↔category pivot
@@ -25,11 +25,12 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 	}
 
 	export := EventExport{
-		SchemaVersion: 2,
+		SchemaVersion: 3,
 		ExportedAt:    time.Now().UTC().Format(time.RFC3339),
 		Timezone:      event.Timezone,
 		Event: exportEvent{
 			ID: event.ID, Name: event.Name, Slug: event.Slug, Date: event.Date,
+			UseRaceDateForAge: event.UseRaceDateForAge,
 		},
 		Laps:          []exportLap{},
 		Races:         []exportRace{},

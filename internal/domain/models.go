@@ -33,11 +33,12 @@ const (
 )
 
 type Event struct {
-	ID       string
-	Name     string
-	Slug     string
-	Date     string // ISO date (YYYY-MM-DD)
-	Timezone string // IANA zone of the venue (from the export)
+	ID                string
+	Name              string
+	Slug              string
+	Date              string // ISO date (YYYY-MM-DD)
+	Timezone          string // IANA zone of the venue (from the export)
+	UseRaceDateForAge bool
 }
 
 type Lap struct {
