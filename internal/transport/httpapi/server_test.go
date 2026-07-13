@@ -32,7 +32,16 @@ func startTestServer(t *testing.T) *Server {
 	pub := publicweb.New(events, logger, freePort(t))
 	t.Cleanup(pub.Unpublish)
 
-	srv, err := New("127.0.0.1:0", events, pub, logger, testAPIToken)
+	srv, err := New(
+		"127.0.0.1:0",
+		events,
+		service.NewLiveManager(logger),
+		service.NewPhotoManager(logger),
+		nil,
+		pub,
+		logger,
+		testAPIToken,
+	)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}

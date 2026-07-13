@@ -61,6 +61,9 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    run5 PHP — full spec and source paths in `docs/ranking.md`.
 3. **HTTP API instead of Wails bindings.** Gives LAN access for judges' tablets later,
    headless mode for free, and keeps the frontend decoupled.
+   The transport is wired in `app.go`: `httpapi.New` receives ready `LiveManager`,
+   `PhotoManager`, `PhotoCache`, event service and public broadcast server instead of
+   constructing runtime dependencies internally.
    - The localhost control API requires a random per-process bearer token. The Go host
      passes it to the embedded frontend through Wails bootstrap bindings; Svelte sends
      it in `Authorization` on every control request. The token lives only in memory,

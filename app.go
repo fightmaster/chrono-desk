@@ -47,11 +47,15 @@ func (a *App) startup(ctx context.Context) {
 	// gets its own server so only GET endpoints ever reach the network.
 	a.public = publicweb.New(events, logger, publicPort())
 
+	live := service.NewLiveManager(logger)
+	photos := service.NewPhotoManager(logger)
+	photoCache := newPhotoCache(logger)
+
 	apiToken, err := newAPIToken()
 	if err != nil {
 		log.Fatalf("generate api token: %v", err)
 	}
-	api, err := httpapi.New("127.0.0.1:0", events, a.public, logger, apiToken)
+	api, err := httpapi.New("127.0.0.1:0", events, live, photos, photoCache, a.public, logger, apiToken)
 	if err != nil {
 		log.Fatalf("start http api: %v", err)
 	}
@@ -99,6 +103,19 @@ func newAPIToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func newPhotoCache(logger *log.Logger) *service.PhotoCache {
+	cacheRoot, err := os.UserCacheDir()
+	if err != nil || cacheRoot == "" {
+		cacheRoot = os.TempDir()
+	}
+	pc, err := service.NewPhotoCache(filepath.Join(cacheRoot, "chrono-desk", "photos"))
+	if err != nil {
+		logger.Printf("photo cache disabled: %v", err)
+		return nil
+	}
+	return pc
 }
 
 // publicPort is the LAN port for the read-only results broadcast.
