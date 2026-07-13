@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"database/sql"
-	"fmt"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
@@ -41,50 +39,38 @@ type MemberPasses struct {
 func LoadMemberPasses(ctx context.Context, store *sqlite.Store, memberID string) (MemberPasses, error) {
 	out := MemberPasses{MemberID: memberID, Passes: []MemberPass{}, ManualResults: []sqlite.ManualResult{}}
 
-	var epc sql.NullString
-	var eventID string
-	err := store.DB().QueryRowContext(ctx, `
-		SELECT event_id, epc, first_name, last_name, number, status, start_time_ms, finish_time_ms, clean_time
-		FROM members WHERE id = ?`, memberID).
-		Scan(&eventID, &epc, &out.FirstName, &out.LastName, &out.Number, &out.Status,
-			&out.StartTimeMs, &out.FinishTimeMs, &out.CleanTime)
-	if err != nil {
-		return out, fmt.Errorf("member %s: %w", memberID, err)
-	}
-	manual, err := store.ListManualResults(ctx, eventID, "")
+	member, err := store.GetMember(ctx, memberID)
 	if err != nil {
 		return out, err
 	}
-	for _, m := range manual {
-		if m.MemberID == memberID {
-			out.ManualResults = append(out.ManualResults, m)
-		}
-	}
+	out.FirstName = member.FirstName
+	out.LastName = member.LastName
+	out.Number = member.Number
+	out.Status = int(member.Status)
+	out.StartTimeMs = member.StartTimeMs
+	out.FinishTimeMs = member.FinishTimeMs
+	out.CleanTime = member.CleanTime
 
-	if !epc.Valid || epc.String == "" {
+	manual, err := store.ListManualResultsForMember(ctx, member.EventID, memberID)
+	if err != nil {
+		return out, err
+	}
+	out.ManualResults = manual
+
+	if member.EPC == nil || *member.EPC == "" {
 		return out, nil // no tag — nothing to show
 	}
 
-	rows, err := store.DB().QueryContext(ctx, `
-		SELECT l.id, l.time_ms, l.board, l.ant, l.rssi, l.disabled_at,
-		       c.id, c.name, c.sort
-		FROM rfid_logs l
-		LEFT JOIN results r ON r.rfid_log_id = l.id AND r.member_id = ?
-		LEFT JOIN checkpoints c ON c.id = r.checkpoint_id
-		WHERE l.epc = ? AND l.event_id = (SELECT event_id FROM members WHERE id = ?)
-		ORDER BY l.time_ms, l.id`, memberID, epc.String, memberID)
+	passes, err := store.ListMemberPasses(ctx, member.EventID, memberID, *member.EPC)
 	if err != nil {
-		return out, fmt.Errorf("passes for %s: %w", memberID, err)
+		return out, err
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var p MemberPass
-		if err := rows.Scan(&p.LogID, &p.TimeMs, &p.Board, &p.Ant, &p.RSSI, &p.DisabledAt,
-			&p.CheckpointID, &p.CheckpointName, &p.CheckpointSort); err != nil {
-			return out, err
-		}
-		out.Passes = append(out.Passes, p)
+	for _, p := range passes {
+		out.Passes = append(out.Passes, MemberPass{
+			LogID: p.LogID, TimeMs: p.TimeMs, Board: p.Board, Ant: p.Ant, RSSI: p.RSSI,
+			DisabledAt: p.DisabledAt, CheckpointID: p.CheckpointID,
+			CheckpointName: p.CheckpointName, CheckpointSort: p.CheckpointSort,
+		})
 	}
-	return out, rows.Err()
+	return out, nil
 }

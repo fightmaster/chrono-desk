@@ -55,6 +55,28 @@ func (s *Store) ListManualResults(ctx context.Context, eventID, raceID string) (
 	return out, rows.Err()
 }
 
+// ListManualResultsForMember returns judge-entered crossings for one participant.
+func (s *Store) ListManualResultsForMember(ctx context.Context, eventID, memberID string) ([]ManualResult, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, member_id, race_id, time_ms FROM results
+		WHERE event_id = ? AND member_id = ? AND rfid_log_id IS NULL AND checkpoint_id IS NULL
+		ORDER BY time_ms, id`, eventID, memberID)
+	if err != nil {
+		return nil, fmt.Errorf("list member manual results: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ManualResult
+	for rows.Next() {
+		var m ManualResult
+		if err := rows.Scan(&m.ID, &m.MemberID, &m.RaceID, &m.TimeMs); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // ManualResultDetail is a judge entry joined with the participant, for the
 // review/undo list on the live screen.
 type ManualResultDetail struct {

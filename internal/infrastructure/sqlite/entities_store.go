@@ -146,6 +146,25 @@ func (s *Store) UpsertMember(ctx context.Context, m domain.Member) error {
 	return upsertMember(ctx, s.db, m)
 }
 
+// UpdateMemberFinish applies a judge-entered finish. A non-nil start is persisted
+// when the race start had to be used as the member's missing start reference.
+func (s *Store) UpdateMemberFinish(ctx context.Context, memberID string, start *int64, finish int64, clean *string) error {
+	var err error
+	if start != nil {
+		_, err = s.db.ExecContext(ctx,
+			`UPDATE members SET start_time_ms = ?, finish_time_ms = ?, clean_time = ? WHERE id = ?`,
+			*start, finish, clean, memberID)
+	} else {
+		_, err = s.db.ExecContext(ctx,
+			`UPDATE members SET finish_time_ms = ?, clean_time = ? WHERE id = ?`,
+			finish, clean, memberID)
+	}
+	if err != nil {
+		return fmt.Errorf("update member finish: %w", err)
+	}
+	return nil
+}
+
 func upsertMember(ctx context.Context, ex execer, m domain.Member) error {
 	_, err := ex.ExecContext(ctx, `
 		INSERT INTO members (id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,

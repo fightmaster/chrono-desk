@@ -151,21 +151,11 @@ func applyManualFinish(ctx context.Context, store *sqlite.Store, memberID string
 		c := processor.FormatCleanTime(*start, timeMs)
 		clean = &c
 	}
+	var backfilledStart *int64
 	if start != nil && m.StartTimeMs == nil {
-		// Backfill the start (race start) so the finisher ranks, mirroring the
-		// processor's UpdateMemberTimes.
-		_, err = store.DB().ExecContext(ctx,
-			`UPDATE members SET start_time_ms = ?, finish_time_ms = ?, clean_time = ? WHERE id = ?`,
-			*start, timeMs, clean, memberID)
-	} else {
-		_, err = store.DB().ExecContext(ctx,
-			`UPDATE members SET finish_time_ms = ?, clean_time = ? WHERE id = ?`,
-			timeMs, clean, memberID)
+		backfilledStart = start
 	}
-	if err != nil {
-		return fmt.Errorf("apply manual finish: %w", err)
-	}
-	return nil
+	return store.UpdateMemberFinish(ctx, memberID, backfilledStart, timeMs, clean)
 }
 
 // memberStartRef resolves the start instant for clean-time math: the member's

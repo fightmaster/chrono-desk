@@ -37,6 +37,9 @@ func New(db *sql.DB) (*Store, error) {
 // DB exposes the underlying handle for transaction composition.
 func (s *Store) DB() *sql.DB { return s.db }
 
+// Close releases the event database owned by the store.
+func (s *Store) Close() error { return s.db.Close() }
+
 // execer is satisfied by both *sql.DB and *sql.Tx, so the upsert helpers below
 // run either standalone or inside the single import transaction
 // (ApplyEventImport). The connection pool is capped at one (open.go), so an
@@ -71,6 +74,18 @@ func (s *Store) GetEvent(ctx context.Context, id string) (domain.Event, error) {
 		Scan(&e.ID, &e.Name, &e.Slug, &e.Date, &e.Timezone, &e.UseRaceDateForAge)
 	if err != nil {
 		return domain.Event{}, fmt.Errorf("get event %s: %w", id, err)
+	}
+	return e, nil
+}
+
+// FirstEvent returns the single event header stored in an event database.
+func (s *Store) FirstEvent(ctx context.Context) (domain.Event, error) {
+	var e domain.Event
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, name, slug, date, timezone, use_race_date_for_age FROM events LIMIT 1`).
+		Scan(&e.ID, &e.Name, &e.Slug, &e.Date, &e.Timezone, &e.UseRaceDateForAge)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("read event header: %w", err)
 	}
 	return e, nil
 }

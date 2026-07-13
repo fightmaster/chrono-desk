@@ -151,14 +151,7 @@ func (m *EventManager) List(ctx context.Context) ([]EventInfo, error) {
 // FirstEvent reads the single event header row from a store (one .chrono file
 // holds exactly one event). Used by the event list and the public LAN server.
 func FirstEvent(ctx context.Context, store *sqlite.Store) (domain.Event, error) {
-	var e domain.Event
-	err := store.DB().QueryRowContext(ctx,
-		`SELECT id, name, slug, date, timezone, use_race_date_for_age FROM events LIMIT 1`).
-		Scan(&e.ID, &e.Name, &e.Slug, &e.Date, &e.Timezone, &e.UseRaceDateForAge)
-	if err != nil {
-		return domain.Event{}, fmt.Errorf("read event header: %w", err)
-	}
-	return e, nil
+	return store.FirstEvent(ctx)
 }
 
 // Close releases all open event databases.
@@ -166,7 +159,7 @@ func (m *EventManager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for id, store := range m.stores {
-		if err := store.DB().Close(); err != nil {
+		if err := store.Close(); err != nil {
 			m.logger.Printf("close event %s: %v", id, err)
 		}
 		delete(m.stores, id)

@@ -178,6 +178,28 @@ func (s *Store) GetMember(ctx context.Context, memberID string) (domain.Member, 
 	return m, nil
 }
 
+// MemberNumberTaken reports whether a bib number is already assigned within an event.
+func (s *Store) MemberNumberTaken(ctx context.Context, eventID string, number int64) (bool, error) {
+	return s.memberValueTaken(ctx,
+		`SELECT EXISTS(SELECT 1 FROM members WHERE event_id = ? AND number = ?)`,
+		"number", eventID, number)
+}
+
+// MemberEPCTaken reports whether an RFID tag is already assigned within an event.
+func (s *Store) MemberEPCTaken(ctx context.Context, eventID, epc string) (bool, error) {
+	return s.memberValueTaken(ctx,
+		`SELECT EXISTS(SELECT 1 FROM members WHERE event_id = ? AND epc = ?)`,
+		"epc", eventID, epc)
+}
+
+func (s *Store) memberValueTaken(ctx context.Context, query, field, eventID string, value any) (bool, error) {
+	var taken bool
+	if err := s.db.QueryRowContext(ctx, query, eventID, value).Scan(&taken); err != nil {
+		return false, fmt.Errorf("check member %s uniqueness: %w", field, err)
+	}
+	return taken, nil
+}
+
 // MemberRow is the slim JSON shape for the searchable members list.
 type MemberRow struct {
 	ID         string  `json:"id"`

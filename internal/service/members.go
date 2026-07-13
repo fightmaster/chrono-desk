@@ -3,10 +3,8 @@ package service
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -54,7 +52,7 @@ func CreateMember(ctx context.Context, store *sqlite.Store, eventID string, req 
 	}
 
 	if req.Number != nil {
-		taken, err := fieldTaken(ctx, store, eventID, "number", *req.Number)
+		taken, err := store.MemberNumberTaken(ctx, eventID, *req.Number)
 		if err != nil {
 			return "", EditResult{}, err
 		}
@@ -63,7 +61,7 @@ func CreateMember(ctx context.Context, store *sqlite.Store, eventID string, req 
 		}
 	}
 	if req.EPC != nil && *req.EPC != "" {
-		taken, err := fieldTaken(ctx, store, eventID, "epc", *req.EPC)
+		taken, err := store.MemberEPCTaken(ctx, eventID, *req.EPC)
 		if err != nil {
 			return "", EditResult{}, err
 		}
@@ -104,20 +102,6 @@ func CreateMember(ctx context.Context, store *sqlite.Store, eventID string, req 
 	}
 
 	return memberID, EditResult{RecountNeeded: req.EPC != nil && *req.EPC != ""}, nil
-}
-
-func fieldTaken(ctx context.Context, store *sqlite.Store, eventID, field string, value any) (bool, error) {
-	var one int
-	err := store.DB().QueryRowContext(ctx,
-		fmt.Sprintf(`SELECT 1 FROM members WHERE event_id = ? AND %s = ? LIMIT 1`, field), // field is hardcoded by callers
-		eventID, value).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func randomHex(n int) string {
