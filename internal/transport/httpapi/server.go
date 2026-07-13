@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -19,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	qrcode "github.com/skip2/go-qrcode"
@@ -42,7 +44,10 @@ type Server struct {
 // New binds addr (use "127.0.0.1:0" for an ephemeral local port) and builds
 // the route table. Call Start to begin serving. public is the read-only LAN
 // results broadcaster controlled by the /api/public/* endpoints.
-func New(addr string, events *service.EventManager, public *publicweb.Server, logger *log.Logger) (*Server, error) {
+func New(addr string, events *service.EventManager, public *publicweb.Server, logger *log.Logger, apiToken string) (*Server, error) {
+	if strings.TrimSpace(apiToken) == "" {
+		return nil, fmt.Errorf("api token is required")
+	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listen %s: %w", addr, err)
@@ -125,7 +130,7 @@ func New(addr string, events *service.EventManager, public *publicweb.Server, lo
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
 		// localhost API must answer CORS preflight.
-		Handler:           cors(mux),
+		Handler:           cors(requireAPIToken(apiToken, mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s, nil
@@ -592,9 +597,29 @@ func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func requireAPIToken(token string, next http.Handler) http.Handler {
+	wantBearer := "Bearer " + token
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := r.Header.Get("Authorization")
+		authorized := subtle.ConstantTimeCompare([]byte(got), []byte(wantBearer)) == 1
+
+		// Browser image elements cannot attach Authorization. Permit the same
+		// per-process token in the query only for the localhost photo proxy.
+		if !authorized && r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/photos/img") {
+			authorized = subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("api_token")), []byte(token)) == 1
+		}
+		if !authorized {
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
 		next.ServeHTTP(w, r)

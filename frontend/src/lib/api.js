@@ -1,15 +1,17 @@
 // Thin client for the embedded HTTP API.
 let base = ''
+let token = ''
 
-export function setBase(url) {
+export function setBase(url, apiToken) {
   base = url
+  token = apiToken
 }
 
 export async function call(method, path, body, contentType) {
-  const opts = {method}
+  const opts = {method, headers: {'Authorization': `Bearer ${token}`}}
   if (body !== undefined) {
     opts.body = body
-    opts.headers = {'Content-Type': contentType || 'application/json'}
+    opts.headers['Content-Type'] = contentType || 'application/json'
   }
   const resp = await fetch(`${base}${path}`, opts)
   const data = await resp.json()
@@ -24,7 +26,7 @@ export async function call(method, path, body, contentType) {
 export function imgURL(eventId, url, w) {
   if (!url) return ''
   const u = w ? `${url}${url.includes('?') ? '&' : '?'}w=${w}` : url
-  return `${base}/api/events/${eventId}/photos/img?u=${encodeURIComponent(u)}`
+  return `${base}/api/events/${eventId}/photos/img?u=${encodeURIComponent(u)}&api_token=${encodeURIComponent(token)}`
 }
 
 // Local-time <input type="datetime-local"> helpers (unix ms ↔ input value).

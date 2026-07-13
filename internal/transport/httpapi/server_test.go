@@ -16,6 +16,8 @@ import (
 	"gitlab.com/fightmaster1/chrono-desk/internal/transport/publicweb"
 )
 
+const testAPIToken = "test-api-token"
+
 func startTestServer(t *testing.T) *Server {
 	t.Helper()
 	logger := log.New(io.Discard, "", 0)
@@ -30,7 +32,7 @@ func startTestServer(t *testing.T) *Server {
 	pub := publicweb.New(events, logger, freePort(t))
 	t.Cleanup(pub.Unpublish)
 
-	srv, err := New("127.0.0.1:0", events, pub, logger)
+	srv, err := New("127.0.0.1:0", events, pub, logger, testAPIToken)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -58,10 +60,7 @@ func freePort(t *testing.T) int {
 func TestHealthEndpoint(t *testing.T) {
 	srv := startTestServer(t)
 
-	resp, err := http.Get(srv.BaseURL() + "/health")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
+	resp := mustGet(t, srv.BaseURL()+"/health")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -73,6 +72,19 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 	if body["status"] != "ok" {
 		t.Errorf("status field = %q, want %q", body["status"], "ok")
+	}
+}
+
+func TestControlAPIRequiresToken(t *testing.T) {
+	srv := startTestServer(t)
+
+	resp, err := http.Get(srv.BaseURL() + "/health")
+	if err != nil {
+		t.Fatalf("get without token: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status without token = %d, want 401", resp.StatusCode)
 	}
 }
 
@@ -184,20 +196,31 @@ func TestEventAgeRuleEditShowsInEventList(t *testing.T) {
 
 func mustGet(t *testing.T, url string) *http.Response {
 	t.Helper()
-	resp, err := http.Get(url)
-	if err != nil {
-		t.Fatalf("GET %s: %v", url, err)
-	}
+	resp := apiRequest(t, http.MethodGet, url, "", nil)
 	return requireOK(t, url, resp)
 }
 
 func mustPost(t *testing.T, url, contentType string, body io.Reader) *http.Response {
 	t.Helper()
-	resp, err := http.Post(url, contentType, body)
-	if err != nil {
-		t.Fatalf("POST %s: %v", url, err)
-	}
+	resp := apiRequest(t, http.MethodPost, url, contentType, body)
 	return requireOK(t, url, resp)
+}
+
+func apiRequest(t *testing.T, method, url, contentType string, body io.Reader) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testAPIToken)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	return resp
 }
 
 func requireOK(t *testing.T, url string, resp *http.Response) *http.Response {
@@ -232,10 +255,7 @@ func TestRfidImportRequiresTimezone(t *testing.T) {
 	}
 	mustPost(t, base+"/api/events/import", "application/json", strings.NewReader(string(fixture)))
 
-	resp, err := http.Post(base+"/api/events/ev-100/rfid-import?device=U659", "text/csv", strings.NewReader(""))
-	if err != nil {
-		t.Fatalf("post: %v", err)
-	}
+	resp := apiRequest(t, http.MethodPost, base+"/api/events/ev-100/rfid-import?device=U659", "text/csv", strings.NewReader(""))
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		t.Fatalf("import without tz returned 200 — must fail closed")
@@ -286,10 +306,7 @@ func TestPublicBroadcastControl(t *testing.T) {
 // Starting a broadcast with no event must fail closed rather than open a port.
 func TestPublicBroadcastStartRequiresEvent(t *testing.T) {
 	srv := startTestServer(t)
-	resp, err := http.Post(srv.BaseURL()+"/api/public/start", "application/json", strings.NewReader(`{}`))
-	if err != nil {
-		t.Fatalf("post: %v", err)
-	}
+	resp := apiRequest(t, http.MethodPost, srv.BaseURL()+"/api/public/start", "application/json", strings.NewReader(`{}`))
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		t.Fatalf("start without event_id returned 200 — must fail")
@@ -318,5 +335,8 @@ func TestCORSAllowsDelete(t *testing.T) {
 	allow := resp.Header.Get("Access-Control-Allow-Methods")
 	if !strings.Contains(allow, "DELETE") {
 		t.Fatalf("Allow-Methods = %q, must contain DELETE", allow)
+	}
+	if headers := resp.Header.Get("Access-Control-Allow-Headers"); !strings.Contains(headers, "Authorization") {
+		t.Fatalf("Allow-Headers = %q, must contain Authorization", headers)
 	}
 }

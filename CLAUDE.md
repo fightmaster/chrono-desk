@@ -109,13 +109,14 @@ cross-module). Update this file as code lands.
 
 ## Architecture (planned layout)
 
-`frontend/` (Svelte) → `internal/transport/httpapi` (embedded localhost REST; the UI
-does NOT use Wails bindings — `app.go` exposes only `APIBaseURL()`, pattern from
-RaceTorchApp) → `internal/service` (import/recount/ranking/excel) →
+`frontend/` (Svelte) → `internal/transport/httpapi` (embedded localhost REST protected
+by a random per-process bearer token; Wails bindings expose only bootstrap values
+`APIBaseURL()` and `APIToken()`) → `internal/service` (import/recount/ranking/excel) →
 `internal/processor` (checkpoint-matching engine) → `internal/domain` →
 `internal/infrastructure/sqlite`. One event = one portable SQLite file.
 `internal/transport/publicweb` is a second, **read-only** HTTP server for the LAN results
 broadcast (see status above) — same `service` layer, GET-only, PII-trimmed, off by default.
+The LAN broadcast remains tokenless and never receives the localhost control token.
 
 ## Critical contracts
 

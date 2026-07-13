@@ -57,6 +57,10 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    run5 PHP — full spec and source paths in `docs/ranking.md`.
 3. **HTTP API instead of Wails bindings.** Gives LAN access for judges' tablets later,
    headless mode for free, and keeps the frontend decoupled.
+   - The localhost control API requires a random per-process bearer token. The Go host
+     passes it to the embedded frontend through Wails bootstrap bindings; Svelte sends
+     it in `Authorization` on every control request. The token lives only in memory,
+     changes on every launch and is never included in a QR code.
    - **LAN results broadcast is a *separate* read-only server**, not the control API
      opened up (`internal/transport/publicweb`, default `:8090`, `CHRONO_PUBLIC_PORT`).
      The control API has many mutating endpoints (recount, edits, manual finishes,
@@ -66,6 +70,8 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
      default and binds its `0.0.0.0` port only while the operator has the broadcast
      switched on (per event), closing it again on stop. The settings screen shows the
      LAN address and a QR code (PNG via the pure-Go `skip2/go-qrcode`).
+     The broadcast deliberately remains tokenless: its HTML and read-only API share
+     one origin, and possession of the LAN QR link is the intended access mechanism.
 4. **Idempotency contract.** `rfid_logs.id = md5(board + epc + timeMillis + ant)`
    (string concatenation, no separators; board like `"Feibot:U659"`, EPC uppercased and
    trimmed, time as unix-millis decimal string, ant as decimal string). For number-based

@@ -1,6 +1,6 @@
 <script>
   import {onMount, onDestroy} from 'svelte'
-  import {APIBaseURL} from '../wailsjs/go/main/App.js'
+  import {APIBaseURL, APIToken} from '../wailsjs/go/main/App.js'
   import {setBase, call} from './lib/api.js'
   import {theme} from './lib/theme.js'
   import EventsList from './lib/EventsList.svelte'
@@ -40,7 +40,8 @@
 
   onMount(async () => {
     try {
-      setBase(await APIBaseURL())
+      const [baseURL, apiToken] = await Promise.all([APIBaseURL(), APIToken()])
+      setBase(baseURL, apiToken)
       appVersion = await call('GET', '/api/version').catch(() => null)
       await loadEvents()
     } catch (e) {

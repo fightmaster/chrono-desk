@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log"
 	"net/http"
 	"os"
@@ -16,12 +18,13 @@ import (
 
 // App is the only struct bound to the Wails frontend. The UI talks to the Go
 // core exclusively over the embedded HTTP API (pattern from RaceTorchApp);
-// the single binding below hands the frontend its base URL.
+// bootstrap bindings hand it the localhost URL and per-process API token.
 type App struct {
-	ctx    context.Context
-	api    *httpapi.Server
-	public *publicweb.Server
-	events *service.EventManager
+	ctx      context.Context
+	api      *httpapi.Server
+	public   *publicweb.Server
+	events   *service.EventManager
+	apiToken string
 }
 
 func NewApp() *App {
@@ -42,11 +45,16 @@ func (a *App) startup(ctx context.Context) {
 	// gets its own server so only GET endpoints ever reach the network.
 	a.public = publicweb.New(events, logger, publicPort())
 
-	api, err := httpapi.New("127.0.0.1:0", events, a.public, logger)
+	apiToken, err := newAPIToken()
+	if err != nil {
+		log.Fatalf("generate api token: %v", err)
+	}
+	api, err := httpapi.New("127.0.0.1:0", events, a.public, logger, apiToken)
 	if err != nil {
 		log.Fatalf("start http api: %v", err)
 	}
 	a.api = api
+	a.apiToken = apiToken
 	go func() {
 		if err := api.Start(); err != nil && err != http.ErrServerClosed {
 			log.Printf("http api stopped: %v", err)
@@ -74,6 +82,21 @@ func (a *App) shutdown(_ context.Context) {
 // APIBaseURL returns the embedded HTTP API address for the frontend.
 func (a *App) APIBaseURL() string {
 	return a.api.BaseURL()
+}
+
+// APIToken returns the per-process credential used only by the embedded
+// frontend when it calls the localhost control API. It is never used by the
+// separate tokenless LAN results broadcast.
+func (a *App) APIToken() string {
+	return a.apiToken
+}
+
+func newAPIToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // publicPort is the LAN port for the read-only results broadcast.

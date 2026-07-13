@@ -71,6 +71,10 @@ discovery skips virtual interfaces (Docker bridges, VMs, VPNs) so a QR never poi
 unreachable address; if the machine has several real NICs up (Ethernet + Wi-Fi), the
 settings screen shows each address with its own QR so the operator picks the venue one.
 
+The embedded localhost control API is separate and requires a random memory-only bearer
+token passed from Go to the Wails frontend at startup. That token does not apply to the
+read-only LAN server and is never included in its QR codes.
+
 ## Development
 
 Always build through `make` — it pins `GOTOOLCHAIN=go1.24.13` (see docs/architecture.md)
