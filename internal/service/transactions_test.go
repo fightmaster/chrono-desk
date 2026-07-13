@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log"
 	"testing"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
@@ -190,4 +192,53 @@ func TestCheckpointMutationsRollBackWhenJournalFails(t *testing.T) {
 			t.Fatalf("deleted checkpoint was not rolled back: %v", err)
 		}
 	})
+}
+
+func TestRecountRollsBackWipeWhenReplayFails(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+	recounter := NewRecounter(store, log.New(io.Discard, "", 0), false)
+	if _, err := recounter.Recount(ctx, "ev-100", ""); err != nil {
+		t.Fatalf("baseline recount: %v", err)
+	}
+
+	var beforeResults int
+	var beforeFinish *int64
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM results WHERE rfid_log_id IS NOT NULL`).Scan(&beforeResults); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`SELECT finish_time_ms FROM members WHERE id = 'mem-1'`).Scan(&beforeFinish); err != nil {
+		t.Fatal(err)
+	}
+	if beforeResults == 0 || beforeFinish == nil {
+		t.Fatalf("invalid baseline: results=%d finish=%v", beforeResults, beforeFinish)
+	}
+
+	_, err := store.DB().Exec(`
+		CREATE TEMP TRIGGER fail_derived_result
+		BEFORE INSERT ON results
+		WHEN NEW.rfid_log_id IS NOT NULL
+		BEGIN
+			SELECT RAISE(FAIL, 'forced replay failure');
+		END`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recounter.Recount(ctx, "ev-100", ""); err == nil {
+		t.Fatal("recount must fail when derived result insertion fails")
+	}
+
+	var afterResults int
+	var afterFinish *int64
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM results WHERE rfid_log_id IS NOT NULL`).Scan(&afterResults); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`SELECT finish_time_ms FROM members WHERE id = 'mem-1'`).Scan(&afterFinish); err != nil {
+		t.Fatal(err)
+	}
+	if afterResults != beforeResults || afterFinish == nil || *afterFinish != *beforeFinish {
+		t.Fatalf("partial recount survived: results=%d (want %d), finish=%v (want %d)",
+			afterResults, beforeResults, afterFinish, *beforeFinish)
+	}
 }

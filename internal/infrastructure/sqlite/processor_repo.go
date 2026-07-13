@@ -12,11 +12,12 @@ import (
 // ProcessorRepo implements processor.Repository over an event database.
 // Queries mirror rfid-sync's mysqlrepo so the engine behaves identically.
 type ProcessorRepo struct {
-	db *sql.DB
+	store *Store
+	db    database
 }
 
 func NewProcessorRepo(store *Store) *ProcessorRepo {
-	return &ProcessorRepo{db: store.DB()}
+	return &ProcessorRepo{store: store, db: store.db}
 }
 
 func (r *ProcessorRepo) ResultExists(ctx context.Context, rfidLogID string) (bool, error) {
@@ -145,11 +146,19 @@ func (r *ProcessorRepo) LoadCheckpoints(ctx context.Context, raceID, board strin
 }
 
 func (r *ProcessorRepo) WithTx(ctx context.Context, fn func(tx processor.TxRepository) (bool, error)) error {
-	tx, err := r.db.BeginTx(ctx, nil)
+	if r.store.tx != nil {
+		// The processor returns commit=false only when INSERT OR IGNORE inserted
+		// nothing, before member times are touched. Any error escapes and rolls
+		// back the enclosing recount transaction.
+		_, err := fn(&txRepo{db: r.store.db})
+		return err
+	}
+
+	tx, err := r.store.root.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	commit, err := fn(&txRepo{tx: tx})
+	commit, err := fn(&txRepo{db: tx})
 	if err != nil {
 		tx.Rollback() //nolint:errcheck
 		return err
@@ -161,13 +170,13 @@ func (r *ProcessorRepo) WithTx(ctx context.Context, fn func(tx processor.TxRepos
 }
 
 type txRepo struct {
-	tx *sql.Tx
+	db execer
 }
 
 func (r *txRepo) InsertResult(ctx context.Context, logEntry domain.RfidLog, member processor.Member, checkpoint processor.Checkpoint) (bool, error) {
 	// INSERT OR IGNORE relies on uq_results_rfid_log — mirrors rfid-sync's
 	// duplicate-key handling.
-	res, err := r.tx.ExecContext(ctx, `
+	res, err := r.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO results (event_id, race_id, member_id, checkpoint_id, rfid_log_id, time_ms, number)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		logEntry.EventID, member.RaceID, member.ID, checkpoint.ID, logEntry.ID, logEntry.TimeMs, member.Number)
@@ -189,7 +198,7 @@ func (r *txRepo) UpdateMemberTimes(ctx context.Context, member processor.Member,
 	startTime := member.StartTimeMs
 
 	if startTime == nil && member.RaceStartedAtMs != nil {
-		if _, err := r.tx.ExecContext(ctx,
+		if _, err := r.db.ExecContext(ctx,
 			`UPDATE members SET start_time_ms = ? WHERE id = ? AND start_time_ms IS NULL`,
 			*member.RaceStartedAtMs, member.ID); err != nil {
 			return fmt.Errorf("backfill start time: %w", err)
@@ -198,7 +207,7 @@ func (r *txRepo) UpdateMemberTimes(ctx context.Context, member processor.Member,
 	}
 
 	if checkpoint.Type == domain.CheckpointStart {
-		if _, err := r.tx.ExecContext(ctx,
+		if _, err := r.db.ExecContext(ctx,
 			`UPDATE members SET start_time_ms = ? WHERE id = ?`, eventTimeMs, member.ID); err != nil {
 			return fmt.Errorf("set start time: %w", err)
 		}
@@ -210,7 +219,7 @@ func (r *txRepo) UpdateMemberTimes(ctx context.Context, member processor.Member,
 		if startTime != nil {
 			cleanTime = sql.NullString{String: processor.FormatCleanTime(*startTime, eventTimeMs), Valid: true}
 		}
-		if _, err := r.tx.ExecContext(ctx,
+		if _, err := r.db.ExecContext(ctx,
 			`UPDATE members SET finish_time_ms = ?, clean_time = ? WHERE id = ? AND finish_time_ms IS NULL`,
 			eventTimeMs, cleanTime, member.ID); err != nil {
 			return fmt.Errorf("set finish time: %w", err)

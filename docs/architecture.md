@@ -94,7 +94,8 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    race-start shifts), member/checkpoint creation, checkpoint deletion, category links and
    manual finishes. Persistence helpers join an existing transaction instead of opening a
    second SQLite connection. Failure tests force journal inserts to fail and verify that no
-   partial live data remains.
+   partial live data remains. Recount likewise keeps its wipe, RFID replay and manual-result
+   reapplication in one transaction, so a failed replay preserves the previous protocol.
 
 ## Data flow (v1)
 

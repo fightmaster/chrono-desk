@@ -13,31 +13,28 @@ import (
 // (rfid_log_id IS NULL) and member start times survive — start is re-derived
 // or was set deliberately on the site.
 func (s *Store) WipeDerivedResults(ctx context.Context, eventID, raceID string) error {
-	tx, err := s.root.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin wipe: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // no-op after commit
-
-	if raceID == "" {
-		_, err = tx.ExecContext(ctx,
-			`DELETE FROM results WHERE event_id = ? AND rfid_log_id IS NOT NULL`, eventID)
-		if err == nil {
-			_, err = tx.ExecContext(ctx,
-				`UPDATE members SET finish_time_ms = NULL, clean_time = NULL WHERE event_id = ?`, eventID)
+	return s.WithinTx(ctx, func(txStore *Store) error {
+		var err error
+		if raceID == "" {
+			_, err = txStore.db.ExecContext(ctx,
+				`DELETE FROM results WHERE event_id = ? AND rfid_log_id IS NOT NULL`, eventID)
+			if err == nil {
+				_, err = txStore.db.ExecContext(ctx,
+					`UPDATE members SET finish_time_ms = NULL, clean_time = NULL WHERE event_id = ?`, eventID)
+			}
+		} else {
+			_, err = txStore.db.ExecContext(ctx,
+				`DELETE FROM results WHERE event_id = ? AND race_id = ? AND rfid_log_id IS NOT NULL`, eventID, raceID)
+			if err == nil {
+				_, err = txStore.db.ExecContext(ctx,
+					`UPDATE members SET finish_time_ms = NULL, clean_time = NULL WHERE event_id = ? AND race_id = ?`, eventID, raceID)
+			}
 		}
-	} else {
-		_, err = tx.ExecContext(ctx,
-			`DELETE FROM results WHERE event_id = ? AND race_id = ? AND rfid_log_id IS NOT NULL`, eventID, raceID)
-		if err == nil {
-			_, err = tx.ExecContext(ctx,
-				`UPDATE members SET finish_time_ms = NULL, clean_time = NULL WHERE event_id = ? AND race_id = ?`, eventID, raceID)
+		if err != nil {
+			return fmt.Errorf("wipe derived results: %w", err)
 		}
-	}
-	if err != nil {
-		return fmt.Errorf("wipe derived results: %w", err)
-	}
-	return tx.Commit()
+		return nil
+	})
 }
 
 // ListRfidLogs returns the event's logs in replay order (time, then id for a
