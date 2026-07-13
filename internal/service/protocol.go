@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
-	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
 	"gitlab.com/fightmaster1/chrono-desk/internal/ranking"
 )
@@ -60,7 +59,7 @@ type ProtocolResponse struct {
 
 // BuildProtocol loads the race, ranks its members in memory and renders the
 // JSON rows.
-func BuildProtocol(ctx context.Context, store *sqlite.Store, raceID string) (ProtocolResponse, error) {
+func BuildProtocol(ctx context.Context, store ProtocolStore, raceID string) (ProtocolResponse, error) {
 	race, err := store.GetRace(ctx, raceID)
 	if err != nil {
 		return ProtocolResponse{}, err

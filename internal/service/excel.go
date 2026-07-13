@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/xuri/excelize/v2"
-
-	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
 // Excel protocol export. Columns and formatting mirror run5's
@@ -30,7 +28,7 @@ var statusLabels = map[string]string{
 
 // BuildProtocolXLSX renders the ranked protocol as an .xlsx; returns the file
 // bytes and a suggested filename.
-func BuildProtocolXLSX(ctx context.Context, store *sqlite.Store, raceID string) ([]byte, string, error) {
+func BuildProtocolXLSX(ctx context.Context, store ProtocolStore, raceID string) ([]byte, string, error) {
 	protocol, err := BuildProtocol(ctx, store, raceID)
 	if err != nil {
 		return nil, "", err

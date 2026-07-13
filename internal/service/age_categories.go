@@ -6,10 +6,15 @@ import (
 	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
-	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
-func resolveCategoryIDForMember(ctx context.Context, store *sqlite.Store, member domain.Member) (*string, error) {
+type memberCategoryResolver interface {
+	GetRace(ctx context.Context, raceID string) (domain.Race, error)
+	GetEvent(ctx context.Context, id string) (domain.Event, error)
+	ListRaceCategories(ctx context.Context, raceID string) ([]domain.Category, error)
+}
+
+func resolveCategoryIDForMember(ctx context.Context, store memberCategoryResolver, member domain.Member) (*string, error) {
 	if member.Gender == nil || *member.Gender == "" || member.DOB == nil || *member.DOB == "" {
 		return nil, nil
 	}

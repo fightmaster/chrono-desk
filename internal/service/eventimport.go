@@ -131,14 +131,14 @@ type ImportStats struct {
 // EventImporter applies a run5 event export to an event database. Re-import
 // is an upsert: site-owned data overwrites local rows in place.
 type EventImporter struct {
-	store *sqlite.Store
+	store importStore
 	// skipLocalReplay drops the local-edits-win journal replay — used by a
 	// "site wins" pull, where the operator wants the site's values verbatim.
 	skipLocalReplay bool
 }
 
 func NewEventImporter(store *sqlite.Store) *EventImporter {
-	return &EventImporter{store: store}
+	return &EventImporter{store: newSQLiteImportStore(store)}
 }
 
 // WithSkipLocalReplay toggles whether the local_changes journal is replayed on
@@ -188,7 +188,7 @@ func (i *EventImporter) Import(ctx context.Context, export *EventExport) (Import
 	// Conflict policy: local offline edits beat the re-imported site data —
 	// unless the caller asked for "site wins" (pull with overwrite).
 	if !i.skipLocalReplay {
-		applied, err := ReapplyLocalEdits(ctx, i.store)
+		applied, err := i.store.ReapplyLocalEdits(ctx)
 		if err != nil {
 			return stats, err
 		}

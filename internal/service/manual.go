@@ -150,7 +150,7 @@ func DeleteManualResult(ctx context.Context, store *sqlite.Store, eventID string
 // When the start was backfilled from the race, we also persist start_time_ms —
 // the ranking treats a member with a finish but no start as "not finished yet"
 // and drops it from the protocol (ranking.go: materializeFixedDistance).
-func applyManualFinish(ctx context.Context, store *sqlite.Store, memberID string, timeMs int64) error {
+func applyManualFinish(ctx context.Context, store manualFinishStore, memberID string, timeMs int64) error {
 	m, err := store.GetMember(ctx, memberID)
 	if err != nil {
 		return err
@@ -173,7 +173,9 @@ func applyManualFinish(ctx context.Context, store *sqlite.Store, memberID string
 
 // memberStartRef resolves the start instant for clean-time math: the member's
 // own start if set, otherwise the race start (processor_repo.go does the same).
-func memberStartRef(ctx context.Context, store *sqlite.Store, m domain.Member) (*int64, error) {
+func memberStartRef(ctx context.Context, store interface {
+	GetRace(ctx context.Context, raceID string) (domain.Race, error)
+}, m domain.Member) (*int64, error) {
 	if m.StartTimeMs != nil {
 		return m.StartTimeMs, nil
 	}

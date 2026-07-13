@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
@@ -85,11 +86,15 @@ type EditResult struct {
 // ApplyEdit validates against the whitelist, updates the field and journals
 // the change.
 func ApplyEdit(ctx context.Context, store *sqlite.Store, req EditRequest) (EditResult, error) {
+	return applyEdit(ctx, newSQLiteEditStore(store), req)
+}
+
+func applyEdit(ctx context.Context, store editStore, req EditRequest) (EditResult, error) {
 	spec, value, err := validateEdit(req)
 	if err != nil {
 		return EditResult{}, err
 	}
-	if err := store.WithinTx(ctx, func(txStore *sqlite.Store) error {
+	if err := store.WithinTx(ctx, func(txStore editTxStore) error {
 		return applyValidatedEdit(ctx, txStore, req, spec, value)
 	}); err != nil {
 		return EditResult{}, err
@@ -97,7 +102,7 @@ func ApplyEdit(ctx context.Context, store *sqlite.Store, req EditRequest) (EditR
 	return EditResult{RecountNeeded: spec.recountNeeded}, nil
 }
 
-func applyValidatedEdit(ctx context.Context, store *sqlite.Store, req EditRequest, spec editableField, value any) error {
+func applyValidatedEdit(ctx context.Context, store editTxStore, req EditRequest, spec editableField, value any) error {
 	old, err := store.UpdateEntityField(ctx, spec.table, req.Field, req.EntityID, value)
 	if err != nil {
 		return err
@@ -139,7 +144,16 @@ func applyValidatedEdit(ctx context.Context, store *sqlite.Store, req EditReques
 	return nil
 }
 
-func maybeRecalculateMemberCategory(ctx context.Context, store *sqlite.Store, req EditRequest) error {
+type memberCategoryStore interface {
+	GetMember(ctx context.Context, memberID string) (domain.Member, error)
+	GetRace(ctx context.Context, raceID string) (domain.Race, error)
+	GetEvent(ctx context.Context, id string) (domain.Event, error)
+	ListRaceCategories(ctx context.Context, raceID string) ([]domain.Category, error)
+	UpdateEntityField(ctx context.Context, table, field, id string, value any) (old any, err error)
+	InsertLocalChange(ctx context.Context, c sqlite.LocalChange) error
+}
+
+func maybeRecalculateMemberCategory(ctx context.Context, store memberCategoryStore, req EditRequest) error {
 	if req.Entity != "member" {
 		return nil
 	}
@@ -207,7 +221,12 @@ func asInt64(v any) (int64, bool) {
 
 // shiftMemberStarts moves every member's start by deltaMs and journals each
 // change (entity "member", field "start_time_ms").
-func shiftMemberStarts(ctx context.Context, store *sqlite.Store, raceID string, deltaMs int64) error {
+type memberStartShiftStore interface {
+	ShiftMemberStarts(ctx context.Context, raceID string, deltaMs int64) ([]sqlite.MemberStartShift, error)
+	InsertLocalChange(ctx context.Context, c sqlite.LocalChange) error
+}
+
+func shiftMemberStarts(ctx context.Context, store memberStartShiftStore, raceID string, deltaMs int64) error {
 	shifts, err := store.ShiftMemberStarts(ctx, raceID, deltaMs)
 	if err != nil {
 		return err
@@ -241,7 +260,7 @@ func stringPtrEqual(a, b *string) bool {
 // ReapplyLocalEdits replays the journal on top of freshly imported site data
 // (local edits win). Entries whose entity vanished from the export are
 // skipped silently.
-func ReapplyLocalEdits(ctx context.Context, store *sqlite.Store) (applied int, err error) {
+func ReapplyLocalEdits(ctx context.Context, store editReplayStore) (applied int, err error) {
 	changes, err := store.ListLocalChanges(ctx)
 	if err != nil {
 		return 0, err
