@@ -89,15 +89,23 @@ func ApplyEdit(ctx context.Context, store *sqlite.Store, req EditRequest) (EditR
 	if err != nil {
 		return EditResult{}, err
 	}
+	if err := store.WithinTx(ctx, func(txStore *sqlite.Store) error {
+		return applyValidatedEdit(ctx, txStore, req, spec, value)
+	}); err != nil {
+		return EditResult{}, err
+	}
+	return EditResult{RecountNeeded: spec.recountNeeded}, nil
+}
 
+func applyValidatedEdit(ctx context.Context, store *sqlite.Store, req EditRequest, spec editableField, value any) error {
 	old, err := store.UpdateEntityField(ctx, spec.table, req.Field, req.EntityID, value)
 	if err != nil {
-		return EditResult{}, err
+		return err
 	}
 
 	oldJSON, err := json.Marshal(normalizeDriverValue(old))
 	if err != nil {
-		return EditResult{}, fmt.Errorf("encode old value: %w", err)
+		return fmt.Errorf("encode old value: %w", err)
 	}
 	if err := store.InsertLocalChange(ctx, sqlite.LocalChange{
 		Entity:   req.Entity,
@@ -106,11 +114,11 @@ func ApplyEdit(ctx context.Context, store *sqlite.Store, req EditRequest) (EditR
 		OldValue: string(oldJSON),
 		NewValue: string(req.Value),
 	}); err != nil {
-		return EditResult{}, err
+		return err
 	}
 
 	if err := maybeRecalculateMemberCategory(ctx, store, req); err != nil {
-		return EditResult{}, err
+		return err
 	}
 
 	// Delayed/advanced start: when the race start moves, the whole field moves
@@ -122,13 +130,13 @@ func ApplyEdit(ctx context.Context, store *sqlite.Store, req EditRequest) (EditR
 		if newStart, ok := value.(int64); ok {
 			if oldStart, ok := asInt64(old); ok {
 				if err := shiftMemberStarts(ctx, store, req.EntityID, newStart-oldStart); err != nil {
-					return EditResult{}, err
+					return err
 				}
 			}
 		}
 	}
 
-	return EditResult{RecountNeeded: spec.recountNeeded}, nil
+	return nil
 }
 
 func maybeRecalculateMemberCategory(ctx context.Context, store *sqlite.Store, req EditRequest) error {

@@ -13,7 +13,7 @@ import (
 // (rfid_log_id IS NULL) and member start times survive — start is re-derived
 // or was set deliberately on the site.
 func (s *Store) WipeDerivedResults(ctx context.Context, eventID, raceID string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.root.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin wipe: %w", err)
 	}

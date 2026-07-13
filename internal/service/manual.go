@@ -60,6 +60,16 @@ func ManualFinishClean(ctx context.Context, store *sqlite.Store, eventID, member
 
 // storeManualFinish inserts the result, applies the finish and journals it.
 func storeManualFinish(ctx context.Context, store *sqlite.Store, eventID, memberID string, timeMs int64) (ManualFinishResult, error) {
+	var result ManualFinishResult
+	err := store.WithinTx(ctx, func(txStore *sqlite.Store) error {
+		var err error
+		result, err = storeManualFinishTx(ctx, txStore, eventID, memberID, timeMs)
+		return err
+	})
+	return result, err
+}
+
+func storeManualFinishTx(ctx context.Context, store *sqlite.Store, eventID, memberID string, timeMs int64) (ManualFinishResult, error) {
 	m, err := store.GetMember(ctx, memberID)
 	if err != nil {
 		return ManualFinishResult{}, err
@@ -108,24 +118,27 @@ func ListManualFinishes(ctx context.Context, store *sqlite.Store, eventID, raceI
 // DeleteManualResult removes a judge entry; the follow-up recount restores
 // chip-derived times.
 func DeleteManualResult(ctx context.Context, store *sqlite.Store, eventID string, resultID int64) (EditResult, error) {
-	// Capture the natural key before deleting so the deletion can sync to run5.
-	mr, err := store.GetManualResult(ctx, eventID, resultID)
-	if err != nil {
-		return EditResult{}, err
-	}
-	if err := store.DeleteManualResult(ctx, eventID, resultID); err != nil {
-		return EditResult{}, err
-	}
-	payload, err := json.Marshal(map[string]any{
-		"member_id": mr.MemberID, "race_id": mr.RaceID, "time_ms": mr.TimeMs,
+	err := store.WithinTx(ctx, func(txStore *sqlite.Store) error {
+		// Capture the natural key before deleting so the deletion can sync to run5.
+		mr, err := txStore.GetManualResult(ctx, eventID, resultID)
+		if err != nil {
+			return err
+		}
+		payload, err := json.Marshal(map[string]any{
+			"member_id": mr.MemberID, "race_id": mr.RaceID, "time_ms": mr.TimeMs,
+		})
+		if err != nil {
+			return fmt.Errorf("encode deleted manual: %w", err)
+		}
+		if err := txStore.DeleteManualResult(ctx, eventID, resultID); err != nil {
+			return err
+		}
+		return txStore.InsertLocalChange(ctx, sqlite.LocalChange{
+			Entity: "member", EntityID: mr.MemberID, Field: "_manual_finish_deleted",
+			OldValue: "null", NewValue: string(payload),
+		})
 	})
 	if err != nil {
-		return EditResult{}, fmt.Errorf("encode deleted manual: %w", err)
-	}
-	if err := store.InsertLocalChange(ctx, sqlite.LocalChange{
-		Entity: "member", EntityID: mr.MemberID, Field: "_manual_finish_deleted",
-		OldValue: "null", NewValue: string(payload),
-	}); err != nil {
 		return EditResult{}, err
 	}
 	return EditResult{RecountNeeded: true}, nil

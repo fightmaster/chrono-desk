@@ -14,7 +14,17 @@ var schemaSQL string
 
 // Store wraps one event database.
 type Store struct {
-	db *sql.DB
+	db   database
+	root *sql.DB
+	tx   *sql.Tx
+}
+
+// database is the query surface shared by *sql.DB and *sql.Tx.
+type database interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	PrepareContext(ctx context.Context, query string) (*sql.Stmt, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // New runs the embedded schema (idempotent), applies in-place migrations for
@@ -31,14 +41,37 @@ func New(db *sql.DB) (*Store, error) {
 	if err := seedRaceCategories(db); err != nil {
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, root: db}, nil
 }
 
-// DB exposes the underlying handle for transaction composition.
-func (s *Store) DB() *sql.DB { return s.db }
+// DB exposes the root handle to infrastructure adapters and test assertions.
+// Application use cases should use Store methods and WithinTx instead.
+func (s *Store) DB() *sql.DB { return s.root }
 
 // Close releases the event database owned by the store.
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error { return s.root.Close() }
+
+// WithinTx runs fn against a transaction-bound Store and commits only when fn
+// succeeds. Nested calls join the existing transaction.
+func (s *Store) WithinTx(ctx context.Context, fn func(*Store) error) error {
+	if s.tx != nil {
+		return fn(s)
+	}
+	tx, err := s.root.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+
+	txStore := &Store{db: tx, root: s.root, tx: tx}
+	if err := fn(txStore); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
+}
 
 // execer is satisfied by both *sql.DB and *sql.Tx, so the upsert helpers below
 // run either standalone or inside the single import transaction
@@ -93,7 +126,7 @@ func (s *Store) FirstEvent(ctx context.Context) (domain.Event, error) {
 // InsertRfidLogs inserts logs idempotently (INSERT OR IGNORE on the md5 id)
 // and reports how many rows were actually new.
 func (s *Store) InsertRfidLogs(ctx context.Context, logs []domain.RfidLog) (inserted int64, err error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.root.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin: %w", err)
 	}

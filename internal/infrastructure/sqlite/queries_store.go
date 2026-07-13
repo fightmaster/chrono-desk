@@ -248,19 +248,15 @@ func (s *Store) GetCheckpoint(ctx context.Context, id string) (CheckpointRow, er
 // DeleteCheckpointCascade removes the checkpoint together with the results it
 // produced (the caller recounts afterwards). No-op when already absent.
 func (s *Store) DeleteCheckpointCascade(ctx context.Context, id string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin delete: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // no-op after commit
-
-	if _, err := tx.ExecContext(ctx, `DELETE FROM results WHERE checkpoint_id = ?`, id); err != nil {
-		return fmt.Errorf("delete checkpoint results: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM checkpoints WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("delete checkpoint: %w", err)
-	}
-	return tx.Commit()
+	return s.WithinTx(ctx, func(txStore *Store) error {
+		if _, err := txStore.db.ExecContext(ctx, `DELETE FROM results WHERE checkpoint_id = ?`, id); err != nil {
+			return fmt.Errorf("delete checkpoint results: %w", err)
+		}
+		if _, err := txStore.db.ExecContext(ctx, `DELETE FROM checkpoints WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("delete checkpoint: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Store) ListLaps(ctx context.Context) ([]domain.Lap, error) {

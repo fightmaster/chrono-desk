@@ -88,6 +88,13 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    timezone (defaulted from the event export).
 6. **Disabled logs are part of the contract.** run5 ADR-0007 soft-disables false reads
    (`disabled_at`). Exports include disabled logs; recount skips them.
+7. **Local mutations and their journal entries are atomic.** Application use cases run
+   through `sqlite.Store.WithinTx`; the entity update, derived companion updates and all
+   `local_changes` rows commit together or roll back together. This covers edits (including
+   race-start shifts), member/checkpoint creation, checkpoint deletion, category links and
+   manual finishes. Persistence helpers join an existing transaction instead of opening a
+   second SQLite connection. Failure tests force journal inserts to fail and verify that no
+   partial live data remains.
 
 ## Data flow (v1)
 

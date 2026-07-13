@@ -32,29 +32,31 @@ func CreateCheckpoint(ctx context.Context, store *sqlite.Store, eventID string, 
 	if req.Type < 1 || req.Type > 3 {
 		return "", EditResult{}, fmt.Errorf("тип чекпоинта: 1=старт, 2=КП, 3=финиш")
 	}
-	race, err := store.GetRace(ctx, req.RaceID)
-	if err != nil || race.EventID != eventID {
-		return "", EditResult{}, fmt.Errorf("гонка %s не найдена в событии", req.RaceID)
-	}
-
 	id := "local-" + randomHex(8)
-	if err := store.UpsertCheckpoint(ctx, domain.Checkpoint{
+	checkpoint := domain.Checkpoint{
 		ID: id, EventID: eventID, RaceID: req.RaceID, Name: req.Name,
 		Type: domain.CheckpointType(req.Type), Sort: req.Sort, Board: req.Board,
 		SinceMs: req.SinceMs, SinceOffsetSeconds: req.SinceOffsetSeconds,
 		SleepAfterPrevSeconds: req.SleepAfterPrevSeconds,
-	}); err != nil {
-		return "", EditResult{}, err
 	}
-
 	payload, err := json.Marshal(req)
 	if err != nil {
 		return "", EditResult{}, fmt.Errorf("encode checkpoint: %w", err)
 	}
-	if err := store.InsertLocalChange(ctx, sqlite.LocalChange{
-		Entity: "checkpoint", EntityID: id, Field: "_created",
-		OldValue: "null", NewValue: string(payload),
-	}); err != nil {
+	err = store.WithinTx(ctx, func(txStore *sqlite.Store) error {
+		race, err := txStore.GetRace(ctx, req.RaceID)
+		if err != nil || race.EventID != eventID {
+			return fmt.Errorf("гонка %s не найдена в событии", req.RaceID)
+		}
+		if err := txStore.UpsertCheckpoint(ctx, checkpoint); err != nil {
+			return err
+		}
+		return txStore.InsertLocalChange(ctx, sqlite.LocalChange{
+			Entity: "checkpoint", EntityID: id, Field: "_created",
+			OldValue: "null", NewValue: string(payload),
+		})
+	})
+	if err != nil {
 		return "", EditResult{}, err
 	}
 
@@ -62,27 +64,28 @@ func CreateCheckpoint(ctx context.Context, store *sqlite.Store, eventID string, 
 }
 
 func DeleteCheckpoint(ctx context.Context, store *sqlite.Store, eventID, checkpointID string) (EditResult, error) {
-	cp, err := store.GetCheckpoint(ctx, checkpointID)
+	err := store.WithinTx(ctx, func(txStore *sqlite.Store) error {
+		cp, err := txStore.GetCheckpoint(ctx, checkpointID)
+		if err != nil {
+			return err
+		}
+		race, err := txStore.GetRace(ctx, cp.RaceID)
+		if err != nil || race.EventID != eventID {
+			return fmt.Errorf("чекпоинт %s не принадлежит событию", checkpointID)
+		}
+		payload, err := json.Marshal(cp)
+		if err != nil {
+			return fmt.Errorf("encode checkpoint: %w", err)
+		}
+		if err := txStore.DeleteCheckpointCascade(ctx, checkpointID); err != nil {
+			return err
+		}
+		return txStore.InsertLocalChange(ctx, sqlite.LocalChange{
+			Entity: "checkpoint", EntityID: checkpointID, Field: "_deleted",
+			OldValue: string(payload), NewValue: "null",
+		})
+	})
 	if err != nil {
-		return EditResult{}, err
-	}
-	race, err := store.GetRace(ctx, cp.RaceID)
-	if err != nil || race.EventID != eventID {
-		return EditResult{}, fmt.Errorf("чекпоинт %s не принадлежит событию", checkpointID)
-	}
-
-	if err := store.DeleteCheckpointCascade(ctx, checkpointID); err != nil {
-		return EditResult{}, err
-	}
-
-	payload, err := json.Marshal(cp)
-	if err != nil {
-		return EditResult{}, fmt.Errorf("encode checkpoint: %w", err)
-	}
-	if err := store.InsertLocalChange(ctx, sqlite.LocalChange{
-		Entity: "checkpoint", EntityID: checkpointID, Field: "_deleted",
-		OldValue: string(payload), NewValue: "null",
-	}); err != nil {
 		return EditResult{}, err
 	}
 

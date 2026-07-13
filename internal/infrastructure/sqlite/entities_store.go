@@ -99,47 +99,41 @@ func (s *Store) ShiftMemberStarts(ctx context.Context, raceID string, deltaMs in
 	if deltaMs == 0 {
 		return nil, nil
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin shift starts: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // no-op after commit
-
-	rows, err := tx.QueryContext(ctx,
-		`SELECT id, start_time_ms FROM members
-		 WHERE race_id = ? AND start_time_ms IS NOT NULL
-		 ORDER BY id`, raceID)
-	if err != nil {
-		return nil, fmt.Errorf("list members with start: %w", err)
-	}
 	var shifts []MemberStartShift
-	for rows.Next() {
-		var sh MemberStartShift
-		if err := rows.Scan(&sh.MemberID, &sh.OldStartMs); err != nil {
+	err := s.WithinTx(ctx, func(txStore *Store) error {
+		rows, err := txStore.db.QueryContext(ctx,
+			`SELECT id, start_time_ms FROM members
+			 WHERE race_id = ? AND start_time_ms IS NOT NULL
+			 ORDER BY id`, raceID)
+		if err != nil {
+			return fmt.Errorf("list members with start: %w", err)
+		}
+		for rows.Next() {
+			var sh MemberStartShift
+			if err := rows.Scan(&sh.MemberID, &sh.OldStartMs); err != nil {
+				rows.Close()
+				return err
+			}
+			sh.NewStartMs = sh.OldStartMs + deltaMs
+			shifts = append(shifts, sh)
+		}
+		if err := rows.Err(); err != nil {
 			rows.Close()
-			return nil, err
+			return err
 		}
-		sh.NewStartMs = sh.OldStartMs + deltaMs
-		shifts = append(shifts, sh)
-	}
-	if err := rows.Err(); err != nil {
 		rows.Close()
-		return nil, err
-	}
-	rows.Close()
 
-	if len(shifts) > 0 {
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE members SET start_time_ms = start_time_ms + ?
-			 WHERE race_id = ? AND start_time_ms IS NOT NULL`,
-			deltaMs, raceID); err != nil {
-			return nil, fmt.Errorf("shift member starts: %w", err)
+		if len(shifts) > 0 {
+			if _, err := txStore.db.ExecContext(ctx,
+				`UPDATE members SET start_time_ms = start_time_ms + ?
+				 WHERE race_id = ? AND start_time_ms IS NOT NULL`,
+				deltaMs, raceID); err != nil {
+				return fmt.Errorf("shift member starts: %w", err)
+			}
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit shift starts: %w", err)
-	}
-	return shifts, nil
+		return nil
+	})
+	return shifts, err
 }
 
 func (s *Store) UpsertMember(ctx context.Context, m domain.Member) error {
@@ -195,7 +189,7 @@ const rfidLogUpsertSQL = `
 
 // UpsertRfidLogs upserts logs in their own transaction (standalone callers).
 func (s *Store) UpsertRfidLogs(ctx context.Context, logs []domain.RfidLog) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.root.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin: %w", err)
 	}
@@ -248,7 +242,7 @@ type EventImportData struct {
 // members → logs) to satisfy foreign keys. The local-edits replay runs after
 // this commits (it touches only the now-consistent imported rows).
 func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.root.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin import: %w", err)
 	}

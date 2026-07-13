@@ -24,13 +24,16 @@ type categoryRacePair struct {
 
 // AttachCategory attaches a catalog category to a race and journals it.
 func AttachCategory(ctx context.Context, store *sqlite.Store, eventID, raceID, categoryID string) (EditResult, error) {
-	if err := validateRaceCategory(ctx, store, eventID, raceID, categoryID, true); err != nil {
-		return EditResult{}, err
-	}
-	if err := store.AttachRaceCategory(ctx, raceID, categoryID); err != nil {
-		return EditResult{}, err
-	}
-	if err := journalRaceCategory(ctx, store, "_attached", raceID, categoryID); err != nil {
+	err := store.WithinTx(ctx, func(txStore *sqlite.Store) error {
+		if err := validateRaceCategory(ctx, txStore, eventID, raceID, categoryID, true); err != nil {
+			return err
+		}
+		if err := txStore.AttachRaceCategory(ctx, raceID, categoryID); err != nil {
+			return err
+		}
+		return journalRaceCategory(ctx, txStore, "_attached", raceID, categoryID)
+	})
+	if err != nil {
 		return EditResult{}, err
 	}
 	return EditResult{}, nil
@@ -39,20 +42,23 @@ func AttachCategory(ctx context.Context, store *sqlite.Store, eventID, raceID, c
 // DetachCategory removes a category from a race. It refuses while members of the
 // race are still assigned to it (don't strand participants — reassign first).
 func DetachCategory(ctx context.Context, store *sqlite.Store, eventID, raceID, categoryID string) (EditResult, error) {
-	if err := validateRaceCategory(ctx, store, eventID, raceID, categoryID, false); err != nil {
-		return EditResult{}, err
-	}
-	n, err := store.CountMembersInRaceCategory(ctx, raceID, categoryID)
+	err := store.WithinTx(ctx, func(txStore *sqlite.Store) error {
+		if err := validateRaceCategory(ctx, txStore, eventID, raceID, categoryID, false); err != nil {
+			return err
+		}
+		n, err := txStore.CountMembersInRaceCategory(ctx, raceID, categoryID)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return fmt.Errorf("в этой категории ещё %d участник(ов) — сначала переназначьте их", n)
+		}
+		if err := txStore.DetachRaceCategory(ctx, raceID, categoryID); err != nil {
+			return err
+		}
+		return journalRaceCategory(ctx, txStore, "_detached", raceID, categoryID)
+	})
 	if err != nil {
-		return EditResult{}, err
-	}
-	if n > 0 {
-		return EditResult{}, fmt.Errorf("в этой категории ещё %d участник(ов) — сначала переназначьте их", n)
-	}
-	if err := store.DetachRaceCategory(ctx, raceID, categoryID); err != nil {
-		return EditResult{}, err
-	}
-	if err := journalRaceCategory(ctx, store, "_detached", raceID, categoryID); err != nil {
 		return EditResult{}, err
 	}
 	return EditResult{}, nil
