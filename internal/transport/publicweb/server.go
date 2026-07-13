@@ -33,7 +33,7 @@ var indexHTML []byte
 const DefaultPort = 8090
 
 type Server struct {
-	events *service.EventManager
+	events *service.EventService
 	logger *log.Logger
 	port   int
 
@@ -44,7 +44,7 @@ type Server struct {
 
 // New builds the server without opening any port. Call Publish to start
 // broadcasting. port==0 selects DefaultPort.
-func New(events *service.EventManager, logger *log.Logger, port int) *Server {
+func New(events *service.EventService, logger *log.Logger, port int) *Server {
 	if port == 0 {
 		port = DefaultPort
 	}

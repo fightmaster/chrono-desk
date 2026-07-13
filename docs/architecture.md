@@ -27,16 +27,18 @@ their current status noted.
 ```
 frontend/ (Svelte + Vite)  — UI, talks HTTP to localhost
    │
+main.go / app.go           — composition root
+   │
 internal/transport/httpapi   — REST API (embedded localhost; control surface for the UI)
 internal/transport/publicweb — separate read-only LAN results board (off by default)
    │
-internal/service           — import, recount orchestration, ranking, excel export
+internal/service           — import/list use cases, recount orchestration, ranking, excel export
    │
 internal/processor         — checkpoint-matching engine (port of rfid-sync processor)
    │
 internal/domain            — Event, Race, Category, Checkpoint, Member, RfidLog, Result
    │
-internal/infrastructure/sqlite — repositories, schema, migrations (modernc.org/sqlite)
+internal/infrastructure/sqlite — event catalog, repositories, schema, migrations (modernc.org/sqlite)
 ```
 
 Wails v2 hosts the frontend and the Go process in one binary (pattern proven in
@@ -46,6 +48,8 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
 
 1. **One event = one SQLite file** (e.g. `marathon-2026.chrono`). Portable by flash
    drive between laptops, backup = file copy, corruption is isolated per event.
+   The file-system concerns and open-store cache now live in `sqlite.EventCatalog`;
+   application-level import/list logic stays in `service.EventService`.
 2. **Reuse the rfid-sync derivation engine, not the Laravel one.** rfid-sync's
    `internal/syncer/processor` already implements member matching by EPC/number,
    checkpoint eligibility (since / since_offset_seconds / sleep_after_prev_seconds /

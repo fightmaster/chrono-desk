@@ -2,39 +2,34 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log"
-	"os"
-	"path/filepath"
-	"regexp"
 	"sort"
-	"strings"
-	"sync"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
-// EventManager owns the data directory: one .chrono SQLite file per event,
-// opened lazily and cached for the app's lifetime.
-type EventManager struct {
-	dataDir string
+// EventService hosts event-level use cases on top of the infrastructure
+// catalog: import, list, and store access for transports.
+type EventService struct {
+	catalog *sqlite.EventCatalog
 	logger  *log.Logger
-
-	mu     sync.Mutex
-	stores map[string]*sqlite.Store
 }
 
-func NewEventManager(dataDir string, logger *log.Logger) (*EventManager, error) {
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create data dir %s: %w", dataDir, err)
+func NewEventService(catalog *sqlite.EventCatalog, logger *log.Logger) *EventService {
+	return &EventService{catalog: catalog, logger: logger}
+}
+
+// NewEventManager is a compatibility helper for tests and older wiring. New
+// application code should compose sqlite.EventCatalog in the app layer and then
+// build EventService from it.
+func NewEventManager(dataDir string, logger *log.Logger) (*EventService, error) {
+	catalog, err := sqlite.NewEventCatalog(dataDir)
+	if err != nil {
+		return nil, err
 	}
-	return &EventManager{
-		dataDir: dataDir,
-		logger:  logger,
-		stores:  map[string]*sqlite.Store{},
-	}, nil
+	return NewEventService(catalog, logger), nil
 }
 
 // EventInfo is a list entry for the UI.
@@ -49,61 +44,27 @@ type EventInfo struct {
 	UseRaceDateForAge bool   `json:"use_race_date_for_age"`
 }
 
-var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
-
-func (m *EventManager) eventPath(eventID string) string {
-	name := unsafeFileChars.ReplaceAllString(eventID, "_")
-	return filepath.Join(m.dataDir, name+".chrono")
-}
-
 // Open returns the store for an existing event file.
-func (m *EventManager) Open(eventID string) (*sqlite.Store, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.openLocked(eventID, false)
-}
-
-func (m *EventManager) openLocked(eventID string, create bool) (*sqlite.Store, error) {
-	if store, ok := m.stores[eventID]; ok {
-		return store, nil
-	}
-	path := m.eventPath(eventID)
-	if !create {
-		if _, err := os.Stat(path); err != nil {
-			return nil, fmt.Errorf("event %s: %w", eventID, err)
-		}
-	}
-	db, err := sqlite.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	store, err := sqlite.New(db)
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	m.stores[eventID] = store
-	return store, nil
+func (s *EventService) Open(eventID string) (*sqlite.Store, error) {
+	return s.catalog.Open(eventID)
 }
 
 // ImportExport parses a run5 event export and applies it to the event's
 // database file, creating the file on first import. Local edits win.
-func (m *EventManager) ImportExport(ctx context.Context, r io.Reader) (ImportStats, error) {
-	return m.ImportExportOpts(ctx, r, false)
+func (s *EventService) ImportExport(ctx context.Context, r io.Reader) (ImportStats, error) {
+	return s.ImportExportOpts(ctx, r, false)
 }
 
 // ImportExportOpts is ImportExport with control over the conflict policy:
 // siteWins=true skips the local-edits-win journal replay (the site's values are
 // taken verbatim) — used by a "site wins" pull.
-func (m *EventManager) ImportExportOpts(ctx context.Context, r io.Reader, siteWins bool) (ImportStats, error) {
+func (s *EventService) ImportExportOpts(ctx context.Context, r io.Reader, siteWins bool) (ImportStats, error) {
 	export, err := ParseEventExport(r)
 	if err != nil {
 		return ImportStats{}, err
 	}
 
-	m.mu.Lock()
-	store, err := m.openLocked(export.Event.ID, true)
-	m.mu.Unlock()
+	store, err := s.catalog.OpenOrCreate(export.Event.ID)
 	if err != nil {
 		return ImportStats{}, err
 	}
@@ -111,36 +72,32 @@ func (m *EventManager) ImportExportOpts(ctx context.Context, r io.Reader, siteWi
 	return NewEventImporter(store).WithSkipLocalReplay(siteWins).Import(ctx, export)
 }
 
-// List scans the data directory and reads each event's header row.
-func (m *EventManager) List(ctx context.Context) ([]EventInfo, error) {
-	entries, err := os.ReadDir(m.dataDir)
+// List scans the event catalog and reads each event's header row.
+func (s *EventService) List(ctx context.Context) ([]EventInfo, error) {
+	ids, err := s.catalog.ListEventIDs()
 	if err != nil {
-		return nil, fmt.Errorf("read data dir: %w", err)
+		return nil, err
 	}
 
-	var infos []EventInfo
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".chrono") {
-			continue
-		}
-		id := strings.TrimSuffix(e.Name(), ".chrono")
-		store, err := m.Open(id)
+	infos := make([]EventInfo, 0, len(ids))
+	for _, id := range ids {
+		store, err := s.catalog.Open(id)
 		if err != nil {
-			m.logger.Printf("skip event file %s: %v", e.Name(), err)
+			s.logger.Printf("skip event file %s.chrono: %v", id, err)
 			continue
 		}
 		event, err := FirstEvent(ctx, store)
 		if err != nil {
-			m.logger.Printf("skip event file %s: %v", e.Name(), err)
+			s.logger.Printf("skip event file %s.chrono: %v", id, err)
 			continue
 		}
 		raceCount, memberCount, err := store.CountRacesAndMembers(ctx)
 		if err != nil {
-			m.logger.Printf("skip event file %s: %v", e.Name(), err)
+			s.logger.Printf("skip event file %s.chrono: %v", id, err)
 			continue
 		}
 		infos = append(infos, EventInfo{
-			ID: event.ID, Name: event.Name, Date: event.Date, Timezone: event.Timezone, File: e.Name(),
+			ID: event.ID, Name: event.Name, Date: event.Date, Timezone: event.Timezone, File: id + ".chrono",
 			RaceCount: raceCount, MemberCount: memberCount, UseRaceDateForAge: event.UseRaceDateForAge,
 		})
 	}
@@ -155,13 +112,8 @@ func FirstEvent(ctx context.Context, store *sqlite.Store) (domain.Event, error) 
 }
 
 // Close releases all open event databases.
-func (m *EventManager) Close() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for id, store := range m.stores {
-		if err := store.Close(); err != nil {
-			m.logger.Printf("close event %s: %v", id, err)
-		}
-		delete(m.stores, id)
+func (s *EventService) Close() {
+	if err := s.catalog.Close(); err != nil {
+		s.logger.Printf("close event catalog: %v", err)
 	}
 }

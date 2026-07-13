@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
 	"gitlab.com/fightmaster1/chrono-desk/internal/transport/httpapi"
 	"gitlab.com/fightmaster1/chrono-desk/internal/transport/publicweb"
@@ -23,7 +24,7 @@ type App struct {
 	ctx      context.Context
 	api      *httpapi.Server
 	public   *publicweb.Server
-	events   *service.EventManager
+	events   *service.EventService
 	apiToken string
 }
 
@@ -35,10 +36,11 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	logger := log.Default()
 
-	events, err := service.NewEventManager(dataDir(), logger)
+	catalog, err := sqlite.NewEventCatalog(dataDir())
 	if err != nil {
-		log.Fatalf("init event manager: %v", err)
+		log.Fatalf("init event catalog: %v", err)
 	}
+	events := service.NewEventService(catalog, logger)
 	a.events = events
 
 	// Read-only LAN results broadcast (off until the operator turns it on). It

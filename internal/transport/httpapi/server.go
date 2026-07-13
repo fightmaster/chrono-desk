@@ -33,7 +33,7 @@ import (
 type Server struct {
 	httpServer *http.Server
 	listener   net.Listener
-	events     *service.EventManager
+	events     *service.EventService
 	live       *service.LiveManager
 	photos     *service.PhotoManager
 	photoCache *service.PhotoCache
@@ -44,7 +44,7 @@ type Server struct {
 // New binds addr (use "127.0.0.1:0" for an ephemeral local port) and builds
 // the route table. Call Start to begin serving. public is the read-only LAN
 // results broadcaster controlled by the /api/public/* endpoints.
-func New(addr string, events *service.EventManager, public *publicweb.Server, logger *log.Logger, apiToken string) (*Server, error) {
+func New(addr string, events *service.EventService, public *publicweb.Server, logger *log.Logger, apiToken string) (*Server, error) {
 	if strings.TrimSpace(apiToken) == "" {
 		return nil, fmt.Errorf("api token is required")
 	}

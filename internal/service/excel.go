@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -25,6 +26,8 @@ var statusLabels = map[string]string{
 	"dnf": "Не финишировал",
 	"dq":  "Дисквалифицирован",
 }
+
+var unsafeExportFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
 // BuildProtocolXLSX renders the ranked protocol as an .xlsx; returns the file
 // bytes and a suggested filename.
@@ -177,5 +180,5 @@ func strOrEmpty(v *string) any {
 
 func safeFileName(s string) string {
 	s = strings.TrimSpace(s)
-	return unsafeFileChars.ReplaceAllString(s, "_")
+	return unsafeExportFileChars.ReplaceAllString(s, "_")
 }
