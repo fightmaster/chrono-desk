@@ -91,8 +91,8 @@
   {/if}
 
   <div class="actions">
-    <label class="check" title="Перетереть на сайте поля, правленные офлайн. Логи и ручные результаты сливаются всегда.">
-      <input type="checkbox" bind:checked={overwrite}/> перезаписывать значения на сайте
+    <label class="check" title="Применить на сайте только явно сделанные офлайн-правки. Чужие точки и отметки не удаляются и не включаются обратно.">
+      <input type="checkbox" bind:checked={overwrite}/> применять локальные правки на сайте
     </label>
     <button class="btn primary" disabled={!!busy || !baseUrl || !tokenSet} on:click={push}>Отправить на сайт →</button>
   </div>
@@ -108,6 +108,7 @@
   {#if result}
     <div class="result faint">
       Отправлено — логи: <b>{result.sent?.rfid_logs ?? '—'}</b> ·
+      правки логов: <b>{result.sent?.rfid_log_edits ?? 0}</b> ·
       ручные: <b>{result.sent?.manual_results ?? 0}</b> ·
       правки участников: <b>{result.sent?.member_edits ?? 0}</b> ·
       новые: <b>{result.sent?.new_members ?? 0}</b>

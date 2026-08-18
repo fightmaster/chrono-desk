@@ -1,0 +1,61 @@
+{
+  "fixture_version": 1,
+  "name": "stopwatch-number-split-and-chrono-epc-finish",
+  "race": {
+    "started_at_ms": 1755494600000,
+    "format": "fixed_distance"
+  },
+  "member": {
+    "number": 42,
+    "epc": "E280AAA"
+  },
+  "checkpoints": [
+    {
+      "key": "remote",
+      "board": "stopwatch-5k",
+      "type": 2,
+      "sort": 1
+    },
+    {
+      "key": "finish",
+      "board": "chrono-finish",
+      "type": 3,
+      "sort": 2
+    }
+  ],
+  "logs": [
+    {
+      "id": "4d8c9a2e-6f38-4e4c-b5b2-4f9d5b1d9a11",
+      "producer": "run5-stopwatch",
+      "number": 42,
+      "epc": "",
+      "time_offset_ms": 600000,
+      "board": "stopwatch-5k",
+      "expected_lookup": "number"
+    },
+    {
+      "id": "chrono-finish-log",
+      "producer": "chrono-desk",
+      "number": 0,
+      "epc": "E280AAA",
+      "time_offset_ms": 1200000,
+      "board": "chrono-finish",
+      "expected_lookup": "epc"
+    }
+  ],
+  "expected_results": [
+    {
+      "rfid_log_id": "4d8c9a2e-6f38-4e4c-b5b2-4f9d5b1d9a11",
+      "checkpoint_key": "remote"
+    },
+    {
+      "rfid_log_id": "chrono-finish-log",
+      "checkpoint_key": "finish"
+    }
+  ],
+  "expected_member_times": {
+    "start_offset_ms": 0,
+    "finish_offset_ms": 1200000,
+    "clean_time": "00:20:00"
+  }
+}

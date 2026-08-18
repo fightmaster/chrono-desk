@@ -65,6 +65,10 @@ func TestBuildSyncPayload(t *testing.T) {
 	if disabled == nil || disabled.DisabledAt == nil {
 		t.Errorf("log-active missing or not disabled: %+v", disabled)
 	}
+	if len(p.RfidLogEdits) != 1 || p.RfidLogEdits[0].ID != "log-active" ||
+		string(p.RfidLogEdits[0].DisabledAt) != "1780900000000" {
+		t.Errorf("rfid_log_edits = %+v", p.RfidLogEdits)
+	}
 
 	// Manual result for mem-2 (site member → member_id set, not local_id).
 	if len(p.ManualResults) != 1 {
@@ -100,7 +104,7 @@ func TestBuildSyncPayload(t *testing.T) {
 		t.Errorf("race_edits = %+v", p.RaceEdits)
 	}
 
-	if summary.RfidLogs == 0 || summary.ManualResults != 1 || summary.NewMembers != 1 || summary.EventEdits != 1 {
+	if summary.RfidLogs == 0 || summary.RfidLogEdits != 1 || summary.ManualResults != 1 || summary.NewMembers != 1 || summary.EventEdits != 1 {
 		t.Errorf("summary = %+v", summary)
 	}
 
@@ -111,6 +115,27 @@ func TestBuildSyncPayload(t *testing.T) {
 	}
 	if !bytes.Equal(data, data2) {
 		t.Error("payload not deterministic across rebuilds")
+	}
+}
+
+func TestBuildSyncPayloadCollapsesRfidLogReenableToExplicitNull(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+
+	mustEdit(t, store, EditRequest{Entity: "rfid_log", EntityID: "log-active", Field: "disabled_at", Value: json.RawMessage(`1780900000000`)})
+	mustEdit(t, store, EditRequest{Entity: "rfid_log", EntityID: "log-active", Field: "disabled_at", Value: json.RawMessage(`null`)})
+
+	data, _, err := BuildSyncPayload(ctx, store, "ev-100", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p syncPayload
+	if err := json.Unmarshal(data, &p); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.RfidLogEdits) != 1 || p.RfidLogEdits[0].ID != "log-active" || string(p.RfidLogEdits[0].DisabledAt) != "null" {
+		t.Fatalf("rfid_log_edits = %+v, want one explicit re-enable", p.RfidLogEdits)
 	}
 }
 

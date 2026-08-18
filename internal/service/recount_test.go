@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -104,6 +106,135 @@ func TestRecountDerivesResultsAndMemberTimes(t *testing.T) {
 		assertMemberTimes(t, store, "mA", run, t0+10_000, t0+400_000, "00:06:30")
 		assertMemberTimes(t, store, "mB", run, t0, t0+500_000, "00:08:20")
 	}
+}
+
+// A Stopwatch Checkpoint capture is an ordinary number-only RFID log from a
+// different board. Replaying the event must merge it with Chrono Desk's finish
+// read instead of treating the desk as the only timing point. This is also a
+// cross-system parity guard: rfid-sync and run5's bulk replay must resolve a
+// member by number before falling back to EPC, exactly as chrono-desk does.
+func TestRecountMergesStopwatchCheckpointWithChronoDeskFinish(t *testing.T) {
+	fixture := loadMultiPointFixture(t)
+	ctx := context.Background()
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "event.chrono"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	store, err := sqlite.New(db)
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+
+	t0 := fixture.Race.StartedAtMs
+	if err := store.UpsertEvent(ctx, domain.Event{ID: "ev1", Name: "Multi-point"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertRace(ctx, domain.Race{
+		ID: "r1", EventID: "ev1", Name: "10k", Format: domain.FormatFixedDistance, StartedAtMs: ptr(t0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range fixture.Checkpoints {
+		cp := domain.Checkpoint{
+			ID: "cp-" + raw.Key, EventID: "ev1", RaceID: "r1", Name: raw.Key,
+			Type: raw.Type, Sort: raw.Sort, Board: raw.Board,
+		}
+		if err := store.UpsertCheckpoint(ctx, cp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	number := fixture.Member.Number
+	if err := store.UpsertMember(ctx, domain.Member{
+		ID: "m1", EventID: "ev1", RaceID: "r1", Number: &number, EPC: sptr(fixture.Member.EPC), FirstName: "Runner",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	logs := make([]domain.RfidLog, 0, len(fixture.Logs))
+	for _, raw := range fixture.Logs {
+		logs = append(logs, domain.RfidLog{
+			ID: raw.ID, EventID: "ev1", Number: raw.Number, TimeMs: t0 + raw.TimeOffsetMs,
+			EPC: raw.EPC, Board: raw.Board,
+		})
+	}
+	if err := store.UpsertRfidLogs(ctx, logs); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := NewRecounter(store, log.New(io.Discard, "", 0), false)
+	for run := 1; run <= 2; run++ {
+		if _, err := rec.Recount(ctx, "ev1", ""); err != nil {
+			t.Fatalf("recount #%d: %v", run, err)
+		}
+		for _, expected := range fixture.ExpectedResults {
+			logID := expected.RfidLogID
+			checkpointID := "cp-" + expected.CheckpointKey
+			var got string
+			if err := store.DB().QueryRow(
+				`SELECT checkpoint_id FROM results WHERE rfid_log_id = ?`, logID,
+			).Scan(&got); err != nil {
+				t.Fatalf("run #%d result for %s: %v", run, logID, err)
+			}
+			if got != checkpointID {
+				t.Errorf("run #%d log %s checkpoint = %s, want %s", run, logID, got, checkpointID)
+			}
+		}
+		assertMemberTimes(
+			t, store, "m1", run,
+			t0+fixture.ExpectedMemberTimes.StartOffsetMs,
+			t0+fixture.ExpectedMemberTimes.FinishOffsetMs,
+			fixture.ExpectedMemberTimes.CleanTime,
+		)
+	}
+}
+
+type multiPointFixture struct {
+	FixtureVersion int `json:"fixture_version"`
+	Race           struct {
+		StartedAtMs int64 `json:"started_at_ms"`
+	} `json:"race"`
+	Member struct {
+		Number int64  `json:"number"`
+		EPC    string `json:"epc"`
+	} `json:"member"`
+	Checkpoints []struct {
+		Key   string                `json:"key"`
+		Board string                `json:"board"`
+		Type  domain.CheckpointType `json:"type"`
+		Sort  int64                 `json:"sort"`
+	} `json:"checkpoints"`
+	Logs []struct {
+		ID           string `json:"id"`
+		Number       int64  `json:"number"`
+		EPC          string `json:"epc"`
+		TimeOffsetMs int64  `json:"time_offset_ms"`
+		Board        string `json:"board"`
+	} `json:"logs"`
+	ExpectedResults []struct {
+		RfidLogID     string `json:"rfid_log_id"`
+		CheckpointKey string `json:"checkpoint_key"`
+	} `json:"expected_results"`
+	ExpectedMemberTimes struct {
+		StartOffsetMs  int64  `json:"start_offset_ms"`
+		FinishOffsetMs int64  `json:"finish_offset_ms"`
+		CleanTime      string `json:"clean_time"`
+	} `json:"expected_member_times"`
+}
+
+func loadMultiPointFixture(t *testing.T) multiPointFixture {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", "parity", "multi-point-replay-v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture multiPointFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.FixtureVersion != 1 {
+		t.Fatalf("fixture version = %d, want 1", fixture.FixtureVersion)
+	}
+	return fixture
 }
 
 func assertMemberTimes(t *testing.T, store *sqlite.Store, memberID string, run int, wantStart, wantFinish int64, wantClean string) {

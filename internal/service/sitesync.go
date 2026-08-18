@@ -16,7 +16,7 @@ import (
 // offline-created (local-) members. Deterministic ordering so an unchanged
 // event produces byte-identical payloads (idempotent re-push detection).
 
-const syncSchemaVersion = 1
+const syncSchemaVersion = 2
 
 // Fields that round-trip to run5, mirroring the edit whitelist in edits.go.
 var (
@@ -49,6 +49,11 @@ type syncRfidLog struct {
 	RSSI       int    `json:"rssi"`
 	Board      string `json:"board"`
 	DisabledAt *int64 `json:"disabled_at"`
+}
+
+type syncRfidLogEdit struct {
+	ID         string          `json:"id"`
+	DisabledAt json.RawMessage `json:"disabled_at"`
 }
 
 type syncNewMember struct {
@@ -106,6 +111,7 @@ type syncPayload struct {
 	Overwrite     bool   `json:"overwrite"`
 
 	RfidLogs             []syncRfidLog          `json:"rfid_logs"`
+	RfidLogEdits         []syncRfidLogEdit      `json:"rfid_log_edits"`
 	NewMembers           []syncNewMember        `json:"new_members"`
 	MemberEdits          []syncMemberEdit       `json:"member_edits"`
 	ManualResults        []syncManualResult     `json:"manual_results"`
@@ -125,6 +131,7 @@ type syncPayload struct {
 // SyncSummary is the count of what the payload carries (shown in the UI).
 type SyncSummary struct {
 	RfidLogs          int `json:"rfid_logs"`
+	RfidLogEdits      int `json:"rfid_log_edits"`
 	NewMembers        int `json:"new_members"`
 	MemberEdits       int `json:"member_edits"`
 	ManualResults     int `json:"manual_results"`
@@ -140,7 +147,7 @@ type SyncSummary struct {
 func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, overwrite bool) ([]byte, SyncSummary, error) {
 	p := syncPayload{
 		SchemaVersion: syncSchemaVersion, EventID: eventID, Source: "chrono-desk", Overwrite: overwrite,
-		RfidLogs: []syncRfidLog{}, NewMembers: []syncNewMember{}, MemberEdits: []syncMemberEdit{},
+		RfidLogs: []syncRfidLog{}, RfidLogEdits: []syncRfidLogEdit{}, NewMembers: []syncNewMember{}, MemberEdits: []syncMemberEdit{},
 		ManualResults: []syncManualResult{}, CheckpointEdits: []syncCheckpointEdit{}, EventEdits: []syncEventEdit{}, RaceEdits: []syncRaceEdit{},
 		DeletedManualResults: []syncManualResult{}, CheckpointCreates: []syncCheckpointCreate{}, CheckpointDeletes: []string{},
 		CategoryAttaches: []categoryRacePair{}, CategoryDetaches: []categoryRacePair{},
@@ -219,6 +226,7 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	eventEdits := map[string]map[string]json.RawMessage{}
 	raceEdits := map[string]map[string]json.RawMessage{}
 	cpEdits := map[string]map[string]json.RawMessage{}
+	rfidLogEdits := map[string]json.RawMessage{}
 	cpDeleted := map[string]bool{}
 	catAttached := map[string]categoryRacePair{}
 	catDetached := map[string]categoryRacePair{}
@@ -241,6 +249,8 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 		// new_members (above), so an edit to them is redundant/unresolvable.
 		case c.Entity == "member" && syncMemberFields[c.Field] && !strings.HasPrefix(c.EntityID, "local-"):
 			putEdit(memberEdits, c.EntityID, c.Field, c.NewValue)
+		case c.Entity == "rfid_log" && c.Field == "disabled_at":
+			rfidLogEdits[c.EntityID] = json.RawMessage(c.NewValue)
 		case c.Entity == "race" && syncRaceFields[c.Field]:
 			putEdit(raceEdits, c.EntityID, c.Field, c.NewValue)
 		case c.Entity == "checkpoint" && c.Field == "_deleted":
@@ -332,18 +342,30 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	for _, id := range sortedKeys(cpEdits) {
 		p.CheckpointEdits = append(p.CheckpointEdits, syncCheckpointEdit{CheckpointID: id, Fields: cpEdits[id]})
 	}
+	for _, id := range sortedRawKeys(rfidLogEdits) {
+		p.RfidLogEdits = append(p.RfidLogEdits, syncRfidLogEdit{ID: id, DisabledAt: rfidLogEdits[id]})
+	}
 
 	data, err := json.Marshal(p)
 	if err != nil {
 		return nil, SyncSummary{}, fmt.Errorf("encode sync payload: %w", err)
 	}
 	summary := SyncSummary{
-		RfidLogs: len(p.RfidLogs), NewMembers: len(p.NewMembers), MemberEdits: len(p.MemberEdits),
+		RfidLogs: len(p.RfidLogs), RfidLogEdits: len(p.RfidLogEdits), NewMembers: len(p.NewMembers), MemberEdits: len(p.MemberEdits),
 		ManualResults: len(p.ManualResults), CheckpointCreates: len(p.CheckpointCreates),
 		CheckpointEdits: len(p.CheckpointEdits), EventEdits: len(p.EventEdits), RaceEdits: len(p.RaceEdits),
 		CategoryAttaches: len(p.CategoryAttaches), CategoryDetaches: len(p.CategoryDetaches),
 	}
 	return data, summary, nil
+}
+
+func sortedRawKeys(m map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func putEdit(m map[string]map[string]json.RawMessage, id, field, rawValue string) {

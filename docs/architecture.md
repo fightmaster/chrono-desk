@@ -13,9 +13,12 @@ their current status noted.
 
 - Bidirectional sync / conflict resolution. *(v1 deferred.)* **Shipped in v0.3** as opt-in
   push-back of local edits, logs and manual finishes to run5 (token-auth, idempotent,
-  overwrite-gated where destructive). The site remains source of truth; conflict policy is
-  **local edits win** — a re-import replays the `local_changes` journal on top
-  (`ReapplyLocalEdits`).
+  overwrite-gated where destructive). Push schema v2 sends RFID disable/re-enable actions
+  from the `local_changes` journal explicitly; absence from a desktop snapshot never changes
+  a site log. Chrono Desk checks the authenticated run5 capabilities endpoint and fails closed
+  before sending if v2 is unavailable. The site remains source of truth; conflict policy for
+  fields explicitly edited offline is **local edits win** — a re-import replays the journal on
+  top (`ReapplyLocalEdits`).
 - Ranking parity for every run5 race format at once. v1 shipped FixedDistance plus both
   category-ranking strategies; **TimeLimited shipped** as well. Run5Stopwatch is specced
   (`docs/ranking.md`) but not yet implemented — `BuildProtocol` fails closed on it.
@@ -125,7 +128,9 @@ finishes and tune checkpoints on the Live screen.
 
 v0.3 (shipped): chrono-desk ──(sync push/pull, X-SYNC-TOKEN)──▶ run5 — local edits, new
 members, logs and manual finishes sync back; run5 applies them (overwrite-gated where
-destructive). Pull reuses the import path. Site stays the source of truth.
+destructive). RFID flag edits use targeted sync schema v2 deltas after a capabilities
+preflight; raw logs from all producers remain insert-only. Pull reuses the import path. Site
+stays the source of truth.
 
 LAN broadcast (shipped): spectators' phones ──HTTP──▶ chrono-desk `publicweb` (read-only,
 PII-trimmed) — distance dropdown + Призёры/Протокол tabs (absolute & age-group podiums,
@@ -173,6 +178,9 @@ open only while on.
 ## Testing strategy
 
 - Port rfid-sync's table-driven processor tests alongside the engine.
+- Execute the versioned multi-producer fixture in
+  `internal/service/testdata/parity/multi-point-replay-v1.json` here and in run5; rfid-sync
+  consumes the same observations to guard number-first/EPC-fallback member resolution.
 - **Golden tests against real events**: export a finished event from run5 (rfid_logs +
   reference results/member times) into `testdata/`; the Go recount must reproduce the
   reference exactly. This is the guard against PHP/Go divergence — protocols computed
