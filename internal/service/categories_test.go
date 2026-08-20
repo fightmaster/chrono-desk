@@ -71,6 +71,9 @@ func mustAttach(t *testing.T, store *sqlite.Store, raceID, categoryID string) {
 func addCatalogCategory(t *testing.T, store *sqlite.Store, id string) {
 	t.Helper()
 	min, max, g := 1, 99, "female"
+	if id == "cat-x" {
+		min, max = 100, 120
+	}
 	if err := store.UpsertCategory(context.Background(), domain.Category{ID: id, Name: id, Min: &min, Max: &max, Gender: &g}); err != nil {
 		t.Fatalf("upsert catalog category %s: %v", id, err)
 	}
@@ -115,6 +118,26 @@ func TestAttachDetachCategoryGuardedAndJournaled(t *testing.T) {
 	}
 	if raceCatSet(mustListRaceCats(t, store, "race-10k"))["cat-w18"] {
 		t.Fatal("detach did not remove cat-w18")
+	}
+}
+
+func TestAttachCategoryRejectsSameGenderAgeOverlap(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+	male := "male"
+	min, max := 30, 50
+	if err := store.UpsertCategory(ctx, domain.Category{
+		ID: "cat-overlap", Name: "Overlap", Gender: &male, Min: &min, Max: &max,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := AttachCategory(ctx, store, "ev-100", "race-10k", "cat-overlap"); err == nil {
+		t.Fatal("overlapping category attach should fail")
+	}
+	if raceCatSet(mustListRaceCats(t, store, "race-10k"))["cat-overlap"] {
+		t.Fatal("overlapping category was attached")
 	}
 }
 

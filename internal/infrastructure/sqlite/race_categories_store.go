@@ -49,7 +49,7 @@ func (s *Store) ListRaceCategories(ctx context.Context, raceID string) ([]domain
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.name, c.min, c.max, c.gender
 		FROM race_categories rc JOIN categories c ON c.id = rc.category_id
-		WHERE rc.race_id = ? ORDER BY c.name`, raceID)
+		WHERE rc.race_id = ? ORDER BY c.id`, raceID)
 	if err != nil {
 		return nil, fmt.Errorf("list race categories: %w", err)
 	}

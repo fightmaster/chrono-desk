@@ -20,8 +20,9 @@ not required, output parity is.
 
 - `status='ok'` rows rank ahead of `dns`/`dnf`/`dq` rows.
 - Order by `rank_primary DESC`, then `rank_secondary DESC`, then `rank_tertiary DESC`;
-  nulls sort last within each level. **Sort must be stable** — run5 has no explicit
-  tie-break, input order is preserved.
+  nulls sort last within each level, then by canonical member id. `ranking-v2`
+  therefore gives the same result after SQL, delivery or batch-order changes.
+  An official tied place is a separate audited judge decision, not this fallback.
 - Dense places `1..N` assigned to 'ok' rows only; non-ok get `place = null`.
 - Status mapping: MemberStatus enum 1=`dns`, 2=`dnf`, 3=`dq`.
 
@@ -64,6 +65,10 @@ not required, output parity is.
     finishers per gender as excluded; second pass assigns category places skipping them —
     overall medalists don't also take category medals.
 - DNS/DNF/DSQ rows render in the protocol but receive no places.
+- New local category attachments reject inclusive age-range overlaps for the
+  same gender. Imported legacy overlaps remain readable and category lookup is
+  stable by category id until the operator corrects them; id order is not a
+  business priority rule.
 
 ## Top-3 / awards
 

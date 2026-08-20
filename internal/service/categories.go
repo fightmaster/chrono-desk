@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
@@ -28,6 +29,24 @@ func AttachCategory(ctx context.Context, store *sqlite.Store, eventID, raceID, c
 		if err := validateRaceCategory(ctx, txStore, eventID, raceID, categoryID, true); err != nil {
 			return err
 		}
+		categories, err := txStore.ListRaceCategories(ctx, raceID)
+		if err != nil {
+			return err
+		}
+		for _, category := range categories {
+			if category.ID == categoryID {
+				return nil
+			}
+		}
+		catalog, err := txStore.ListCategories(ctx)
+		if err != nil {
+			return err
+		}
+		candidate := catalog[categoryID]
+		categories = append(categories, candidate)
+		if hasCategoryRangeOverlap(categories) {
+			return fmt.Errorf("возрастной диапазон пересекается с другой категорией этой гонки")
+		}
 		if err := txStore.AttachRaceCategory(ctx, raceID, categoryID); err != nil {
 			return err
 		}
@@ -37,6 +56,37 @@ func AttachCategory(ctx context.Context, store *sqlite.Store, eventID, raceID, c
 		return EditResult{}, err
 	}
 	return EditResult{}, nil
+}
+
+func hasCategoryRangeOverlap(categories []domain.Category) bool {
+	for left := 0; left < len(categories); left++ {
+		for right := left + 1; right < len(categories); right++ {
+			if categoryRangesOverlap(categories[left], categories[right]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func categoryRangesOverlap(left, right domain.Category) bool {
+	if left.Gender == nil || right.Gender == nil || *left.Gender != *right.Gender {
+		return false
+	}
+	leftMin, leftMax := categoryBounds(left)
+	rightMin, rightMax := categoryBounds(right)
+	return leftMin <= rightMax && rightMin <= leftMax
+}
+
+func categoryBounds(category domain.Category) (int64, int64) {
+	min, max := int64(-1<<63), int64(1<<63-1)
+	if category.Min != nil {
+		min = int64(*category.Min)
+	}
+	if category.Max != nil {
+		max = int64(*category.Max)
+	}
+	return min, max
 }
 
 // DetachCategory removes a category from a race. It refuses while members of the
