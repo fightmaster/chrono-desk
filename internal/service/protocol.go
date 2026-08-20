@@ -83,7 +83,7 @@ func BuildProtocol(ctx context.Context, store ProtocolStore, raceID string) (Pro
 
 	var lastPasses map[string]ranking.LastPass
 	if race.Format == domain.FormatTimeLimited {
-		if lastPasses, err = store.LastPassesInWindow(ctx, race, members); err != nil {
+		if lastPasses, err = store.LastPassesInWindow(ctx, race); err != nil {
 			return ProtocolResponse{}, err
 		}
 	}

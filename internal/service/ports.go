@@ -14,7 +14,7 @@ type ProtocolStore interface {
 	GetRace(ctx context.Context, raceID string) (domain.Race, error)
 	ListMembersByRace(ctx context.Context, raceID string) ([]domain.Member, error)
 	ListCategories(ctx context.Context) (map[string]domain.Category, error)
-	LastPassesInWindow(ctx context.Context, race domain.Race, members []domain.Member) (map[string]ranking.LastPass, error)
+	LastPassesInWindow(ctx context.Context, race domain.Race) (map[string]ranking.LastPass, error)
 }
 
 type editStore interface {

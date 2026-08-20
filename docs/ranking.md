@@ -99,6 +99,9 @@ against it line by line:
 - TimeLimited: last pass in `[start, start + limit]` by `time_ms DESC, id DESC`,
   `rank_primary = checkpoint.sort` (not negated), `rank_secondary = -elapsedMs`
   clamped at 0 — ported into `internal/ranking` + `Store.LastPassesInWindow`.
+  The store resolves all members with one window-function query using
+  `idx_members_race` and `idx_results_member_time`; protocol refresh no longer
+  executes one SQL query per participant.
 - Intentional difference: rfid-sync skips judge-status members (PHP owns dns/dnf/dq
   rows) and writes only "ok"; chrono-desk's ranking renders status rows itself because
   here it IS the protocol reader — that mirrors run5's PHP, the canonical source.
