@@ -48,3 +48,24 @@
 - Small, focused commits with imperative summaries (`Add event import service`).
 - PRs: short description, key changes, schema/config updates, manual test steps or
   screenshots for UI changes.
+
+## Cross-project timing documentation
+
+Canonical timing ecosystem architecture and shared contracts live in the sibling
+`chrono-docs` repository (`/home/fightmaster/projects/chrono-docs` in the standard
+workspace). Before changing event import/export, observation identity, site sync,
+outbound journals, checkpoint/replay behavior, adjudication or shared engine use:
+
+1. read `chrono-docs/ARCHITECTURE.md`, the applicable ADR and contract;
+2. declare `Docs-Impact: NONE|LOCAL|CROSS_PROJECT|OPERATIONAL|SECURITY`;
+3. update `chrono-docs/contracts/registry.yaml` and the rollout matrix for a
+   versioned cross-project change;
+4. update code, tests and local implementation docs in the same commit;
+5. keep old/new versions interoperable until all field clients are observed on
+   the new contract.
+
+Chrono Desk may pull observations from every event producer, but may push raw
+observations only from its own durable outbound journal. Imported site rows must
+never become desktop-owned. Absence from a payload is never deletion of another
+producer's data. Raw observations are immutable; correction is an explicit
+audited command.
