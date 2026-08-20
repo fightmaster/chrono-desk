@@ -90,3 +90,43 @@ func TestSyncURLRequiresBase(t *testing.T) {
 		t.Error("empty base url must error")
 	}
 }
+
+func TestPullChangeFeedPageUsesOpaqueCursorAndParsesObservations(t *testing.T) {
+	var gotToken, gotAfter, gotLimit string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.Header.Get("X-SYNC-TOKEN")
+		gotAfter = r.URL.Query().Get("after")
+		gotLimit = r.URL.Query().Get("limit")
+		_, _ = w.Write([]byte(`{"schema_version":1,"items":[{"type":"observation_created","observation":{"id":"remote-1","event_id":"936919","observation_version":1,"capture_source_id":"stopwatch:start","origin_system":"stopwatch","origin_instance_id":"watch-1","origin_sequence":4,"status":0,"number":42,"time_ms":1780000000000,"ant":1,"epc":"","rssi":-50,"board":"start","disabled_at":null}}],"next_cursor":"opaque.next+value","has_more":false}`))
+	}))
+	defer srv.Close()
+
+	page, err := PullChangeFeedPage(context.Background(), srv.URL, "secret", "936919", "opaque/previous+value", 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotToken != "secret" || gotAfter != "opaque/previous+value" || gotLimit != "500" {
+		t.Fatalf("request token=%q after=%q limit=%q", gotToken, gotAfter, gotLimit)
+	}
+	if page.SchemaVersion != 1 || page.NextCursor != "opaque.next+value" || len(page.Items) != 1 {
+		t.Fatalf("page = %+v", page)
+	}
+	if got := page.Items[0].Observation; got.ID != "remote-1" || got.OriginInstanceID != "watch-1" || got.TimeMs != 1780000000000 {
+		t.Fatalf("observation = %+v", got)
+	}
+}
+
+func TestCapabilitiesExposeChangeFeedSupport(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"push_schema_versions":[1,2,3],"preferred_push_schema_version":3,"change_feed_schema_versions":[1],"preferred_change_feed_schema_version":1}`))
+	}))
+	defer srv.Close()
+
+	capabilities, err := GetSyncCapabilities(context.Background(), srv.URL, "secret", "936919")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !SupportsChangeFeed(capabilities, 1) || SupportsChangeFeed(capabilities, 2) {
+		t.Fatalf("capabilities = %+v", capabilities)
+	}
+}

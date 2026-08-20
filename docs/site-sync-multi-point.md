@@ -167,7 +167,21 @@ does not fall back to the legacy full snapshot.
 
 Old Chrono Desk clients can still use server v2 during the deployment window.
 This client fails closed against a server without v3 so it never regresses to
-re-sending downloaded observations. Incremental pull remains the next stage.
+re-sending downloaded observations.
+
+## Incremental pull v1: manual path implemented
+
+The manual pull first imports the ordinary event export as an idempotent
+bootstrap and then drains `/api/sync/events/{event}/changes` from the last
+opaque cursor. Each page is validated and applied with its `next_cursor` in one
+SQLite transaction. A raw identity conflict rolls back the page; an imported
+row never creates `observation_outbox`. Overlap with the snapshot fills missing
+origin metadata but preserves Chrono Desk ownership already recorded locally.
+
+After the feed is drained the current implementation performs one full local
+recount. This is deliberately the compatibility path until the impact
+classifier can prove a narrower member scope. Automatic background pull while
+live ingest is running remains the next sub-step.
 
 ## Replay concurrency: a Laravel lock is not enough
 

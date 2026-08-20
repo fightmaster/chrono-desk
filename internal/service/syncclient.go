@@ -20,8 +20,40 @@ const syncHTTPTimeout = 120 * time.Second
 var syncHTTPClient = &http.Client{Timeout: syncHTTPTimeout}
 
 type SyncCapabilities struct {
-	PushSchemaVersions         []int `json:"push_schema_versions"`
-	PreferredPushSchemaVersion int   `json:"preferred_push_schema_version"`
+	PushSchemaVersions               []int `json:"push_schema_versions"`
+	PreferredPushSchemaVersion       int   `json:"preferred_push_schema_version"`
+	ChangeFeedSchemaVersions         []int `json:"change_feed_schema_versions"`
+	PreferredChangeFeedSchemaVersion int   `json:"preferred_change_feed_schema_version"`
+}
+
+type ChangeFeedObservation struct {
+	ID                 string  `json:"id"`
+	EventID            string  `json:"event_id"`
+	ObservationVersion int     `json:"observation_version"`
+	CaptureSourceID    string  `json:"capture_source_id"`
+	OriginSystem       string  `json:"origin_system"`
+	OriginInstanceID   string  `json:"origin_instance_id"`
+	OriginSequence     int64   `json:"origin_sequence"`
+	Status             int     `json:"status"`
+	Number             int64   `json:"number"`
+	TimeMs             int64   `json:"time_ms"`
+	Ant                int     `json:"ant"`
+	EPC                string  `json:"epc"`
+	RSSI               int     `json:"rssi"`
+	Board              string  `json:"board"`
+	DisabledAt         *string `json:"disabled_at"`
+}
+
+type ChangeFeedItem struct {
+	Type        string                `json:"type"`
+	Observation ChangeFeedObservation `json:"observation"`
+}
+
+type ChangeFeedPage struct {
+	SchemaVersion int              `json:"schema_version"`
+	Items         []ChangeFeedItem `json:"items"`
+	NextCursor    string           `json:"next_cursor"`
+	HasMore       bool             `json:"has_more"`
 }
 
 type ObservationAckItem struct {
@@ -129,6 +161,45 @@ func supportsSyncSchema(versions []int, want int) bool {
 		}
 	}
 	return false
+}
+
+func SupportsChangeFeed(capabilities SyncCapabilities, version int) bool {
+	return supportsSyncSchema(capabilities.ChangeFeedSchemaVersions, version)
+}
+
+func PullChangeFeedPage(ctx context.Context, baseURL, token, eventID, after string, limit int) (ChangeFeedPage, error) {
+	url, err := syncURL(baseURL, eventID)
+	if err != nil {
+		return ChangeFeedPage{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/changes", nil)
+	if err != nil {
+		return ChangeFeedPage{}, fmt.Errorf("сформировать запрос change feed: %w", err)
+	}
+	query := req.URL.Query()
+	if after != "" {
+		query.Set("after", after)
+	}
+	query.Set("limit", fmt.Sprint(limit))
+	req.URL.RawQuery = query.Encode()
+	req.Header.Set("X-SYNC-TOKEN", token)
+	resp, err := syncHTTPClient.Do(req)
+	if err != nil {
+		return ChangeFeedPage{}, fmt.Errorf("нет связи с change feed сайта: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ChangeFeedPage{}, fmt.Errorf("change feed ответил %d: %s", resp.StatusCode, summaryError(body))
+	}
+	var page ChangeFeedPage
+	if err := json.Unmarshal(body, &page); err != nil {
+		return ChangeFeedPage{}, fmt.Errorf("change feed не разобран: %w", err)
+	}
+	if page.SchemaVersion != 1 || strings.TrimSpace(page.NextCursor) == "" {
+		return ChangeFeedPage{}, fmt.Errorf("change feed вернул неподдерживаемый контракт")
+	}
+	return page, nil
 }
 
 // PullExport GETs the current event export from run5 (same contract chrono-desk

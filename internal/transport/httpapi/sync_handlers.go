@@ -167,5 +167,17 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"imported": stats, "site_wins": siteWins})
+	changes, err := service.PullEventChanges(r.Context(), store, cfg.BaseURL, cfg.Token, eventID, time.Now())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	recount, err := service.NewRecounter(store, s.logger, false).Recount(r.Context(), eventID, "")
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"imported": stats, "changes": changes, "recount": recount, "site_wins": siteWins,
+	})
 }

@@ -219,5 +219,7 @@ CREATE TABLE IF NOT EXISTS sync_config (
     base_url          TEXT NOT NULL DEFAULT '',
     token             TEXT NOT NULL DEFAULT '',
     last_synced_at    INTEGER, -- unix ms of last successful push
-    last_payload_hash TEXT     -- sha256 of last pushed payload (skip no-op re-push)
+    last_payload_hash TEXT,    -- sha256 of last pushed payload (skip no-op re-push)
+    pull_cursor       TEXT,    -- opaque RUN5 event change-feed cursor
+    last_pulled_at    INTEGER  -- unix ms of last atomically applied feed page
 );

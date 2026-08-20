@@ -33,14 +33,17 @@ type SyncConfig struct {
 	Token           string  `json:"token"`
 	LastSyncedAt    *int64  `json:"last_synced_at"`
 	LastPayloadHash *string `json:"last_payload_hash"`
+	PullCursor      *string `json:"pull_cursor"`
+	LastPulledAt    *int64  `json:"last_pulled_at"`
 }
 
 // GetSyncConfig returns the event's sync target; a zero value if unset.
 func (s *Store) GetSyncConfig(ctx context.Context, eventID string) (SyncConfig, error) {
 	var c SyncConfig
 	err := s.db.QueryRowContext(ctx,
-		`SELECT base_url, token, last_synced_at, last_payload_hash FROM sync_config WHERE event_id = ?`,
-		eventID).Scan(&c.BaseURL, &c.Token, &c.LastSyncedAt, &c.LastPayloadHash)
+		`SELECT base_url, token, last_synced_at, last_payload_hash, pull_cursor, last_pulled_at
+		 FROM sync_config WHERE event_id = ?`,
+		eventID).Scan(&c.BaseURL, &c.Token, &c.LastSyncedAt, &c.LastPayloadHash, &c.PullCursor, &c.LastPulledAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SyncConfig{}, nil
 	}
@@ -48,6 +51,117 @@ func (s *Store) GetSyncConfig(ctx context.Context, eventID string) (SyncConfig, 
 		return SyncConfig{}, fmt.Errorf("get sync config %s: %w", eventID, err)
 	}
 	return c, nil
+}
+
+// GetPullCursor returns the last cursor committed with a complete feed page.
+func (s *Store) GetPullCursor(ctx context.Context, eventID string) (*string, error) {
+	var cursor *string
+	err := s.db.QueryRowContext(ctx, `SELECT pull_cursor FROM sync_config WHERE event_id = ?`, eventID).Scan(&cursor)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get pull cursor %s: %w", eventID, err)
+	}
+	return cursor, nil
+}
+
+// ApplyObservationFeedPage validates immutable conflicts, imports every remote
+// observation without claiming ownership and advances the opaque cursor in the
+// same transaction. Any bad item rolls back the complete page and cursor.
+func (s *Store) ApplyObservationFeedPage(ctx context.Context, eventID string, logs []domain.RfidLog, nextCursor string, pulledAtMs int64) error {
+	if strings.TrimSpace(nextCursor) == "" {
+		return fmt.Errorf("next pull cursor is required")
+	}
+	return s.WithinTx(ctx, func(txStore *Store) error {
+		for _, incoming := range logs {
+			if incoming.EventID != eventID {
+				return fmt.Errorf("observation %s belongs to event %s", incoming.ID, incoming.EventID)
+			}
+			existing, found, err := txStore.findRfidLog(ctx, incoming.ID)
+			if err != nil {
+				return err
+			}
+			if found {
+				if !sameImmutableObservation(existing, incoming) {
+					return fmt.Errorf("observation %s conflicts with immutable local raw data", incoming.ID)
+				}
+				if !compatibleOrigin(existing, incoming) {
+					return fmt.Errorf("observation %s conflicts with local origin metadata", incoming.ID)
+				}
+				if _, err := txStore.db.ExecContext(ctx, `
+					UPDATE rfid_logs SET disabled_at = ?,
+						observation_version = COALESCE(observation_version, NULLIF(?, 0)),
+						capture_source_id = COALESCE(capture_source_id, NULLIF(?, '')),
+						origin_system = COALESCE(origin_system, NULLIF(?, '')),
+						origin_instance_id = COALESCE(origin_instance_id, NULLIF(?, '')),
+						origin_sequence = COALESCE(origin_sequence, NULLIF(?, 0))
+					WHERE id = ?`, incoming.DisabledAt, incoming.ObservationVersion, incoming.CaptureSourceID,
+					incoming.OriginSystem, incoming.OriginInstanceID, incoming.OriginSequence, incoming.ID); err != nil {
+					return fmt.Errorf("update feed observation %s: %w", incoming.ID, err)
+				}
+				continue
+			}
+			if _, err := txStore.db.ExecContext(ctx, `
+				INSERT INTO rfid_logs (
+					id, event_id, status, number, time_ms, ant, epc, rssi, board, disabled_at,
+					observation_version, capture_source_id, origin_system, origin_instance_id, origin_sequence)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				incoming.ID, incoming.EventID, incoming.Status, incoming.Number, incoming.TimeMs, incoming.Ant,
+				incoming.EPC, incoming.RSSI, incoming.Board, incoming.DisabledAt,
+				nullablePositiveInt(incoming.ObservationVersion), nullableString(incoming.CaptureSourceID),
+				nullableString(incoming.OriginSystem), nullableString(incoming.OriginInstanceID),
+				nullablePositiveInt64(incoming.OriginSequence)); err != nil {
+				return fmt.Errorf("insert feed observation %s: %w", incoming.ID, err)
+			}
+		}
+		if _, err := txStore.db.ExecContext(ctx, `
+			INSERT INTO sync_config (event_id, pull_cursor, last_pulled_at) VALUES (?, ?, ?)
+			ON CONFLICT(event_id) DO UPDATE SET pull_cursor=excluded.pull_cursor, last_pulled_at=excluded.last_pulled_at`,
+			eventID, nextCursor, pulledAtMs); err != nil {
+			return fmt.Errorf("advance pull cursor %s: %w", eventID, err)
+		}
+		return nil
+	})
+}
+
+func (s *Store) findRfidLog(ctx context.Context, id string) (domain.RfidLog, bool, error) {
+	var result domain.RfidLog
+	var version, sequence sql.NullInt64
+	var captureSource, originSystem, originInstance sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, event_id, status, number, time_ms, ant, epc, rssi, board, disabled_at,
+			observation_version, capture_source_id, origin_system, origin_instance_id, origin_sequence
+		FROM rfid_logs WHERE id = ?`, id).Scan(
+		&result.ID, &result.EventID, &result.Status, &result.Number, &result.TimeMs, &result.Ant,
+		&result.EPC, &result.RSSI, &result.Board, &result.DisabledAt,
+		&version, &captureSource, &originSystem, &originInstance, &sequence,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.RfidLog{}, false, nil
+	}
+	if err != nil {
+		return domain.RfidLog{}, false, fmt.Errorf("read existing observation %s: %w", id, err)
+	}
+	result.ObservationVersion = int(version.Int64)
+	result.CaptureSourceID = captureSource.String
+	result.OriginSystem = originSystem.String
+	result.OriginInstanceID = originInstance.String
+	result.OriginSequence = sequence.Int64
+	return result, true, nil
+}
+
+func sameImmutableObservation(a, b domain.RfidLog) bool {
+	return a.ID == b.ID && a.EventID == b.EventID && a.Status == b.Status && a.Number == b.Number &&
+		a.TimeMs == b.TimeMs && a.Ant == b.Ant && a.EPC == b.EPC && a.RSSI == b.RSSI && a.Board == b.Board
+}
+
+func compatibleOrigin(a, b domain.RfidLog) bool {
+	return (a.ObservationVersion == 0 || b.ObservationVersion == 0 || a.ObservationVersion == b.ObservationVersion) &&
+		(a.CaptureSourceID == "" || b.CaptureSourceID == "" || a.CaptureSourceID == b.CaptureSourceID) &&
+		(a.OriginSystem == "" || b.OriginSystem == "" || a.OriginSystem == b.OriginSystem) &&
+		(a.OriginInstanceID == "" || b.OriginInstanceID == "" || a.OriginInstanceID == b.OriginInstanceID) &&
+		(a.OriginSequence == 0 || b.OriginSequence == 0 || a.OriginSequence == b.OriginSequence)
 }
 
 // SetSyncConfig upserts the base URL and token, preserving the last-sync fields.

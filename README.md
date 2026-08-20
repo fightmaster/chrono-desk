@@ -10,8 +10,10 @@ The site stays the source of truth. Synchronization is bidirectional: the deskto
 the current event export and pushes local edits/manual finishes plus only the raw
 observations recorded in its durable outbound journal. Push schema v3 uses a server
 capability preflight and item-level acknowledgements, so observations pulled from other
-timing points are never claimed or uploaded by this desktop. Incremental pull during an
-event is the next rollout stage; current pull still imports a full event snapshot.
+timing points are never claimed or uploaded by this desktop. Manual pull imports the full
+event snapshot and then drains the v1 change feed page by page, committing each opaque
+cursor atomically with its observations. Background pull while live ingest is running is
+the next rollout sub-step.
 
 ## Ecosystem
 
@@ -48,7 +50,7 @@ Remaining for v0.1: the run5 `event:export` command on the site.
   offline recalculation · results screen + top-3 · Excel protocol export
 - **v0.2**: live TCP ingest from Feibot in the local network, live standings
 - **v0.3**: push-own observation batches with durable acknowledgements · registration
-  and judge edits sync · reader heartbeat monitoring · full-snapshot pull
+  and judge edits sync · reader heartbeat monitoring · snapshot + incremental pull
 - later: RaceTorch integration, multi-tool monitoring/processing center; a machine-readable
   results feed (e.g. XML/JSON) for IPTV/streaming overlays so a broadcast can show live
   times and the leaderboard as on-screen text (idea — to be scoped)

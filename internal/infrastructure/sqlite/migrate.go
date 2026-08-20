@@ -21,6 +21,29 @@ func migrate(db *sql.DB) error {
 	if err := addObservationOutboxBatchID(db); err != nil {
 		return err
 	}
+	if err := addSyncPullCursor(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+func addSyncPullCursor(db *sql.DB) error {
+	for _, column := range []struct {
+		name, typeSQL string
+	}{
+		{"pull_cursor", "TEXT"},
+		{"last_pulled_at", "INTEGER"},
+	} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sync_config') WHERE name = ?`, column.name).Scan(&count); err != nil {
+			return fmt.Errorf("inspect sync_config.%s: %w", column.name, err)
+		}
+		if count == 0 {
+			if _, err := db.Exec(`ALTER TABLE sync_config ADD COLUMN ` + column.name + ` ` + column.typeSQL); err != nil {
+				return fmt.Errorf("add sync_config.%s: %w", column.name, err)
+			}
+		}
+	}
 	return nil
 }
 

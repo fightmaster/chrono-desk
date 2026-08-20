@@ -145,8 +145,11 @@ finishes and tune checkpoints on the Live screen.
 v0.3 (shipped): chrono-desk ──(sync push/pull, X-SYNC-TOKEN)──▶ run5 — local edits, new
 members, logs and manual finishes sync back; run5 applies them (overwrite-gated where
 destructive). Current push schema v3 uses a capabilities preflight, sends only desktop-owned
-raw observation batches plus explicit edits and persists item acknowledgements. Pull still
-reuses the full import path; incremental pull is the next stage. Site stays the source of truth.
+raw observation batches plus explicit edits and persists item acknowledgements. Manual pull
+uses the full import as an idempotent bootstrap, then drains RUN5 change-feed v1. Every page
+and opaque cursor commit in one SQLite transaction; imported observations bypass the ownership
+outbox. Background polling during a live session is the next sub-step. Site stays the source
+of truth.
 
 LAN broadcast (shipped): spectators' phones ──HTTP──▶ chrono-desk `publicweb` (read-only,
 PII-trimmed) — distance dropdown + Призёры/Протокол tabs (absolute & age-group podiums,
