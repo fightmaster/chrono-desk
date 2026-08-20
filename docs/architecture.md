@@ -108,6 +108,11 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    second SQLite connection. Failure tests force journal inserts to fail and verify that no
    partial live data remains. Recount likewise keeps its wipe, RFID replay and manual-result
    reapplication in one transaction, so a failed replay preserves the previous protocol.
+   Live checkpoint progression also reads duplicate/disabled state, resolves the
+   member, reads previous passes, selects the next checkpoint and writes the
+   result inside one SQLite transaction. The single-connection event store
+   serializes competing local transitions; a concurrent mixed number/EPC test
+   proves one logical `once` checkpoint is not accepted twice.
 8. **Application ports are declared next to their consumers, not in SQLite.**
    `service.BuildProtocol` depends on a small `ProtocolStore`; recount, local edits and
    event import use similarly narrow consumer-side ports with thin SQLite adapters inside

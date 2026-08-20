@@ -151,7 +151,7 @@ func (r *ProcessorRepo) WithTx(ctx context.Context, fn func(tx processor.TxRepos
 		// The processor returns commit=false only when INSERT OR IGNORE inserted
 		// nothing, before member times are touched. Any error escapes and rolls
 		// back the enclosing recount transaction.
-		_, err := fn(&txRepo{db: r.store.db})
+		_, err := fn(r)
 		return err
 	}
 
@@ -159,7 +159,7 @@ func (r *ProcessorRepo) WithTx(ctx context.Context, fn func(tx processor.TxRepos
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	commit, err := fn(&txRepo{db: tx})
+	commit, err := fn(&ProcessorRepo{store: r.store, db: tx})
 	if err != nil {
 		tx.Rollback() //nolint:errcheck
 		return err
@@ -170,11 +170,7 @@ func (r *ProcessorRepo) WithTx(ctx context.Context, fn func(tx processor.TxRepos
 	return tx.Commit()
 }
 
-type txRepo struct {
-	db execer
-}
-
-func (r *txRepo) InsertResult(ctx context.Context, logEntry domain.RfidLog, member processor.Member, checkpoint processor.Checkpoint) (bool, error) {
+func (r *ProcessorRepo) InsertResult(ctx context.Context, logEntry domain.RfidLog, member processor.Member, checkpoint processor.Checkpoint) (bool, error) {
 	// INSERT OR IGNORE relies on uq_results_rfid_log — mirrors rfid-sync's
 	// duplicate-key handling.
 	res, err := r.db.ExecContext(ctx, `
@@ -195,7 +191,7 @@ func (r *txRepo) InsertResult(ctx context.Context, logEntry domain.RfidLog, memb
 //   - backfill start from race start when the member has none,
 //   - START checkpoint overwrites start_time unconditionally,
 //   - FINISH sets finish_time + clean_time only once.
-func (r *txRepo) UpdateMemberTimes(ctx context.Context, member processor.Member, checkpoint processor.Checkpoint, eventTimeMs int64) error {
+func (r *ProcessorRepo) UpdateMemberTimes(ctx context.Context, member processor.Member, checkpoint processor.Checkpoint, eventTimeMs int64) error {
 	plan := planMemberTimes(member, checkpoint, eventTimeMs)
 
 	switch plan.StartWrite {

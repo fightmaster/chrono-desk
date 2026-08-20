@@ -31,6 +31,8 @@ type fakeProcessorRepository struct {
 	checkpointsErr     error
 	insertResultFn     func(checkpoint Checkpoint) (bool, error)
 	updateMemberErr    error
+	inTx               bool
+	readOutsideTx      bool
 
 	txCalls               int
 	commitDecisions       []bool
@@ -40,32 +42,40 @@ type fakeProcessorRepository struct {
 }
 
 func (r *fakeProcessorRepository) ResultExists(context.Context, string) (bool, error) {
+	r.readOutsideTx = r.readOutsideTx || !r.inTx
 	return r.resultExists, r.resultExistsErr
 }
 
 func (r *fakeProcessorRepository) RfidLogDisabled(context.Context, string) (bool, error) {
+	r.readOutsideTx = r.readOutsideTx || !r.inTx
 	return r.rfidLogDisabled, r.rfidLogDisabledErr
 }
 
 func (r *fakeProcessorRepository) LoadMember(context.Context, string, domain.RfidLog) (Member, bool, error) {
+	r.readOutsideTx = r.readOutsideTx || !r.inTx
 	r.memberCalls++
 	return r.member, r.memberFound, r.memberErr
 }
 
 func (r *fakeProcessorRepository) LoadLastResult(context.Context, string, string) (LastResult, error) {
+	r.readOutsideTx = r.readOutsideTx || !r.inTx
 	return r.lastResult, r.lastResultErr
 }
 
 func (r *fakeProcessorRepository) LoadPassedCheckpoints(context.Context, string, string) (map[string]bool, error) {
+	r.readOutsideTx = r.readOutsideTx || !r.inTx
 	return r.passed, r.passedErr
 }
 
 func (r *fakeProcessorRepository) LoadCheckpoints(context.Context, string, string) ([]Checkpoint, error) {
+	r.readOutsideTx = r.readOutsideTx || !r.inTx
 	return r.checkpoints, r.checkpointsErr
 }
 
 func (r *fakeProcessorRepository) WithTx(ctx context.Context, fn func(tx TxRepository) (bool, error)) error {
 	r.txCalls++
+	r.inTx = true
+	defer func() { r.inTx = false }()
 	commit, err := fn(r)
 	if err != nil {
 		return err
@@ -126,6 +136,9 @@ func TestProcessSelectsFirstEligibleCheckpoint(t *testing.T) {
 
 	if repo.txCalls != 1 {
 		t.Fatalf("tx calls = %d, want 1", repo.txCalls)
+	}
+	if repo.readOutsideTx {
+		t.Fatal("progression state was read outside the transaction")
 	}
 	if len(repo.commitDecisions) != 1 || !repo.commitDecisions[0] {
 		t.Fatalf("commit decisions = %#v, want [true]", repo.commitDecisions)
@@ -196,8 +209,8 @@ func TestProcessSkipsDisabledRfidLogWithoutRecreatingResult(t *testing.T) {
 	if repo.memberCalls != 0 {
 		t.Fatalf("member loads = %d, want 0 (disabled source should stop before derivation)", repo.memberCalls)
 	}
-	if repo.txCalls != 0 {
-		t.Fatalf("tx calls = %d, want 0 (disabled source should not recreate result)", repo.txCalls)
+	if repo.txCalls != 1 || len(repo.commitDecisions) != 1 || repo.commitDecisions[0] {
+		t.Fatalf("transaction = calls:%d commits:%v, want one rolled-back read transition", repo.txCalls, repo.commitDecisions)
 	}
 }
 
@@ -262,8 +275,8 @@ func TestProcessSkipsCheckpointSleepingAfterPreviousResult(t *testing.T) {
 		t.Fatalf("Process() error = %v", err)
 	}
 
-	if repo.txCalls != 0 {
-		t.Fatalf("tx calls = %d, want 0 (checkpoint still sleeping)", repo.txCalls)
+	if repo.txCalls != 1 || len(repo.commitDecisions) != 1 || repo.commitDecisions[0] {
+		t.Fatalf("transaction = calls:%d commits:%v, want one rolled-back read transition", repo.txCalls, repo.commitDecisions)
 	}
 }
 
@@ -347,8 +360,8 @@ func TestProcessRespectsRaceFilter(t *testing.T) {
 		t.Fatalf("Process() error = %v", err)
 	}
 
-	if repo.txCalls != 0 {
-		t.Fatalf("tx calls = %d, want 0 (member not in filtered race)", repo.txCalls)
+	if repo.txCalls != 1 || len(repo.commitDecisions) != 1 || repo.commitDecisions[0] {
+		t.Fatalf("transaction = calls:%d commits:%v, want one rolled-back read transition", repo.txCalls, repo.commitDecisions)
 	}
 }
 

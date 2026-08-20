@@ -34,59 +34,50 @@ func (p *Processor) Process(ctx context.Context, logEntry domain.RfidLog, raceFi
 		return nil
 	}
 
-	exists, err := p.repo.ResultExists(ctx, logEntry.ID)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-
-	disabled, err := p.repo.RfidLogDisabled(ctx, logEntry.ID)
-	if err != nil {
-		return err
-	}
-	if disabled {
-		p.debugLog("skip_push_disabled_rfid_log", "rfid_log_id=%s", logEntry.ID)
-		return nil
-	}
-
-	member, found, err := p.repo.LoadMember(ctx, logEntry.EventID, logEntry)
-	if err != nil {
-		return err
-	}
-	if !found {
-		return nil
-	}
-	if raceFilter != "" && member.RaceID != raceFilter {
-		return nil
-	}
-
-	lastResult, err := p.repo.LoadLastResult(ctx, member.RaceID, member.ID)
-	if err != nil {
-		return err
-	}
-
-	passed, err := p.repo.LoadPassedCheckpoints(ctx, member.RaceID, member.ID)
-	if err != nil {
-		return err
-	}
-
-	checkpoints, err := p.repo.LoadCheckpoints(ctx, member.RaceID, logEntry.Board)
-	if err != nil {
-		return err
-	}
-	if len(checkpoints) == 0 {
-		return nil
-	}
-
-	checkpoint, eligible := selectCheckpoint(logEntry, member, lastResult, passed, checkpoints)
-	if !eligible {
-		return nil
-	}
 	eventTimeMs := logEntry.TimeMs
 	stored := false
+	memberID := ""
 	if err := p.repo.WithTx(ctx, func(tx TxRepository) (bool, error) {
+		exists, err := tx.ResultExists(ctx, logEntry.ID)
+		if err != nil || exists {
+			return false, err
+		}
+
+		disabled, err := tx.RfidLogDisabled(ctx, logEntry.ID)
+		if err != nil {
+			return false, err
+		}
+		if disabled {
+			p.debugLog("skip_push_disabled_rfid_log", "rfid_log_id=%s", logEntry.ID)
+			return false, nil
+		}
+
+		member, found, err := tx.LoadMember(ctx, logEntry.EventID, logEntry)
+		if err != nil || !found {
+			return false, err
+		}
+		if raceFilter != "" && member.RaceID != raceFilter {
+			return false, nil
+		}
+		memberID = member.ID
+
+		lastResult, err := tx.LoadLastResult(ctx, member.RaceID, member.ID)
+		if err != nil {
+			return false, err
+		}
+		passed, err := tx.LoadPassedCheckpoints(ctx, member.RaceID, member.ID)
+		if err != nil {
+			return false, err
+		}
+		checkpoints, err := tx.LoadCheckpoints(ctx, member.RaceID, logEntry.Board)
+		if err != nil || len(checkpoints) == 0 {
+			return false, err
+		}
+		checkpoint, eligible := selectCheckpoint(logEntry, member, lastResult, passed, checkpoints)
+		if !eligible {
+			return false, nil
+		}
+
 		inserted, err := tx.InsertResult(ctx, logEntry, member, checkpoint)
 		if err != nil {
 			return false, err
@@ -108,7 +99,7 @@ func (p *Processor) Process(ctx context.Context, logEntry domain.RfidLog, raceFi
 		p.debugLog("result_exists", "rfid_log_id=%s", logEntry.ID)
 		return nil
 	}
-	p.debugLog("result_stored", "member_id=%s result_time_ms=%d", member.ID, eventTimeMs)
+	p.debugLog("result_stored", "member_id=%s result_time_ms=%d", memberID, eventTimeMs)
 
 	return nil
 }
