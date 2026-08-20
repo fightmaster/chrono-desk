@@ -7,6 +7,7 @@ import (
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
+	timing "gitlab.com/fightmaster1/timing-core"
 )
 
 // ProcessorRepo implements processor.Repository over an event database.
@@ -195,38 +196,47 @@ func (r *txRepo) InsertResult(ctx context.Context, logEntry domain.RfidLog, memb
 //   - START checkpoint overwrites start_time unconditionally,
 //   - FINISH sets finish_time + clean_time only once.
 func (r *txRepo) UpdateMemberTimes(ctx context.Context, member processor.Member, checkpoint processor.Checkpoint, eventTimeMs int64) error {
-	startTime := member.StartTimeMs
+	plan := planMemberTimes(member, checkpoint, eventTimeMs)
 
-	if startTime == nil && member.RaceStartedAtMs != nil {
+	switch plan.StartWrite {
+	case timing.StartWriteIfNull:
 		if _, err := r.db.ExecContext(ctx,
 			`UPDATE members SET start_time_ms = ? WHERE id = ? AND start_time_ms IS NULL`,
-			*member.RaceStartedAtMs, member.ID); err != nil {
+			*plan.StartTimeMs, member.ID); err != nil {
 			return fmt.Errorf("backfill start time: %w", err)
 		}
-		startTime = member.RaceStartedAtMs
-	}
-
-	if checkpoint.Type == domain.CheckpointStart {
+	case timing.StartWriteReplace:
 		if _, err := r.db.ExecContext(ctx,
-			`UPDATE members SET start_time_ms = ? WHERE id = ?`, eventTimeMs, member.ID); err != nil {
+			`UPDATE members SET start_time_ms = ? WHERE id = ?`, *plan.StartTimeMs, member.ID); err != nil {
 			return fmt.Errorf("set start time: %w", err)
 		}
-		startTime = &eventTimeMs
 	}
 
-	if checkpoint.Type == domain.CheckpointFinish && member.FinishTimeMs == nil {
+	if plan.FinishTimeMs != nil {
 		var cleanTime sql.NullString
-		if startTime != nil {
-			cleanTime = sql.NullString{String: processor.FormatCleanTime(*startTime, eventTimeMs), Valid: true}
+		if plan.CleanTime != nil {
+			cleanTime = sql.NullString{String: *plan.CleanTime, Valid: true}
 		}
 		if _, err := r.db.ExecContext(ctx,
 			`UPDATE members SET finish_time_ms = ?, clean_time = ? WHERE id = ? AND finish_time_ms IS NULL`,
-			eventTimeMs, cleanTime, member.ID); err != nil {
+			*plan.FinishTimeMs, cleanTime, member.ID); err != nil {
 			return fmt.Errorf("set finish time: %w", err)
 		}
 	}
 
 	return nil
+}
+
+func planMemberTimes(member processor.Member, checkpoint processor.Checkpoint, eventTimeMs int64) timing.MemberTimePlan {
+	return timing.PlanMemberTimes(
+		timing.Member[string]{
+			ID: member.ID, RaceID: member.RaceID,
+			StartTimeMs: member.StartTimeMs, FinishTimeMs: member.FinishTimeMs,
+			RaceStartedAtMs: member.RaceStartedAtMs,
+		},
+		int(checkpoint.Type),
+		eventTimeMs,
+	)
 }
 
 func nullableInt64(v sql.NullInt64) *int64 {
