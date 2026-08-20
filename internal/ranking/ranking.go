@@ -6,8 +6,6 @@
 package ranking
 
 import (
-	"sort"
-
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	timing "gitlab.com/fightmaster1/timing-core"
 )
@@ -142,13 +140,17 @@ func Protocol(race domain.Race, members []domain.Member, lastPasses map[string]L
 		}
 	}
 
-	sort.SliceStable(rows, func(i, j int) bool {
-		return lessRank(rows[i], rows[j])
-	})
-
-	out := make([]Row, 0, len(rows))
-	place := 0
+	inputs := make([]timing.RankInput[string], 0, len(rows))
+	rowsByMember := make(map[string]*rankRow, len(rows))
 	for _, r := range rows {
+		inputs = append(inputs, rankInputFromRow(r))
+		rowsByMember[r.member.ID] = r
+	}
+	ranked := timing.RankOutcomes(inputs, race.CategoryExcludesTopByGender)
+
+	out := make([]Row, 0, len(ranked))
+	for _, rankedRow := range ranked {
+		r := rowsByMember[rankedRow.Input.MemberID]
 		row := Row{
 			Member:             r.member,
 			Status:             r.status,
@@ -156,103 +158,20 @@ func Protocol(race domain.Race, members []domain.Member, lastPasses map[string]L
 			ElapsedMs:          r.elapsedMs,
 			LastPassAtMs:       r.lastPassAtMs,
 			LastCheckpointName: r.lastCheckpointName,
-		}
-		if r.status == "ok" {
-			place++
-			p := place
-			row.Place = &p
+			Place:              rankedRow.Place,
+			GenderPlace:        rankedRow.GenderPlace,
+			CategoryPlace:      rankedRow.CategoryPlace,
 		}
 		out = append(out, row)
 	}
-
-	assignGenderPlaces(out)
-	assignCategoryPlaces(out, race.CategoryExcludesTopByGender)
 	return out
 }
 
-// lessRank: ok ahead of non-ok; then rank_primary/secondary/tertiary DESC,
-// nil sorting last within each level.
-func lessRank(a, b *rankRow) bool {
-	aOK, bOK := a.status == "ok", b.status == "ok"
-	if aOK != bOK {
-		return aOK
-	}
-	if c := compareDescNullsLast(a.rankPrimary, b.rankPrimary); c != 0 {
-		return c < 0
-	}
-	if c := compareDescNullsLast(a.rankSecondary, b.rankSecondary); c != 0 {
-		return c < 0
-	}
-	if c := compareDescNullsLast(a.rankTertiary, b.rankTertiary); c != 0 {
-		return c < 0
-	}
-	return false // stable sort keeps input order
-}
-
-// compareDescNullsLast returns <0 when a ranks ahead of b under DESC order
-// with nulls last.
-func compareDescNullsLast(a, b *int64) int {
-	switch {
-	case a == nil && b == nil:
-		return 0
-	case a == nil:
-		return 1
-	case b == nil:
-		return -1
-	case *a > *b:
-		return -1
-	case *a < *b:
-		return 1
-	default:
-		return 0
-	}
-}
-
-func assignGenderPlaces(rows []Row) {
-	counters := map[string]int{}
-	for i := range rows {
-		if rows[i].Place == nil || rows[i].Member.Gender == nil {
-			continue
-		}
-		g := *rows[i].Member.Gender
-		counters[g]++
-		p := counters[g]
-		rows[i].GenderPlace = &p
-	}
-}
-
-// topPerGender is run5's hard-coded exclusion depth for
-// ExcludeTopByGenderCategoryRankingStrategy.
-const topPerGender = 3
-
-func assignCategoryPlaces(rows []Row, excludeTopByGender bool) {
-	excluded := map[string]bool{} // member id → excluded from category standings
-	if excludeTopByGender {
-		seen := map[string]int{}
-		for _, r := range rows {
-			if r.Place == nil || r.Member.Gender == nil {
-				continue
-			}
-			g := *r.Member.Gender
-			if seen[g] < topPerGender {
-				seen[g]++
-				excluded[r.Member.ID] = true
-			}
-		}
-	}
-
-	counters := map[string]int{}
-	for i := range rows {
-		r := &rows[i]
-		if r.Place == nil || r.Member.CategoryID == nil || *r.Member.CategoryID == "" {
-			continue
-		}
-		if excluded[r.Member.ID] {
-			continue
-		}
-		c := *r.Member.CategoryID
-		counters[c]++
-		p := counters[c]
-		r.CategoryPlace = &p
+func rankInputFromRow(row *rankRow) timing.RankInput[string] {
+	return timing.RankInput[string]{
+		MemberID: row.member.ID, Status: row.status,
+		Gender: row.member.Gender, CategoryID: row.member.CategoryID,
+		RankPrimary: row.rankPrimary, RankSecondary: row.rankSecondary,
+		RankTertiary: row.rankTertiary,
 	}
 }
