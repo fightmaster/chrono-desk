@@ -16,7 +16,10 @@ their current status noted.
   overwrite-gated where destructive). Push schema v2 sends RFID disable/re-enable actions
   from the `local_changes` journal explicitly; absence from a desktop snapshot never changes
   a site log. Chrono Desk checks the authenticated run5 capabilities endpoint and fails closed
-  before sending if v2 is unavailable. The site remains source of truth; conflict policy for
+  before sending if v2 is unavailable. **Current v3 push** now sends raw observations only
+  from the durable ownership outbox, requires advertised v3 support and persists item-level
+  acknowledgements; it fails closed instead of falling back to a full-log v2 snapshot. The
+  site remains source of truth; conflict policy for
   fields explicitly edited offline is **local edits win** — a re-import replays the journal on
   top (`ReapplyLocalEdits`).
 - Ranking parity for every run5 race format at once. v1 shipped FixedDistance plus both
@@ -118,10 +121,12 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    deterministic RFID id is later seen locally. One installation identity and
    monotonic sequence are persisted in `.observation-origin.sqlite` alongside the
    event databases; sequence gaps after a rolled-back event transaction are
-   valid, reuse after restart is not. The journal is the source for sync v3.
-   Until RUN5 accepts v3, the current v2 payload remains unchanged and still
-   sends the legacy full log set; do not switch the client before server-first
-   capability rollout.
+   valid, reuse after restart is not. Sync v3 assigns pending rows to a stable
+   batch before HTTP, retries the same `sent` batch after a lost response and
+   moves rows to `acked`/`rejected` only after a complete matching server
+   acknowledgement. Imported rows are therefore never uploaded by the v3
+   client. A server without v3 capability fails closed; deployed v1/v2 clients
+   remain server-compatible during rollout.
 
 ## Data flow (v1)
 
@@ -139,9 +144,9 @@ finishes and tune checkpoints on the Live screen.
 
 v0.3 (shipped): chrono-desk ──(sync push/pull, X-SYNC-TOKEN)──▶ run5 — local edits, new
 members, logs and manual finishes sync back; run5 applies them (overwrite-gated where
-destructive). RFID flag edits use targeted sync schema v2 deltas after a capabilities
-preflight; raw logs from all producers remain insert-only. Pull reuses the import path. Site
-stays the source of truth.
+destructive). Current push schema v3 uses a capabilities preflight, sends only desktop-owned
+raw observation batches plus explicit edits and persists item acknowledgements. Pull still
+reuses the full import path; incremental pull is the next stage. Site stays the source of truth.
 
 LAN broadcast (shipped): spectators' phones ──HTTP──▶ chrono-desk `publicweb` (read-only,
 PII-trimmed) — distance dropdown + Призёры/Протокол tabs (absolute & age-group podiums,

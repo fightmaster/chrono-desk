@@ -24,42 +24,76 @@ type SyncCapabilities struct {
 	PreferredPushSchemaVersion int   `json:"preferred_push_schema_version"`
 }
 
+type ObservationAckItem struct {
+	ID             string `json:"id"`
+	OriginSequence int64  `json:"origin_sequence"`
+	Status         string `json:"status"`
+	Reason         string `json:"reason,omitempty"`
+}
+
+type ObservationAck struct {
+	BatchID                 string               `json:"batch_id"`
+	OriginInstanceID        string               `json:"origin_instance_id"`
+	AcceptedThroughSequence *int64               `json:"accepted_through_sequence"`
+	Items                   []ObservationAckItem `json:"items"`
+}
+
+type SyncPushResponse struct {
+	Summary        map[string]any
+	ObservationAck *ObservationAck
+}
+
 // PushSync POSTs the assembled payload to run5 and returns the decoded summary.
-func PushSync(ctx context.Context, baseURL, token, eventID string, payload []byte) (map[string]any, error) {
+func PushSync(ctx context.Context, baseURL, token, eventID string, payload []byte) (SyncPushResponse, error) {
+	var header struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	if err := json.Unmarshal(payload, &header); err != nil || header.SchemaVersion <= 0 {
+		return SyncPushResponse{}, fmt.Errorf("не определить версию payload")
+	}
 	capabilities, err := GetSyncCapabilities(ctx, baseURL, token, eventID)
 	if err != nil {
-		return nil, err
+		return SyncPushResponse{}, err
 	}
-	if !supportsSyncSchema(capabilities.PushSchemaVersions, syncSchemaVersion) {
-		return nil, fmt.Errorf("сайт не поддерживает безопасную схему синхронизации v%d", syncSchemaVersion)
+	if !supportsSyncSchema(capabilities.PushSchemaVersions, header.SchemaVersion) {
+		return SyncPushResponse{}, fmt.Errorf("сайт не поддерживает безопасную схему синхронизации v%d", header.SchemaVersion)
 	}
 	url, err := syncURL(baseURL, eventID)
 	if err != nil {
-		return nil, err
+		return SyncPushResponse{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("сформировать запрос: %w", err)
+		return SyncPushResponse{}, fmt.Errorf("сформировать запрос: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-SYNC-TOKEN", token)
 
 	resp, err := syncHTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("нет связи с сайтом: %w", err)
+		return SyncPushResponse{}, fmt.Errorf("нет связи с сайтом: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	// A maximum-size v3 batch can legitimately return 20,000 item-level
+	// acknowledgements. Keep the response bounded, but large enough for the
+	// contract's worst-case identifiers and rejection reasons.
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("сайт ответил %d: %s", resp.StatusCode, summaryError(body))
+		return SyncPushResponse{}, fmt.Errorf("сайт ответил %d: %s", resp.StatusCode, summaryError(body))
 	}
 	var summary map[string]any
+	var envelope struct {
+		ObservationAck *ObservationAck `json:"observation_ack"`
+	}
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &summary); err != nil {
-			return nil, fmt.Errorf("ответ сайта не разобран: %w", err)
+			return SyncPushResponse{}, fmt.Errorf("ответ сайта не разобран: %w", err)
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return SyncPushResponse{}, fmt.Errorf("подтверждение сайта не разобрано: %w", err)
 		}
 	}
-	return summary, nil
+	return SyncPushResponse{Summary: summary, ObservationAck: envelope.ObservationAck}, nil
 }
 
 func GetSyncCapabilities(ctx context.Context, baseURL, token, eventID string) (SyncCapabilities, error) {

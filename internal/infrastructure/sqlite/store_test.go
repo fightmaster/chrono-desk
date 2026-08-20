@@ -166,6 +166,39 @@ func TestMigrationAddsObservationOriginToExistingRfidLogs(t *testing.T) {
 	}
 }
 
+func TestMigrationAddsBatchIDToExistingObservationOutbox(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "legacy-outbox.chrono"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE rfid_logs (
+			id TEXT PRIMARY KEY, event_id TEXT NOT NULL, status INTEGER NOT NULL DEFAULT 0,
+			number INTEGER NOT NULL DEFAULT 0, time_ms INTEGER NOT NULL, ant INTEGER NOT NULL DEFAULT 0,
+			epc TEXT NOT NULL DEFAULT '', rssi INTEGER NOT NULL DEFAULT 0, board TEXT NOT NULL, disabled_at INTEGER
+		);
+		CREATE TABLE observation_outbox (
+			origin_sequence INTEGER PRIMARY KEY,
+			observation_id TEXT NOT NULL UNIQUE REFERENCES rfid_logs(id),
+			state TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL,
+			last_attempt_at INTEGER, attempt_count INTEGER NOT NULL DEFAULT 0,
+			acked_at INTEGER, rejection TEXT
+		)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(db); err != nil {
+		t.Fatalf("migrate legacy outbox: %v", err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('observation_outbox') WHERE name = 'batch_id'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("batch_id column count = %d, want 1", count)
+	}
+}
+
 func TestUpsertAndGetEvent(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()

@@ -143,7 +143,7 @@ With v2, `overwrite=true` means “apply the explicit desktop journal”, not
 remain additive from all timing points. `overwrite=false` still suppresses
 destructive field and RFID-log edits.
 
-## Observation ownership journal: implemented foundation for v3
+## Observation ownership journal and push v3: implemented
 
 Chrono Desk now distinguishes local capture from imported storage before the
 v3 transport is enabled:
@@ -157,10 +157,17 @@ v3 transport is enabled:
 - one installation UUID and monotonic sequence are persisted outside the
   per-event databases, so retries and restarts cannot renumber accepted rows.
 
-The v2 payload intentionally remains unchanged during this server-first phase.
-It still carries all event logs for compatibility. The next rollout step is
-RUN5 v3 acceptance with item acknowledgements; only after that capability is
-deployed may `BuildSyncPayload` switch raw observations to the outbox.
+The push handler now prepares at most one stable `sent` batch from that outbox,
+builds schema v3 without `rfid_logs`, requires RUN5 to advertise v3, and applies
+only a complete matching item acknowledgement. A lost response leaves the same
+batch `sent`; observations captured meanwhile remain `pending` for the next
+batch. `inserted`/`duplicate` become `acked`, while `rejected` remains visible
+as a terminal journal state. A v3 edit-only push omits `observation_batch` and
+does not fall back to the legacy full snapshot.
+
+Old Chrono Desk clients can still use server v2 during the deployment window.
+This client fails closed against a server without v3 so it never regresses to
+re-sending downloaded observations. Incremental pull remains the next stage.
 
 ## Replay concurrency: a Laravel lock is not enough
 

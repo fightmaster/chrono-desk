@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS observation_outbox (
     observation_id  TEXT NOT NULL UNIQUE REFERENCES rfid_logs(id),
     state           TEXT NOT NULL DEFAULT 'pending'
                     CHECK (state IN ('pending', 'sent', 'acked', 'rejected')),
+    batch_id        TEXT,
     created_at      INTEGER NOT NULL,
     last_attempt_at INTEGER,
     attempt_count   INTEGER NOT NULL DEFAULT 0,

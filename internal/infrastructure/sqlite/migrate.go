@@ -18,6 +18,27 @@ func migrate(db *sql.DB) error {
 	if err := addRfidObservationOrigin(db); err != nil {
 		return err
 	}
+	if err := addObservationOutboxBatchID(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+func addObservationOutboxBatchID(db *sql.DB) error {
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('observation_outbox') WHERE name = 'batch_id'`).Scan(&count); err != nil {
+		return fmt.Errorf("inspect observation_outbox.batch_id: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.Exec(`ALTER TABLE observation_outbox ADD COLUMN batch_id TEXT`); err != nil {
+			return fmt.Errorf("add observation_outbox.batch_id: %w", err)
+		}
+	}
+	if _, err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_observation_outbox_batch
+		ON observation_outbox(batch_id, state, origin_sequence)`); err != nil {
+		return fmt.Errorf("index observation_outbox batch: %w", err)
+	}
 	return nil
 }
 

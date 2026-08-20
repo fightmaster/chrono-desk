@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
 )
 
@@ -78,7 +80,12 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, summary, err := service.BuildSyncPayload(r.Context(), store, eventID, overwrite)
+	batch, err := store.PrepareObservationBatch(r.Context(), eventID, 20_000, time.Now())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	payload, summary, err := service.BuildSyncPayloadV3(r.Context(), store, eventID, overwrite, batch)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -88,11 +95,40 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	if batch != nil {
+		if err := applyObservationAck(r.Context(), store, batch, resp.ObservationAck); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
 	sum := sha256.Sum256(payload)
 	if err := store.SetSyncResult(r.Context(), eventID, time.Now().UnixMilli(), hex.EncodeToString(sum[:])); err != nil {
 		s.logger.Printf("save sync result: %v", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sent": summary, "response": resp})
+	writeJSON(w, http.StatusOK, map[string]any{"sent": summary, "response": resp.Summary})
+}
+
+func applyObservationAck(ctx context.Context, store *sqlite.Store, batch *sqlite.ObservationBatch, ack *service.ObservationAck) error {
+	if ack == nil || ack.BatchID != batch.BatchID || ack.OriginInstanceID != batch.OriginInstanceID {
+		return fmt.Errorf("сайт не подтвердил отправленный observation batch")
+	}
+	hasRejected := false
+	items := make([]sqlite.ObservationOutboxAck, 0, len(ack.Items))
+	for _, item := range ack.Items {
+		hasRejected = hasRejected || item.Status == "rejected"
+		items = append(items, sqlite.ObservationOutboxAck{
+			ObservationID: item.ID, OriginSequence: item.OriginSequence,
+			Status: item.Status, Reason: item.Reason,
+		})
+	}
+	if hasRejected {
+		if ack.AcceptedThroughSequence != nil {
+			return fmt.Errorf("сайт вернул противоречивый acknowledgement watermark")
+		}
+	} else if ack.AcceptedThroughSequence == nil || *ack.AcceptedThroughSequence != batch.LastSequence {
+		return fmt.Errorf("сайт вернул неполный acknowledgement watermark")
+	}
+	return store.ApplyObservationAck(ctx, batch.BatchID, items, time.Now())
 }
 
 func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {

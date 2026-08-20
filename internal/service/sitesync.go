@@ -16,7 +16,10 @@ import (
 // offline-created (local-) members. Deterministic ordering so an unchanged
 // event produces byte-identical payloads (idempotent re-push detection).
 
-const syncSchemaVersion = 2
+const (
+	syncSchemaVersion   = 2
+	syncSchemaVersionV3 = 3
+)
 
 // Fields that round-trip to run5, mirroring the edit whitelist in edits.go.
 var (
@@ -49,6 +52,29 @@ type syncRfidLog struct {
 	RSSI       int    `json:"rssi"`
 	Board      string `json:"board"`
 	DisabledAt *int64 `json:"disabled_at"`
+}
+
+type syncObservationItem struct {
+	ID                 string `json:"id"`
+	ObservationVersion int    `json:"observation_version"`
+	OriginSequence     int64  `json:"origin_sequence"`
+	CaptureSourceID    string `json:"capture_source_id"`
+	Status             int    `json:"status"`
+	Number             int64  `json:"number"`
+	TimeMs             int64  `json:"time_ms"`
+	Ant                int    `json:"ant"`
+	EPC                string `json:"epc"`
+	RSSI               int    `json:"rssi"`
+	Board              string `json:"board"`
+	DisabledAt         *int64 `json:"disabled_at"`
+}
+
+type syncObservationBatch struct {
+	BatchID          string                `json:"batch_id"`
+	OriginInstanceID string                `json:"origin_instance_id"`
+	FirstSequence    int64                 `json:"first_sequence"`
+	LastSequence     int64                 `json:"last_sequence"`
+	Items            []syncObservationItem `json:"items"`
 }
 
 type syncRfidLogEdit struct {
@@ -110,7 +136,8 @@ type syncPayload struct {
 	Source        string `json:"source"`
 	Overwrite     bool   `json:"overwrite"`
 
-	RfidLogs             []syncRfidLog          `json:"rfid_logs"`
+	RfidLogs             []syncRfidLog          `json:"rfid_logs,omitempty"`
+	ObservationBatch     *syncObservationBatch  `json:"observation_batch,omitempty"`
 	RfidLogEdits         []syncRfidLogEdit      `json:"rfid_log_edits"`
 	NewMembers           []syncNewMember        `json:"new_members"`
 	MemberEdits          []syncMemberEdit       `json:"member_edits"`
@@ -145,12 +172,41 @@ type SyncSummary struct {
 
 // BuildSyncPayload assembles the deterministic JSON push payload for an event.
 func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, overwrite bool) ([]byte, SyncSummary, error) {
+	return buildSyncPayload(ctx, store, eventID, overwrite, syncSchemaVersion, nil)
+}
+
+// BuildSyncPayloadV3 assembles push-own schema v3. Raw observations come only
+// from the durable outbound batch prepared by SQLite; imported event rows are
+// absent. A nil batch produces a valid edit/command-only v3 payload.
+func BuildSyncPayloadV3(ctx context.Context, store *sqlite.Store, eventID string, overwrite bool, batch *sqlite.ObservationBatch) ([]byte, SyncSummary, error) {
+	return buildSyncPayload(ctx, store, eventID, overwrite, syncSchemaVersionV3, batch)
+}
+
+func buildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, overwrite bool, schemaVersion int, batch *sqlite.ObservationBatch) ([]byte, SyncSummary, error) {
 	p := syncPayload{
-		SchemaVersion: syncSchemaVersion, EventID: eventID, Source: "chrono-desk", Overwrite: overwrite,
-		RfidLogs: []syncRfidLog{}, RfidLogEdits: []syncRfidLogEdit{}, NewMembers: []syncNewMember{}, MemberEdits: []syncMemberEdit{},
+		SchemaVersion: schemaVersion, EventID: eventID, Source: "chrono-desk", Overwrite: overwrite,
+		RfidLogEdits: []syncRfidLogEdit{}, NewMembers: []syncNewMember{}, MemberEdits: []syncMemberEdit{},
 		ManualResults: []syncManualResult{}, CheckpointEdits: []syncCheckpointEdit{}, EventEdits: []syncEventEdit{}, RaceEdits: []syncRaceEdit{},
 		DeletedManualResults: []syncManualResult{}, CheckpointCreates: []syncCheckpointCreate{}, CheckpointDeletes: []string{},
 		CategoryAttaches: []categoryRacePair{}, CategoryDetaches: []categoryRacePair{},
+	}
+	if schemaVersion == syncSchemaVersion {
+		p.RfidLogs = []syncRfidLog{}
+	}
+	if batch != nil {
+		p.ObservationBatch = &syncObservationBatch{
+			BatchID: batch.BatchID, OriginInstanceID: batch.OriginInstanceID,
+			FirstSequence: batch.FirstSequence, LastSequence: batch.LastSequence,
+			Items: []syncObservationItem{},
+		}
+		for _, item := range batch.Items {
+			p.ObservationBatch.Items = append(p.ObservationBatch.Items, syncObservationItem{
+				ID: item.ID, ObservationVersion: item.ObservationVersion, OriginSequence: item.OriginSequence,
+				CaptureSourceID: item.CaptureSourceID, Status: item.Status, Number: item.Number,
+				TimeMs: item.TimeMs, Ant: item.Ant, EPC: item.EPC, RSSI: item.RSSI, Board: item.Board,
+				DisabledAt: item.DisabledAt,
+			})
+		}
 	}
 
 	// Full member records: used for member_ref resolution AND to emit offline
@@ -192,15 +248,17 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	}
 
 	// rfid_logs (ListRfidLogs is already ordered by time_ms, id).
-	logs, err := store.ListRfidLogs(ctx, eventID)
-	if err != nil {
-		return nil, SyncSummary{}, err
-	}
-	for _, l := range logs {
-		p.RfidLogs = append(p.RfidLogs, syncRfidLog{
-			ID: l.ID, EventID: l.EventID, Status: l.Status, Number: l.Number, TimeMs: l.TimeMs,
-			Ant: l.Ant, EPC: l.EPC, RSSI: l.RSSI, Board: l.Board, DisabledAt: l.DisabledAt,
-		})
+	if schemaVersion == syncSchemaVersion {
+		logs, err := store.ListRfidLogs(ctx, eventID)
+		if err != nil {
+			return nil, SyncSummary{}, err
+		}
+		for _, l := range logs {
+			p.RfidLogs = append(p.RfidLogs, syncRfidLog{
+				ID: l.ID, EventID: l.EventID, Status: l.Status, Number: l.Number, TimeMs: l.TimeMs,
+				Ant: l.Ant, EPC: l.EPC, RSSI: l.RSSI, Board: l.Board, DisabledAt: l.DisabledAt,
+			})
+		}
 	}
 
 	// manual results (ordered by time_ms, id).
@@ -350,8 +408,12 @@ func BuildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	if err != nil {
 		return nil, SyncSummary{}, fmt.Errorf("encode sync payload: %w", err)
 	}
+	rfidLogCount := len(p.RfidLogs)
+	if p.ObservationBatch != nil {
+		rfidLogCount = len(p.ObservationBatch.Items)
+	}
 	summary := SyncSummary{
-		RfidLogs: len(p.RfidLogs), RfidLogEdits: len(p.RfidLogEdits), NewMembers: len(p.NewMembers), MemberEdits: len(p.MemberEdits),
+		RfidLogs: rfidLogCount, RfidLogEdits: len(p.RfidLogEdits), NewMembers: len(p.NewMembers), MemberEdits: len(p.MemberEdits),
 		ManualResults: len(p.ManualResults), CheckpointCreates: len(p.CheckpointCreates),
 		CheckpointEdits: len(p.CheckpointEdits), EventEdits: len(p.EventEdits), RaceEdits: len(p.RaceEdits),
 		CategoryAttaches: len(p.CategoryAttaches), CategoryDetaches: len(p.CategoryDetaches),

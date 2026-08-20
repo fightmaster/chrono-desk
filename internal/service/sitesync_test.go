@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
@@ -115,6 +117,74 @@ func TestBuildSyncPayload(t *testing.T) {
 	}
 	if !bytes.Equal(data, data2) {
 		t.Error("payload not deterministic across rebuilds")
+	}
+}
+
+func TestBuildSyncPayloadV3SendsOnlyOwnedObservationBatch(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+	local := domain.RfidLog{
+		ID: "local-owned", EventID: "ev-100", TimeMs: 1780813200000,
+		Ant: 1, EPC: "E280AAA", RSSI: -51, Board: "Feibot:U659",
+		CaptureSourceID: "chrono-desk:ev-100:Feibot:U659",
+	}
+	if _, err := store.InsertOwnedRfidLogs(ctx, []domain.RfidLog{local}); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := store.PrepareObservationBatch(ctx, "ev-100", 20_000, time.UnixMilli(1780813300000))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, summary, err := BuildSyncPayloadV3(ctx, store, "ev-100", true, batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := raw["rfid_logs"]; exists {
+		t.Fatal("v3 payload must omit legacy full rfid_logs snapshot")
+	}
+	var payload syncPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.SchemaVersion != 3 || payload.ObservationBatch == nil || len(payload.ObservationBatch.Items) != 1 {
+		t.Fatalf("v3 payload = %+v", payload)
+	}
+	item := payload.ObservationBatch.Items[0]
+	if item.ID != "local-owned" || item.OriginSequence != 1 || item.CaptureSourceID != local.CaptureSourceID {
+		t.Fatalf("v3 item = %+v", item)
+	}
+	if summary.RfidLogs != 1 {
+		t.Fatalf("summary rfid logs = %d, want 1", summary.RfidLogs)
+	}
+}
+
+func TestBuildSyncPayloadV3WithoutPendingObservationsOmitsBothRawFields(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+
+	data, summary, err := BuildSyncPayloadV3(ctx, store, "ev-100", true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := raw["rfid_logs"]; exists {
+		t.Fatal("edit-only v3 payload contains legacy rfid_logs")
+	}
+	if _, exists := raw["observation_batch"]; exists {
+		t.Fatal("edit-only v3 payload contains empty observation_batch")
+	}
+	if summary.RfidLogs != 0 {
+		t.Fatalf("summary rfid logs = %d, want 0", summary.RfidLogs)
 	}
 }
 
