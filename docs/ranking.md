@@ -1,19 +1,20 @@
-# Ranking & protocol computation (porting spec from run5)
+# Ranking & protocol computation
 
-The checkpoint-derivation engine comes from rfid-sync, but **ranking exists only in run5
-(PHP)** — rfid-sync stops at raw `results` + member start/finish/clean times. This doc is
-the Go porting spec for run5's "new" results system (member_results + format strategies),
-which ran in production at the latest start and is the golden-test reference.
+RUN5 PHP remains the production migration reference, while Chrono Desk and rfid-sync
+now consume the same immutable `timing-core` release. The shared module owns pure format
+outcomes, rank ordering and overall/gender/category place assignment. This document
+defines the application adapter and protocol policy around that shared implementation.
 
 ## Two stages
 
-1. **Materialization** — per (member, race) the format strategy computes a result row:
+1. **Materialization** — per (member, race) `timing-core` computes a result row:
    `{status, rank_primary, rank_secondary, rank_tertiary, payload}`.
-2. **Place assignment** — sort materialized rows, assign overall / gender / category
-   places.
+2. **Place assignment** — `timing-core` sorts materialized rows and assigns overall /
+   gender / category places.
 
-run5 persists stage 1 into the `member_results` table; chrono-desk may compute both
-stages in memory on demand — schema parity is not required, output parity is.
+run5 persists stage 1 into the `member_results` table; chrono-desk converts its SQLite
+rows to shared inputs and computes both stages in memory on demand — schema parity is
+not required, output parity is.
 
 ## Common rank-row ordering (all formats)
 

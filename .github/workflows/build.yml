@@ -6,14 +6,71 @@ name: build
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
-# go.mod replaces gitlab.com/fightmaster1/rfid-core with ../rfid-core, so the
-# shared module is checked out as a sibling directory (github.com/fightmaster/
-# rfid-core mirror). If that repo is private, add a PAT with repo scope as the
-# CORE_REPO_TOKEN secret and uncomment the token lines.
+permissions:
+  contents: read
+
+# rfid-core remains a sibling checkout. timing-core is an immutable private
+# GitLab module, so the repository must define a read-only project access token
+# as the TIMING_CORE_READ_TOKEN Actions secret.
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chrono-desk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: chrono-desk
+
+      - uses: actions/checkout@v4
+        with:
+          repository: fightmaster/rfid-core
+          path: rfid-core
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.24.13
+
+      - name: Configure private timing-core access
+        env:
+          TIMING_CORE_READ_TOKEN: ${{ secrets.TIMING_CORE_READ_TOKEN }}
+        run: |
+          if [ -z "$TIMING_CORE_READ_TOKEN" ]; then
+            echo "Missing TIMING_CORE_READ_TOKEN Actions secret" >&2
+            exit 1
+          fi
+          git config --global url."https://oauth2:${TIMING_CORE_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
+          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chrono-desk/frontend/package-lock.json
+
+      - name: Install static analysis
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
+
+      - name: Go quality gate
+        env:
+          GOTOOLCHAIN: go1.24.13
+        run: |
+          test -z "$(gofmt -l .)"
+          go test ./...
+          go vet ./...
+          staticcheck ./...
+          go test -race ./...
+
+      - name: Frontend quality gate
+        run: npm ci && npm run build
+        working-directory: chrono-desk/frontend
+
   macos-intel:
+    needs: quality
     runs-on: macos-15
     defaults:
       run:
@@ -33,6 +90,18 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 1.24.13
+
+      - name: Configure private timing-core access
+        shell: bash
+        env:
+          TIMING_CORE_READ_TOKEN: ${{ secrets.TIMING_CORE_READ_TOKEN }}
+        run: |
+          if [ -z "$TIMING_CORE_READ_TOKEN" ]; then
+            echo "Missing TIMING_CORE_READ_TOKEN Actions secret" >&2
+            exit 1
+          fi
+          git config --global url."https://oauth2:${TIMING_CORE_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
+          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core
 
       - uses: actions/setup-node@v4
         with:
@@ -65,6 +134,7 @@ jobs:
           retention-days: 30
 
   windows:
+    needs: quality
     runs-on: windows-latest
     defaults:
       run:
@@ -84,6 +154,18 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 1.24.13
+
+      - name: Configure private timing-core access
+        shell: bash
+        env:
+          TIMING_CORE_READ_TOKEN: ${{ secrets.TIMING_CORE_READ_TOKEN }}
+        run: |
+          if [ -z "$TIMING_CORE_READ_TOKEN" ]; then
+            echo "Missing TIMING_CORE_READ_TOKEN Actions secret" >&2
+            exit 1
+          fi
+          git config --global url."https://oauth2:${TIMING_CORE_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
+          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core
 
       - uses: actions/setup-node@v4
         with:

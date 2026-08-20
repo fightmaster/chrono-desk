@@ -9,7 +9,7 @@ require (
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/xuri/excelize/v2 v2.10.1
 	gitlab.com/fightmaster1/rfid-core v0.0.0-00010101000000-000000000000
-	gitlab.com/fightmaster1/timing-core v0.0.0-00010101000000-000000000000
+	gitlab.com/fightmaster1/timing-core v0.1.0
 	modernc.org/sqlite v1.44.0
 )
 
@@ -56,5 +56,3 @@ require (
 )
 
 replace gitlab.com/fightmaster1/rfid-core => ../rfid-core
-
-replace gitlab.com/fightmaster1/timing-core => ../timing-core

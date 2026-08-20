@@ -26,9 +26,10 @@ per event.
 | run5-stopwatch | Cordova | Offline stopwatch / manual finish-order capture | `~/projects/run5-stopwatch` |
 | RaceTorchApp | Go + Wails | Finish-camera photo processing (future integration) | `~/GolandProjects/RaceTorchApp` |
 
-chrono-desk and rfid-sync use the same sibling `timing-core` module for
-checkpoint eligibility and duration formatting. Each application retains only
-its storage/transaction adapter. TCP ingest uses the shared `rfid-core` module.
+chrono-desk and rfid-sync use the same immutable `timing-core` release for
+checkpoint eligibility, member-time projection, outcome materialization and
+ranking. Each application retains only its storage/transaction adapter. TCP
+ingest uses the shared `rfid-core` module.
 
 ## Stack
 
@@ -91,8 +92,17 @@ make dev              # hot reload
 make build            # production binary for the current OS
 make test             # full test suite
 make race             # race-detector pass
-make check            # full quality gate: gofmt, vet, staticcheck, govulncheck, test
+make check            # required gate: gofmt, test, race, vet, staticcheck
+make audit            # vulnerability report (known Go 1.24 findings; see architecture)
 ```
+
+`timing-core` is pinned to `v0.1.0`; release builds never use a mutable sibling
+replacement. Because the canonical GitLab project is private, GitHub Actions
+requires a read-only GitLab project access token in the
+`TIMING_CORE_READ_TOKEN` repository secret. The workflow fails before the Wails
+build with an explicit error when the secret is absent or cannot read the tag.
+The same workflow runs backend tests, race detection, formatting, vet,
+staticcheck and the frontend production build before either release artifact.
 
 ## Docs
 

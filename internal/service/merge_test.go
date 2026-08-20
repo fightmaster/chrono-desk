@@ -78,9 +78,9 @@ func TestBeyondWindowDoesNotMerge(t *testing.T) {
 
 func TestManualBibIsRepresentativeAndNewestFirst(t *testing.T) {
 	got := MergeFinishes([]sqlite.Photo{
-		p("A", "Cam A", 5000, "", "none"),       // newest, no bib
-		p("B", "Cam B", 4900, "247", "manual"),  // older but confirmed
-		p("A", "Cam A", 1000, "", "none"),        // a separate, earlier crossing
+		p("A", "Cam A", 5000, "", "none"),      // newest, no bib
+		p("B", "Cam B", 4900, "247", "manual"), // older but confirmed
+		p("A", "Cam A", 1000, "", "none"),      // a separate, earlier crossing
 	}, MergeWindowMs)
 	if len(got) != 2 {
 		t.Fatalf("want 2 finishes, got %d", len(got))

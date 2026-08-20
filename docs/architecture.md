@@ -56,14 +56,14 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    drive between laptops, backup = file copy, corruption is isolated per event.
    The file-system concerns and open-store cache now live in `sqlite.EventCatalog`;
    application-level import/list logic stays in `service.EventService`.
-2. **Reuse one versioned timing-core, not a copied processor.** The sibling
-   `timing-core` module `legacy-once-v1` owns checkpoint eligibility (since /
-   since_offset_seconds / sleep_after_prev_seconds / sort order) and duration
-   formatting. Chrono Desk keeps the SQLite repository/transaction adapter;
-   rfid-sync keeps its MySQL adapter. run5's `PushResult`/`RecountRfid` (PHP)
-   remains the migration reference until production parity and retirement.
-   **Ranking/materialization is NOT in rfid-sync** (the site does it); it is ported from
-   run5 PHP — full spec and source paths in `docs/ranking.md`.
+2. **Reuse one versioned timing-core, not a copied processor.** The immutable
+   `timing-core v0.1.0` release owns `legacy-once-v1` checkpoint eligibility,
+   `member-time-v1`, `result-outcome-v1` and `ranking-v1`. Chrono Desk keeps the
+   SQLite repository/transaction adapter; rfid-sync keeps its MySQL adapter.
+   run5's `PushResult`/`RecountRfid` (PHP) remains the migration reference until
+   production parity and retirement. Ranking input conversion remains local,
+   while ordering and place assignment use the shared core; full policy and
+   source paths are in `docs/ranking.md`.
 3. **HTTP API instead of Wails bindings.** Gives LAN access for judges' tablets later,
    headless mode for free, and keeps the frontend decoupled.
    The transport is wired in `app.go`: `httpapi.New` receives ready `LiveManager`,
@@ -185,6 +185,11 @@ open only while on.
   security window), so `govulncheck` permanently reports stdlib vulnerabilities fixed
   only in 1.25+. Accepted for an offline desktop app whose HTTP API binds to
   localhost/LAN; do NOT "fix" by bumping Go. Re-evaluate when the Mac constraint goes.
+- The 2026-08-21 audit also reports Excelize and `x/net` findings whose patched
+  releases require Go 1.25. They remain explicit in `make audit`; they are not
+  represented as a green security gate. Chrono Desk creates XLSX files but does
+  not parse uploaded workbooks, and its control API remains localhost-only. This
+  is mitigation, not remediation; upgrading the competition Mac and Go closes it.
 - Dependencies are capped by the pin too: `modernc.org/sqlite` is held at v1.44.0
   (v1.45+ requires Go 1.25).
 - **macOS builds cannot be cross-compiled from Linux** (CGO + Apple frameworks). Two
@@ -193,6 +198,10 @@ open only while on.
   cross-compile from a host with the toolchain.
 - Resilience fallback: because the UI talks to an embedded HTTP API, the core can run
   headless with the UI in a regular browser if the webview misbehaves on old macOS.
+- **Private module provenance.** Release workflows fetch the immutable
+  `timing-core v0.1.0` tag with the read-only `TIMING_CORE_READ_TOKEN` GitHub
+  Actions secret. A missing/invalid secret fails in a dedicated preflight; no
+  local `replace` is permitted for this release dependency.
 
 ## Testing strategy
 

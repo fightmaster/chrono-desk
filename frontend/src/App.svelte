@@ -190,7 +190,7 @@
 <div class="root" data-theme={$theme}>
   <div class="titlebar">
     <span class="tb-name">Chrono Desk</span>
-    {#if appVersion}<span class="tb-ver" title="коммит {appVersion.commit}{appVersion.date ? ` · ${appVersion.date}` : ''}">v{appVersion.version}+{appVersion.build}</span>{/if}
+    {#if appVersion}<span class="tb-ver" title="коммит {appVersion.commit}{appVersion.date ? ` · ${appVersion.date}` : ''} · timing-core {appVersion.timing_core_version}">v{appVersion.version}+{appVersion.build}</span>{/if}
     <div class="tb-dots"><span></span><span></span><span></span></div>
   </div>
 
