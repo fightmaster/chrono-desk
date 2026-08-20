@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
+	timing "gitlab.com/fightmaster1/timing-core"
 )
 
 // Row is one protocol line after ranking.
@@ -73,12 +74,11 @@ func materializeFixedDistance(m domain.Member) *rankRow {
 	if m.StartTimeMs == nil || m.FinishTimeMs == nil || m.CleanTime == nil {
 		return nil // not finished yet — absent from the protocol
 	}
-	clean := *m.FinishTimeMs - *m.StartTimeMs
-	if clean < 0 {
+	outcome, ok, err := timing.FixedDistanceOutcome(m.ID, m.RaceID, m.StartTimeMs, m.FinishTimeMs)
+	if err != nil || !ok {
 		return nil
 	}
-	rank := -clean
-	return &rankRow{member: m, status: "ok", rankPrimary: &rank, cleanTimeMs: &clean}
+	return rankRowFromCore(m, outcome)
 }
 
 // materializeTimeLimited ports TimeLimitedFormat::materialize (reference Go
@@ -93,20 +93,28 @@ func materializeTimeLimited(race domain.Race, m domain.Member, pass *LastPass) *
 	if m.StartTimeMs == nil || race.TimeLimitSeconds == nil || *race.TimeLimitSeconds <= 0 || pass == nil {
 		return nil
 	}
-	elapsed := pass.TimeMs - *m.StartTimeMs
-	if elapsed < 0 {
-		elapsed = 0
+	outcome, err := timing.TimeLimitedOutcome(
+		m.ID,
+		m.RaceID,
+		timing.LastPass{
+			TimeMs: pass.TimeMs, CheckpointSort: pass.CheckpointSort,
+			CheckpointName: pass.CheckpointName,
+		},
+		*m.StartTimeMs,
+	)
+	if err != nil {
+		return nil
 	}
-	rankSecondary := -elapsed
-	passAt := pass.TimeMs
+	return rankRowFromCore(m, outcome)
+}
+
+func rankRowFromCore(member domain.Member, outcome timing.ResultOutcome[string]) *rankRow {
 	return &rankRow{
-		member:             m,
-		status:             "ok",
-		rankPrimary:        pass.CheckpointSort,
-		rankSecondary:      &rankSecondary,
-		elapsedMs:          &elapsed,
-		lastPassAtMs:       &passAt,
-		lastCheckpointName: pass.CheckpointName,
+		member: member, status: outcome.Status,
+		rankPrimary: outcome.RankPrimary, rankSecondary: outcome.RankSecondary,
+		cleanTimeMs: outcome.CleanTimeMs, elapsedMs: outcome.ElapsedMs,
+		lastPassAtMs:       outcome.LastPassAtMs,
+		lastCheckpointName: outcome.LastCheckpointName,
 	}
 }
 
