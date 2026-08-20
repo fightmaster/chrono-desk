@@ -230,7 +230,7 @@ func planMemberTimes(member processor.Member, checkpoint processor.Checkpoint, e
 			StartTimeMs: member.StartTimeMs, FinishTimeMs: member.FinishTimeMs,
 			RaceStartedAtMs: member.RaceStartedAtMs,
 		},
-		int(checkpoint.Type),
+		timing.CheckpointType(checkpoint.Type),
 		eventTimeMs,
 	)
 }

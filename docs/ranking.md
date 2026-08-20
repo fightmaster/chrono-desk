@@ -43,6 +43,8 @@ not required, output parity is.
   `rank_primary = checkpoint.sort` (further checkpoint wins),
   `rank_secondary = -elapsedMs` (earlier wins), `rank_tertiary = null`,
   `payload = {lastCheckpointId, lastCheckpointName, lastPassAtMs, elapsedMs}`.
+  `result-outcome-v2` preserves Chrono Desk's string checkpoint id in that
+  canonical payload instead of dropping it behind a MySQL-only integer type.
 - Compat side effect in run5: member.finish_time = passMs, clean_time = formatted elapsed.
 - Result label shows `checkpointName, wallClockTime, elapsedMs` (not cleanTimeMs).
 

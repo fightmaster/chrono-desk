@@ -61,7 +61,7 @@ func TestLastPassesInWindowLoadsEveryMemberInOneSetQuery(t *testing.T) {
 	if len(passes) != 2 {
 		t.Fatalf("passes = %d, want 2", len(passes))
 	}
-	if got := passes["member-1"]; got.TimeMs != 60_000 || got.CheckpointName == nil || *got.CheckpointName != "Second" {
+	if got := passes["member-1"]; got.TimeMs != 60_000 || got.CheckpointID == nil || *got.CheckpointID != "cp-2" || got.CheckpointName == nil || *got.CheckpointName != "Second" {
 		t.Errorf("member-1 pass = %+v", got)
 	}
 	if got := passes["member-2"]; got.TimeMs != 65_000 {

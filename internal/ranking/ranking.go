@@ -30,6 +30,7 @@ type Row struct {
 // LoadLastPassInWindow / run5's TimeLimitedFormat).
 type LastPass struct {
 	TimeMs         int64
+	CheckpointID   *string
 	CheckpointSort *int64
 	CheckpointName *string
 }
@@ -94,8 +95,8 @@ func materializeTimeLimited(race domain.Race, m domain.Member, pass *LastPass) *
 	outcome, err := timing.TimeLimitedOutcome(
 		m.ID,
 		m.RaceID,
-		timing.LastPass{
-			TimeMs: pass.TimeMs, CheckpointSort: pass.CheckpointSort,
+		timing.LastPass[string]{
+			TimeMs: pass.TimeMs, CheckpointID: pass.CheckpointID, CheckpointSort: pass.CheckpointSort,
 			CheckpointName: pass.CheckpointName,
 		},
 		*m.StartTimeMs,

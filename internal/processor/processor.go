@@ -114,7 +114,7 @@ func selectCheckpoint(
 	coreCheckpoints := make([]timing.Checkpoint[string], 0, len(checkpoints))
 	for _, checkpoint := range checkpoints {
 		coreCheckpoints = append(coreCheckpoints, timing.Checkpoint[string]{
-			ID: checkpoint.ID, Sort: checkpoint.Sort, Type: int(checkpoint.Type),
+			ID: checkpoint.ID, Sort: checkpoint.Sort, Type: timing.CheckpointType(checkpoint.Type),
 			SinceMs: checkpoint.SinceMs, SinceOffsetSeconds: checkpoint.SinceOffsetSeconds,
 			SleepAfterPrevSeconds: checkpoint.SleepAfterPrevSeconds,
 		})

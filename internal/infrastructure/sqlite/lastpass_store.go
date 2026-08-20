@@ -14,6 +14,7 @@ const lastPassesInWindowSQL = `
 		SELECT
 			r.member_id,
 			r.time_ms,
+			r.checkpoint_id,
 			c.sort,
 			c.name,
 			ROW_NUMBER() OVER (
@@ -28,7 +29,7 @@ const lastPassesInWindowSQL = `
 			AND m.start_time_ms IS NOT NULL
 			AND r.time_ms BETWEEN m.start_time_ms AND m.start_time_ms + ?
 	)
-	SELECT member_id, time_ms, sort, name
+	SELECT member_id, time_ms, checkpoint_id, sort, name
 	FROM ranked
 	WHERE position = 1`
 
@@ -51,10 +52,15 @@ func (s *Store) LastPassesInWindow(ctx context.Context, race domain.Race) (map[s
 	for rows.Next() {
 		var memberID string
 		var pass ranking.LastPass
+		var checkpointID sql.NullString
 		var sort sql.NullInt64
 		var name sql.NullString
-		if err := rows.Scan(&memberID, &pass.TimeMs, &sort, &name); err != nil {
+		if err := rows.Scan(&memberID, &pass.TimeMs, &checkpointID, &sort, &name); err != nil {
 			return nil, fmt.Errorf("scan last pass: %w", err)
+		}
+		if checkpointID.Valid {
+			id := checkpointID.String
+			pass.CheckpointID = &id
 		}
 		pass.CheckpointSort = nullableInt64(sort)
 		if name.Valid {
