@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
+	timing "gitlab.com/fightmaster1/timing-core"
 )
 
 type Processor struct {
@@ -79,75 +80,71 @@ func (p *Processor) Process(ctx context.Context, logEntry domain.RfidLog, raceFi
 		return nil
 	}
 
-	eventTimeMs := logEntry.TimeMs
-
-	for _, checkpoint := range checkpoints {
-		if passed[checkpoint.ID] {
-			continue
-		}
-
-		checkpointSince := checkpoint.SinceMs
-		if checkpoint.SinceOffsetSeconds != nil {
-			baseTime := member.StartTimeMs
-			if baseTime == nil {
-				baseTime = member.RaceStartedAtMs
-			}
-			if baseTime != nil {
-				since := *baseTime + *checkpoint.SinceOffsetSeconds*1000
-				checkpointSince = &since
-			}
-		}
-
-		if checkpointSince != nil && *checkpointSince > eventTimeMs {
-			continue
-		}
-
-		// Artificial "sleep": when configured, the checkpoint only accepts a
-		// read once enough time has passed since the member's previous result.
-		// This guards single-reader loops where the same tag is reported every
-		// second and would otherwise advance several checkpoints in one pass.
-		// When the member has no previous result the constraint is skipped so a
-		// missed read on an earlier checkpoint never drops data.
-		if checkpoint.SleepAfterPrevSeconds != nil && lastResult.TimeMs != nil {
-			activeFrom := *lastResult.TimeMs + *checkpoint.SleepAfterPrevSeconds*1000
-			if activeFrom > eventTimeMs {
-				continue
-			}
-		}
-
-		if lastResult.Sort != nil && checkpoint.Sort <= *lastResult.Sort {
-			continue
-		}
-
-		stored := false
-		if err := p.repo.WithTx(ctx, func(tx TxRepository) (bool, error) {
-			inserted, err := tx.InsertResult(ctx, logEntry, member, checkpoint)
-			if err != nil {
-				return false, err
-			}
-			if !inserted {
-				return false, nil
-			}
-
-			if err := tx.UpdateMemberTimes(ctx, member, checkpoint, eventTimeMs); err != nil {
-				return false, err
-			}
-
-			stored = true
-			return true, nil
-		}); err != nil {
-			return err
-		}
-		if !stored {
-			p.debugLog("result_exists", "rfid_log_id=%s", logEntry.ID)
-			return nil
-		}
-
-		p.debugLog("result_stored", "member_id=%s result_time_ms=%d", member.ID, eventTimeMs)
-		break
+	checkpoint, eligible := selectCheckpoint(logEntry, member, lastResult, passed, checkpoints)
+	if !eligible {
+		return nil
 	}
+	eventTimeMs := logEntry.TimeMs
+	stored := false
+	if err := p.repo.WithTx(ctx, func(tx TxRepository) (bool, error) {
+		inserted, err := tx.InsertResult(ctx, logEntry, member, checkpoint)
+		if err != nil {
+			return false, err
+		}
+		if !inserted {
+			return false, nil
+		}
+
+		if err := tx.UpdateMemberTimes(ctx, member, checkpoint, eventTimeMs); err != nil {
+			return false, err
+		}
+
+		stored = true
+		return true, nil
+	}); err != nil {
+		return err
+	}
+	if !stored {
+		p.debugLog("result_exists", "rfid_log_id=%s", logEntry.ID)
+		return nil
+	}
+	p.debugLog("result_stored", "member_id=%s result_time_ms=%d", member.ID, eventTimeMs)
 
 	return nil
+}
+
+func selectCheckpoint(
+	logEntry domain.RfidLog,
+	member Member,
+	last LastResult,
+	passed map[string]bool,
+	checkpoints []Checkpoint,
+) (Checkpoint, bool) {
+	coreCheckpoints := make([]timing.Checkpoint[string], 0, len(checkpoints))
+	for _, checkpoint := range checkpoints {
+		coreCheckpoints = append(coreCheckpoints, timing.Checkpoint[string]{
+			ID: checkpoint.ID, Sort: checkpoint.Sort, Type: int(checkpoint.Type),
+			SinceMs: checkpoint.SinceMs, SinceOffsetSeconds: checkpoint.SinceOffsetSeconds,
+			SleepAfterPrevSeconds: checkpoint.SleepAfterPrevSeconds,
+		})
+	}
+	index, ok := timing.SelectCheckpoint(
+		timing.Observation{
+			ID: logEntry.ID, TimeMs: logEntry.TimeMs, Number: logEntry.Number,
+			EPC: logEntry.EPC, Board: logEntry.Board,
+		},
+		timing.Member[string]{
+			ID: member.ID, RaceID: member.RaceID, StartTimeMs: member.StartTimeMs,
+			RaceStartedAtMs: member.RaceStartedAtMs,
+		},
+		timing.LastResult{Sort: last.Sort, TimeMs: last.TimeMs},
+		passed,
+		coreCheckpoints,
+	)
+	if !ok {
+		return Checkpoint{}, false
+	}
+	return checkpoints[index], true
 }
 
 func (p *Processor) debugLog(name, format string, args ...interface{}) {

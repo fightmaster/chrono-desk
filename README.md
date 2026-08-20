@@ -26,9 +26,9 @@ per event.
 | run5-stopwatch | Cordova | Offline stopwatch / manual finish-order capture | `~/projects/run5-stopwatch` |
 | RaceTorchApp | Go + Wails | Finish-camera photo processing (future integration) | `~/GolandProjects/RaceTorchApp` |
 
-chrono-desk reuses the result-derivation algorithm from rfid-sync
-(`internal/syncer/processor`) and, later, the TCP listener + Feibot adapter from rfid-hub
-(`internal/tcp`, `internal/ingest`).
+chrono-desk and rfid-sync use the same sibling `timing-core` module for
+checkpoint eligibility and duration formatting. Each application retains only
+its storage/transaction adapter. TCP ingest uses the shared `rfid-core` module.
 
 ## Stack
 

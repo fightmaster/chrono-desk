@@ -40,7 +40,7 @@ internal/transport/publicweb — separate read-only LAN results board (off by de
    │
 internal/service           — import/list use cases, recount orchestration, ranking, excel export
    │
-internal/processor         — checkpoint-matching engine (port of rfid-sync processor)
+internal/processor         — SQLite adapter around shared timing-core
    │
 internal/domain            — Event, Race, Category, Checkpoint, Member, RfidLog, Result
    │
@@ -56,13 +56,12 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    drive between laptops, backup = file copy, corruption is isolated per event.
    The file-system concerns and open-store cache now live in `sqlite.EventCatalog`;
    application-level import/list logic stays in `service.EventService`.
-2. **Reuse the rfid-sync derivation engine, not the Laravel one.** rfid-sync's
-   `internal/syncer/processor` already implements member matching by EPC/number,
-   checkpoint eligibility (since / since_offset_seconds / sleep_after_prev_seconds /
-   sort order), result insertion and start/finish/clean-time updates — behind a clean
-   `Repository` interface with table-driven tests. chrono-desk ports it (Go → Go) and
-   backs it with SQLite instead of MySQL. run5's `PushResult`/`RecountRfid` (PHP) stay
-   the battle-tested behavioral reference — both implementations must agree.
+2. **Reuse one versioned timing-core, not a copied processor.** The sibling
+   `timing-core` module `legacy-once-v1` owns checkpoint eligibility (since /
+   since_offset_seconds / sleep_after_prev_seconds / sort order) and duration
+   formatting. Chrono Desk keeps the SQLite repository/transaction adapter;
+   rfid-sync keeps its MySQL adapter. run5's `PushResult`/`RecountRfid` (PHP)
+   remains the migration reference until production parity and retirement.
    **Ranking/materialization is NOT in rfid-sync** (the site does it); it is ported from
    run5 PHP — full spec and source paths in `docs/ranking.md`.
 3. **HTTP API instead of Wails bindings.** Gives LAN access for judges' tablets later,
