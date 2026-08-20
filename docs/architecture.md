@@ -148,8 +148,9 @@ destructive). Current push schema v3 uses a capabilities preflight, sends only d
 raw observation batches plus explicit edits and persists item acknowledgements. Manual pull
 uses the full import as an idempotent bootstrap, then drains RUN5 change-feed v1. Every page
 and opaque cursor commit in one SQLite transaction; imported observations bypass the ownership
-outbox. Background polling during a live session is the next sub-step. Site stays the source
-of truth.
+outbox. A live session polls the feed every five seconds. Manual and background pulls share
+one per-event mutex, so cursor application and compatibility recount never overlap. Site stays
+the source of truth.
 
 LAN broadcast (shipped): spectators' phones ──HTTP──▶ chrono-desk `publicweb` (read-only,
 PII-trimmed) — distance dropdown + Призёры/Протокол tabs (absolute & age-group podiums,

@@ -27,12 +27,15 @@ func (s *Server) handleLiveStart(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	s.syncPull.Start(eventID)
 	writeJSON(w, http.StatusOK, s.live.Status(eventID))
 }
 
 func (s *Server) handleLiveStop(w http.ResponseWriter, r *http.Request) {
-	s.live.Stop(r.PathValue("id"))
-	writeJSON(w, http.StatusOK, s.live.Status(r.PathValue("id")))
+	eventID := r.PathValue("id")
+	s.syncPull.Stop(eventID)
+	s.live.Stop(eventID)
+	writeJSON(w, http.StatusOK, s.live.Status(eventID))
 }
 
 func (s *Server) handleLiveStatus(w http.ResponseWriter, r *http.Request) {

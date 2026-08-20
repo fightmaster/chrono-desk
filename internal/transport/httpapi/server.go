@@ -21,6 +21,7 @@ type Server struct {
 	listener   net.Listener
 	events     *service.EventService
 	live       *service.LiveManager
+	syncPull   *service.SyncPullManager
 	photos     *service.PhotoManager
 	photoCache *service.PhotoCache
 	public     *publicweb.Server
@@ -57,6 +58,7 @@ func New(
 		public:     public,
 		logger:     logger,
 	}
+	s.syncPull = service.NewSyncPullManager(events, logger, 5*time.Second)
 
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
@@ -78,6 +80,7 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.syncPull.StopAll()
 	s.live.StopAll()
 	s.photos.StopAll()
 	return s.httpServer.Shutdown(ctx)

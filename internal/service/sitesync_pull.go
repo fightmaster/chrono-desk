@@ -56,6 +56,10 @@ func PullEventChanges(ctx context.Context, store *sqlite.Store, baseURL, token, 
 		if page.HasMore && (len(logs) == 0 || page.NextCursor == after) {
 			return stats, fmt.Errorf("change feed page does not advance cursor")
 		}
+		if len(logs) == 0 && page.NextCursor == after {
+			stats.Pages++
+			return stats, nil
+		}
 		if err := store.ApplyObservationFeedPage(ctx, eventID, logs, page.NextCursor, pulledAt.UnixMilli()); err != nil {
 			return stats, err
 		}

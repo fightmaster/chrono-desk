@@ -12,8 +12,9 @@ observations recorded in its durable outbound journal. Push schema v3 uses a ser
 capability preflight and item-level acknowledgements, so observations pulled from other
 timing points are never claimed or uploaded by this desktop. Manual pull imports the full
 event snapshot and then drains the v1 change feed page by page, committing each opaque
-cursor atomically with its observations. Background pull while live ingest is running is
-the next rollout sub-step.
+cursor atomically with its observations. Starting live ingest also starts a five-second
+background pull; stopping live ingest stops it. Manual and background pulls are serialized
+per event.
 
 ## Ecosystem
 

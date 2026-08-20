@@ -179,9 +179,11 @@ row never creates `observation_outbox`. Overlap with the snapshot fills missing
 origin metadata but preserves Chrono Desk ownership already recorded locally.
 
 After the feed is drained the current implementation performs one full local
-recount. This is deliberately the compatibility path until the impact
-classifier can prove a narrower member scope. Automatic background pull while
-live ingest is running remains the next sub-step.
+recount when observations changed. This is deliberately the compatibility path
+until the impact classifier can prove a narrower member scope. Starting live
+Feibot ingest starts a five-second background pull loop; stopping the live
+session cancels it. The manual button and loop share a per-event mutex, avoiding
+overlapping cursor advances or recounts. Empty polls do not write SQLite.
 
 ## Replay concurrency: a Laravel lock is not enough
 

@@ -167,17 +167,20 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	changes, err := service.PullEventChanges(r.Context(), store, cfg.BaseURL, cfg.Token, eventID, time.Now())
+	pulled, err := s.syncPull.PullNow(r.Context(), eventID)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	recount, err := service.NewRecounter(store, s.logger, false).Recount(r.Context(), eventID, "")
-	if err != nil {
-		s.fail(w, err)
-		return
+	if pulled.Recount == nil {
+		recount, err := service.NewRecounter(store, s.logger, false).Recount(r.Context(), eventID, "")
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		pulled.Recount = &recount
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"imported": stats, "changes": changes, "recount": recount, "site_wins": siteWins,
+		"imported": stats, "changes": pulled.Changes, "recount": pulled.Recount, "site_wins": siteWins,
 	})
 }
