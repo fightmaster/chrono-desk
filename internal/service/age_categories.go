@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
+	timing "gitlab.com/fightmaster1/timing-core"
 )
 
 type memberCategoryResolver interface {
@@ -45,13 +47,8 @@ func resolveCategoryID(race domain.Race, event domain.Event, categories []domain
 		return nil, fmt.Errorf("parse race date %q: %w", race.Date, err)
 	}
 
-	age := raceDate.Year() - birthDate.Year()
-	if event.UseRaceDateForAge {
-		birthdayThisYear := time.Date(raceDate.Year(), birthDate.Month(), birthDate.Day(), 0, 0, 0, 0, time.UTC)
-		if raceDate.Before(birthdayThisYear) {
-			age--
-		}
-	}
+	age := timing.AgeOnRaceDate(birthDate, raceDate, event.UseRaceDateForAge)
+	sort.Slice(categories, func(left, right int) bool { return categories[left].ID < categories[right].ID })
 
 	for _, category := range categories {
 		if category.Gender == nil || *category.Gender != gender {
