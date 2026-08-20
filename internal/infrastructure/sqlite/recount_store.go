@@ -42,7 +42,8 @@ func (s *Store) WipeDerivedResults(ctx context.Context, eventID, raceID string) 
 // them itself, keeping the disable check in one place.
 func (s *Store) ListRfidLogs(ctx context.Context, eventID string) ([]domain.RfidLog, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, event_id, status, number, time_ms, ant, epc, rssi, board, disabled_at
+		SELECT id, event_id, status, number, time_ms, ant, epc, rssi, board, disabled_at,
+			observation_version, capture_source_id, origin_system, origin_instance_id, origin_sequence
 		FROM rfid_logs WHERE event_id = ?
 		ORDER BY time_ms ASC, id ASC`, eventID)
 	if err != nil {
@@ -53,11 +54,30 @@ func (s *Store) ListRfidLogs(ctx context.Context, eventID string) ([]domain.Rfid
 	var logs []domain.RfidLog
 	for rows.Next() {
 		var l domain.RfidLog
-		var disabledAt sql.NullInt64
-		if err := rows.Scan(&l.ID, &l.EventID, &l.Status, &l.Number, &l.TimeMs, &l.Ant, &l.EPC, &l.RSSI, &l.Board, &disabledAt); err != nil {
+		var disabledAt, observationVersion, originSequence sql.NullInt64
+		var captureSourceID, originSystem, originInstanceID sql.NullString
+		if err := rows.Scan(
+			&l.ID, &l.EventID, &l.Status, &l.Number, &l.TimeMs, &l.Ant, &l.EPC, &l.RSSI, &l.Board, &disabledAt,
+			&observationVersion, &captureSourceID, &originSystem, &originInstanceID, &originSequence,
+		); err != nil {
 			return nil, err
 		}
 		l.DisabledAt = nullableInt64(disabledAt)
+		if observationVersion.Valid {
+			l.ObservationVersion = int(observationVersion.Int64)
+		}
+		if captureSourceID.Valid {
+			l.CaptureSourceID = captureSourceID.String
+		}
+		if originSystem.Valid {
+			l.OriginSystem = originSystem.String
+		}
+		if originInstanceID.Valid {
+			l.OriginInstanceID = originInstanceID.String
+		}
+		if originSequence.Valid {
+			l.OriginSequence = originSequence.Int64
+		}
 		logs = append(logs, l)
 	}
 	return logs, rows.Err()

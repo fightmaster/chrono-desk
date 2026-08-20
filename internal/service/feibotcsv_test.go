@@ -17,7 +17,7 @@ func newTestStore(t *testing.T) *sqlite.Store {
 		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	store, err := sqlite.New(db)
+	store, err := sqlite.New(db, sqlite.WithOriginInstanceID("test-desk"))
 	if err != nil {
 		t.Fatalf("store: %v", err)
 	}
@@ -74,6 +74,13 @@ func TestFeibotCsvImport(t *testing.T) {
 	}
 	if board != "Feibot:U659" || epc != "AABB01" || timeMs != 1780650000123 || ant != 1 {
 		t.Errorf("log fields = %s %s %d %d", board, epc, timeMs, ant)
+	}
+	var outboxCount int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM observation_outbox`).Scan(&outboxCount); err != nil {
+		t.Fatal(err)
+	}
+	if outboxCount != 2 {
+		t.Errorf("outbox rows = %d, want 2", outboxCount)
 	}
 
 	// Re-import of the same file: everything dedups (2 rows already stored

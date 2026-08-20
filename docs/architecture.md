@@ -111,6 +111,17 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    event import use similarly narrow consumer-side ports with thin SQLite adapters inside
    `internal/service`. This keeps SQL details and transaction wiring in infrastructure
    while the use cases depend only on the queries and commands they actually need.
+9. **Locally accepted observations have a durable ownership journal.** Live TCP
+   reads and Feibot CSV rows are inserted together with an `observation_outbox`
+   row in one SQLite transaction. Site snapshot/pull imports use the foreign
+   insert path and never acquire desktop ownership, including when the same
+   deterministic RFID id is later seen locally. One installation identity and
+   monotonic sequence are persisted in `.observation-origin.sqlite` alongside the
+   event databases; sequence gaps after a rolled-back event transaction are
+   valid, reuse after restart is not. The journal is the source for sync v3.
+   Until RUN5 accepts v3, the current v2 payload remains unchanged and still
+   sends the legacy full log set; do not switch the client before server-first
+   capability rollout.
 
 ## Data flow (v1)
 

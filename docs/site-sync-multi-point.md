@@ -143,6 +143,25 @@ With v2, `overwrite=true` means “apply the explicit desktop journal”, not
 remain additive from all timing points. `overwrite=false` still suppresses
 destructive field and RFID-log edits.
 
+## Observation ownership journal: implemented foundation for v3
+
+Chrono Desk now distinguishes local capture from imported storage before the
+v3 transport is enabled:
+
+- live TCP and local Feibot CSV acceptance use `InsertOwnedRfidLogs`;
+- the new `rfid_logs` row, origin metadata and `observation_outbox` row commit
+  in one SQLite transaction;
+- a duplicate id already imported from the site is left foreign and does not
+  acquire an outbox row;
+- snapshot import/pull continues through the non-owning upsert path;
+- one installation UUID and monotonic sequence are persisted outside the
+  per-event databases, so retries and restarts cannot renumber accepted rows.
+
+The v2 payload intentionally remains unchanged during this server-first phase.
+It still carries all event logs for compatibility. The next rollout step is
+RUN5 v3 acceptance with item acknowledgements; only after that capability is
+deployed may `BuildSyncPayload` switch raw observations to the outbox.
+
 ## Replay concurrency: a Laravel lock is not enough
 
 Two run5 finalize jobs can overlap, but a Laravel-only `WithoutOverlapping`

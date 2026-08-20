@@ -222,17 +222,18 @@ func (p *livePublisher) Publish(ctx context.Context, ev ingest.Event) error {
 	p.stats.LastReadMs.Store(ev.Time)
 
 	logEntry := domain.RfidLog{
-		ID:      ev.ID,
-		EventID: p.eventID,
-		Status:  ev.Status,
-		Number:  ev.Number,
-		TimeMs:  ev.Time,
-		Ant:     ev.Ant,
-		EPC:     ev.EPC,
-		RSSI:    ev.RSSI,
-		Board:   ev.Board,
+		ID:              ev.ID,
+		EventID:         p.eventID,
+		Status:          ev.Status,
+		Number:          ev.Number,
+		TimeMs:          ev.Time,
+		Ant:             ev.Ant,
+		EPC:             ev.EPC,
+		RSSI:            ev.RSSI,
+		Board:           ev.Board,
+		CaptureSourceID: "chrono-desk:" + p.eventID + ":" + ev.Board,
 	}
-	inserted, err := p.store.InsertRfidLogs(ctx, []domain.RfidLog{logEntry})
+	inserted, err := p.store.InsertOwnedRfidLogs(ctx, []domain.RfidLog{logEntry})
 	if err != nil {
 		p.stats.Errors.Add(1)
 		return err

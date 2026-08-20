@@ -86,6 +86,7 @@ func (i *FeibotCsvImporter) Import(ctx context.Context, r io.Reader, eventID, de
 			}
 			continue
 		}
+		logEntry.CaptureSourceID = "chrono-desk:" + eventID + ":" + board
 		logs = append(logs, logEntry)
 	}
 	if err := scanner.Err(); err != nil {
@@ -111,7 +112,7 @@ func (i *FeibotCsvImporter) Import(ctx context.Context, r io.Reader, eventID, de
 		fresh = append(fresh, l)
 	}
 
-	inserted, err := i.store.InsertRfidLogs(ctx, fresh)
+	inserted, err := i.store.InsertOwnedRfidLogs(ctx, fresh)
 	if err != nil {
 		return res, err
 	}

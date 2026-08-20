@@ -183,8 +183,10 @@ func upsertMember(ctx context.Context, ex execer, m domain.Member) error {
 // refreshes disabled_at on existing rows, so a re-export that disables a log
 // (run5 ADR-0007) takes effect on the next recount.
 const rfidLogUpsertSQL = `
-	INSERT INTO rfid_logs (id, event_id, status, number, time_ms, ant, epc, rssi, board, disabled_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO rfid_logs (
+		id, event_id, status, number, time_ms, ant, epc, rssi, board, disabled_at,
+		observation_version, capture_source_id, origin_system, origin_instance_id, origin_sequence)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET disabled_at=excluded.disabled_at`
 
 // UpsertRfidLogs upserts logs in their own transaction (standalone callers).
@@ -212,7 +214,9 @@ func upsertRfidLogs(ctx context.Context, tx *sql.Tx, logs []domain.RfidLog) erro
 
 	for _, l := range logs {
 		if _, err := stmt.ExecContext(ctx,
-			l.ID, l.EventID, l.Status, l.Number, l.TimeMs, l.Ant, l.EPC, l.RSSI, l.Board, l.DisabledAt); err != nil {
+			l.ID, l.EventID, l.Status, l.Number, l.TimeMs, l.Ant, l.EPC, l.RSSI, l.Board, l.DisabledAt,
+			nullablePositiveInt(l.ObservationVersion), nullableString(l.CaptureSourceID), nullableString(l.OriginSystem),
+			nullableString(l.OriginInstanceID), nullablePositiveInt64(l.OriginSequence)); err != nil {
 			return fmt.Errorf("upsert rfid_log %s: %w", l.ID, err)
 		}
 	}

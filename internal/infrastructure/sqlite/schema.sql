@@ -91,20 +91,43 @@ CREATE INDEX IF NOT EXISTS idx_members_event_number ON members(event_id, number)
 CREATE INDEX IF NOT EXISTS idx_members_race ON members(race_id);
 
 CREATE TABLE IF NOT EXISTS rfid_logs (
-    id          TEXT PRIMARY KEY, -- md5(board+epc+timeMs+ant), see architecture.md
-    event_id    TEXT NOT NULL REFERENCES events(id),
-    status      INTEGER NOT NULL DEFAULT 0,
-    number      INTEGER NOT NULL DEFAULT 0,
-    time_ms     INTEGER NOT NULL,
-    ant         INTEGER NOT NULL DEFAULT 0,
-    epc         TEXT NOT NULL DEFAULT '',
-    rssi        INTEGER NOT NULL DEFAULT 0,
-    board       TEXT NOT NULL,
-    disabled_at INTEGER
+    id                  TEXT PRIMARY KEY, -- md5(board+epc+timeMs+ant), see architecture.md
+    event_id            TEXT NOT NULL REFERENCES events(id),
+    status              INTEGER NOT NULL DEFAULT 0,
+    number              INTEGER NOT NULL DEFAULT 0,
+    time_ms             INTEGER NOT NULL,
+    ant                 INTEGER NOT NULL DEFAULT 0,
+    epc                 TEXT NOT NULL DEFAULT '',
+    rssi                INTEGER NOT NULL DEFAULT 0,
+    board               TEXT NOT NULL,
+    disabled_at         INTEGER,
+    observation_version INTEGER,
+    capture_source_id   TEXT,
+    origin_system       TEXT,
+    origin_instance_id  TEXT,
+    origin_sequence     INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_rfid_logs_time ON rfid_logs(event_id, time_ms);
 CREATE INDEX IF NOT EXISTS idx_rfid_logs_board ON rfid_logs(board);
+
+-- Durable ownership boundary for push-own synchronization. A row is created
+-- in the same event transaction as a locally accepted observation. Site
+-- imports use the ordinary rfid_logs upsert and never enter this journal.
+CREATE TABLE IF NOT EXISTS observation_outbox (
+    origin_sequence INTEGER PRIMARY KEY,
+    observation_id  TEXT NOT NULL UNIQUE REFERENCES rfid_logs(id),
+    state           TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (state IN ('pending', 'sent', 'acked', 'rejected')),
+    created_at      INTEGER NOT NULL,
+    last_attempt_at INTEGER,
+    attempt_count   INTEGER NOT NULL DEFAULT 0,
+    acked_at        INTEGER,
+    rejection       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_observation_outbox_state_sequence
+    ON observation_outbox(state, origin_sequence);
 
 CREATE TABLE IF NOT EXISTS results (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

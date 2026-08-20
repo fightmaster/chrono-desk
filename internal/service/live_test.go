@@ -74,6 +74,13 @@ func TestLiveIngestDerivesResultImmediately(t *testing.T) {
 	if got := stats.Inserted.Load(); got != 1 {
 		t.Errorf("inserted = %d, want 1", got)
 	}
+	var outboxCount int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM observation_outbox`).Scan(&outboxCount); err != nil {
+		t.Fatal(err)
+	}
+	if outboxCount != 1 {
+		t.Errorf("outbox rows = %d, want 1", outboxCount)
+	}
 
 	var finish *int64
 	if err := store.DB().QueryRow(`SELECT finish_time_ms FROM members WHERE id='mem-1'`).Scan(&finish); err != nil {

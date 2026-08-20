@@ -14,6 +14,7 @@ import (
 // per event, caching the handles for the process lifetime.
 type EventCatalog struct {
 	dataDir string
+	origin  *installationOrigin
 
 	mu     sync.Mutex
 	stores map[string]*Store
@@ -25,7 +26,11 @@ func NewEventCatalog(dataDir string) (*EventCatalog, error) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create data dir %s: %w", dataDir, err)
 	}
-	return &EventCatalog{dataDir: dataDir, stores: map[string]*Store{}}, nil
+	origin, err := loadOrCreateInstallationOrigin(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	return &EventCatalog{dataDir: dataDir, origin: origin, stores: map[string]*Store{}}, nil
 }
 
 func (c *EventCatalog) eventPath(eventID string) string {
@@ -61,7 +66,7 @@ func (c *EventCatalog) openLocked(eventID string, create bool) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, err := New(db)
+	store, err := New(db, WithObservationOrigin(c.origin.instanceID, c.origin.Next))
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -100,6 +105,9 @@ func (c *EventCatalog) Close() error {
 		if err := store.Close(); err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("close event %s: %w", id, err)
 		}
+	}
+	if err := c.origin.Close(); err != nil && firstErr == nil {
+		firstErr = fmt.Errorf("close observation origin: %w", err)
 	}
 	return firstErr
 }

@@ -15,6 +15,9 @@ func migrate(db *sql.DB) error {
 	if err := addEventUseRaceDateForAge(db); err != nil {
 		return err
 	}
+	if err := addRfidObservationOrigin(db); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -96,6 +99,32 @@ func addEventUseRaceDateForAge(db *sql.DB) error {
 	}
 	if _, err := db.Exec(`ALTER TABLE events ADD COLUMN use_race_date_for_age INTEGER NOT NULL DEFAULT 0`); err != nil {
 		return fmt.Errorf("add events.use_race_date_for_age: %w", err)
+	}
+	return nil
+}
+
+func addRfidObservationOrigin(db *sql.DB) error {
+	columns := []struct {
+		name    string
+		typeSQL string
+	}{
+		{"observation_version", "INTEGER"},
+		{"capture_source_id", "TEXT"},
+		{"origin_system", "TEXT"},
+		{"origin_instance_id", "TEXT"},
+		{"origin_sequence", "INTEGER"},
+	}
+	for _, column := range columns {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('rfid_logs') WHERE name = ?`, column.name).Scan(&count); err != nil {
+			return fmt.Errorf("inspect rfid_logs.%s: %w", column.name, err)
+		}
+		if count > 0 {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE rfid_logs ADD COLUMN ` + column.name + ` ` + column.typeSQL); err != nil {
+			return fmt.Errorf("add rfid_logs.%s: %w", column.name, err)
+		}
 	}
 	return nil
 }

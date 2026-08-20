@@ -106,16 +106,21 @@ type Member struct {
 // RfidLog is a raw reader event. ID is the cross-system idempotency key:
 // md5(board + epc + timeMillis + ant) — see docs/architecture.md, decision 4.
 type RfidLog struct {
-	ID         string
-	EventID    string
-	Status     int
-	Number     int64
-	TimeMs     int64
-	Ant        int
-	EPC        string
-	RSSI       int
-	Board      string
-	DisabledAt *int64 // unix ms; non-nil logs are skipped on recount (run5 ADR-0007)
+	ID                 string
+	EventID            string
+	Status             int
+	Number             int64
+	TimeMs             int64
+	Ant                int
+	EPC                string
+	RSSI               int
+	Board              string
+	DisabledAt         *int64 // unix ms; non-nil logs are skipped on recount (run5 ADR-0007)
+	ObservationVersion int
+	CaptureSourceID    string
+	OriginSystem       string
+	OriginInstanceID   string
+	OriginSequence     int64
 }
 
 // Result is one derived checkpoint pass; at most one per rfid log.
