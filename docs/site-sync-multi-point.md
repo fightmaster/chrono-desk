@@ -217,6 +217,18 @@ revision-counter slice. Exact hashes remain the active safety fence until every
 configuration/input writer increments those counters atomically and crash/
 rollback tests prove the replacement.
 
+The first shadow slice is implemented as `projection-revision-v1`. SQLite
+triggers increment per-event `config_revision` or `input_revision` in the same
+transaction as events, races, categories/attachments, checkpoints, projection
+member fields, raw observations, manual results and the pull cursor. No-op
+updates are suppressed; derived result rows do not advance the input revision;
+rollback restores both data and counters. Trigger inventory and special manual/
+category paths have executable tests. On the same 11k/11k fixture an O(1)
+revision read takes about 36 microseconds, 768 bytes and 21 allocations. These
+counters are shadow evidence only: planning/execution still uses exact hashes
+until dual-read parity covers imports, local edits, crash recovery and migrated
+event databases.
+
 Every feed transaction that inserts an observation or changes its disabled state
 also sets durable `sync_config.projection_pending=1` alongside the new cursor. The
 flag is cleared only inside the successful replay/plan transaction. Therefore a

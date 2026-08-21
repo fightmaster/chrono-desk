@@ -13,16 +13,7 @@ const productionSizedEvidenceRows = 11_000
 // at the event size that motivated the Stage 5 audit. Setup is outside the
 // timed section; one iteration represents one complete evidence scan.
 func BenchmarkProjectionEvidenceElevenThousand(b *testing.B) {
-	db, err := Open(filepath.Join(b.TempDir(), "evidence-benchmark.chrono"))
-	if err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() { _ = db.Close() })
-	store, err := New(db)
-	if err != nil {
-		b.Fatal(err)
-	}
-	seedProjectionEvidenceBenchmark(b, store)
+	store := newProjectionEvidenceBenchmarkStore(b)
 
 	b.ReportAllocs()
 	b.ReportMetric(productionSizedEvidenceRows, "members")
@@ -33,6 +24,35 @@ func BenchmarkProjectionEvidenceElevenThousand(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func BenchmarkProjectionRevisionsElevenThousand(b *testing.B) {
+	store := newProjectionEvidenceBenchmarkStore(b)
+
+	b.ReportAllocs()
+	b.ReportMetric(productionSizedEvidenceRows, "members")
+	b.ReportMetric(productionSizedEvidenceRows, "observations")
+	b.ResetTimer()
+	for iteration := 0; iteration < b.N; iteration++ {
+		if _, err := store.ProjectionRevisions(context.Background(), "event-benchmark"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func newProjectionEvidenceBenchmarkStore(b *testing.B) *Store {
+	b.Helper()
+	db, err := Open(filepath.Join(b.TempDir(), "evidence-benchmark.chrono"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = db.Close() })
+	store, err := New(db)
+	if err != nil {
+		b.Fatal(err)
+	}
+	seedProjectionEvidenceBenchmark(b, store)
+	return store
 }
 
 func seedProjectionEvidenceBenchmark(b *testing.B, store *Store) {

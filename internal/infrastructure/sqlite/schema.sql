@@ -226,3 +226,12 @@ CREATE TABLE IF NOT EXISTS sync_config (
     last_pulled_at    INTEGER, -- unix ms of last atomically applied feed page
     projection_pending INTEGER NOT NULL DEFAULT 0 -- committed feed input not yet projection-acked
 );
+
+-- O(1) shadow evidence for the replay planner. Versioned triggers are created
+-- by migrate() after legacy columns have been added, so old databases never
+-- fail while applying the embedded schema.
+CREATE TABLE IF NOT EXISTS projection_revisions (
+    event_id        TEXT PRIMARY KEY,
+    config_revision INTEGER NOT NULL DEFAULT 0,
+    input_revision  INTEGER NOT NULL DEFAULT 0
+);

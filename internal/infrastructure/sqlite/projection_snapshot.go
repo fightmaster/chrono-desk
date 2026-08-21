@@ -17,6 +17,30 @@ type ProjectionEvidence struct {
 	InputWatermark string
 }
 
+const ProjectionRevisionVersion = "projection-revision-v1"
+
+type ProjectionRevisions struct {
+	ConfigRevision int64
+	InputRevision  int64
+}
+
+// ProjectionRevisions returns transaction-coupled O(1) shadow evidence. Exact
+// hashes remain authoritative during rollout until every writer and migration
+// path has passed parity/crash verification.
+func (s *Store) ProjectionRevisions(ctx context.Context, eventID string) (ProjectionRevisions, error) {
+	var revisions ProjectionRevisions
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE((SELECT config_revision FROM projection_revisions WHERE event_id=?), 0),
+			COALESCE((SELECT input_revision FROM projection_revisions WHERE event_id=?), 0)`,
+		eventID, eventID,
+	).Scan(&revisions.ConfigRevision, &revisions.InputRevision)
+	if err != nil {
+		return ProjectionRevisions{}, fmt.Errorf("read projection revisions: %w", err)
+	}
+	return revisions, nil
+}
+
 func (s *Store) ProjectionEvidence(ctx context.Context, eventID string) (ProjectionEvidence, error) {
 	var evidence ProjectionEvidence
 	err := s.WithinTx(ctx, func(txStore *Store) error {

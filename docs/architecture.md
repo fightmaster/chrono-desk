@@ -164,6 +164,12 @@ outbox. A live session polls the feed every five seconds. Manual and background 
 one per-event mutex, so cursor application and compatibility recount never overlap. Site stays
 the source of truth.
 
+Projection evidence currently remains an exact SHA-256 snapshot at planning
+and execution. `projection-revision-v1` adds transaction-coupled SQLite shadow
+counters through versioned triggers over every evidence table. They are not an
+authority switch: exact hashes stay fail-closed while dual-read parity and
+legacy-database migration coverage are collected.
+
 LAN broadcast (shipped): spectators' phones ──HTTP──▶ chrono-desk `publicweb` (read-only,
 PII-trimmed) — distance dropdown + Призёры/Протокол tabs (absolute & age-group podiums,
 searchable protocol), auto-refreshing; the Призёры tab copies a Telegram-ready Markdown
