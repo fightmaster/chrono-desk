@@ -94,6 +94,42 @@ func TestApplyEditClearsNumberToNull(t *testing.T) {
 	}
 }
 
+func TestApplyEditMarksStartAsManualAndClearingRemovesProvenance(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	importFixture(t, store)
+
+	if _, err := ApplyEdit(ctx, store, EditRequest{
+		Entity: "member", EntityID: "mem-1", Field: "start_time_ms",
+		Value: json.RawMessage(`1780812000123`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var source string
+	var observationID *string
+	if err := store.DB().QueryRow(`
+		SELECT start_time_source, start_observation_id FROM members WHERE id = 'mem-1'`).
+		Scan(&source, &observationID); err != nil {
+		t.Fatal(err)
+	}
+	if source != "manual" || observationID != nil {
+		t.Fatalf("manual provenance = %q/%v", source, observationID)
+	}
+
+	if _, err := ApplyEdit(ctx, store, EditRequest{
+		Entity: "member", EntityID: "mem-1", Field: "start_time_ms",
+		Value: json.RawMessage(`null`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`SELECT start_time_source FROM members WHERE id = 'mem-1'`).Scan(&source); err != nil {
+		t.Fatal(err)
+	}
+	if source != "unknown" {
+		t.Fatalf("cleared provenance = %q, want unknown", source)
+	}
+}
+
 // Moving the race start shifts every member's start by the same delta — so a
 // mass start follows and a staggered start keeps its gaps — and each shift is
 // journaled (so it syncs to the site). The shift must also survive the recount

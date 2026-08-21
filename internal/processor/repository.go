@@ -27,5 +27,5 @@ type TxRepository interface {
 	// InsertResult stores the derived result; returns false (no error) when a
 	// result for this rfid log already exists.
 	InsertResult(ctx context.Context, log domain.RfidLog, member Member, checkpoint Checkpoint) (bool, error)
-	UpdateMemberTimes(ctx context.Context, member Member, checkpoint Checkpoint, eventTimeMs int64) error
+	UpdateMemberTimes(ctx context.Context, member Member, checkpoint Checkpoint, eventTimeMs int64, observationID string) error
 }

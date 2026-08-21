@@ -86,7 +86,7 @@ func (p *Processor) Process(ctx context.Context, logEntry domain.RfidLog, raceFi
 			return false, nil
 		}
 
-		if err := tx.UpdateMemberTimes(ctx, member, checkpoint, eventTimeMs); err != nil {
+		if err := tx.UpdateMemberTimes(ctx, member, checkpoint, eventTimeMs, logEntry.ID); err != nil {
 			return false, err
 		}
 

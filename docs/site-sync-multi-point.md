@@ -210,11 +210,14 @@ the live session cancels it. The manual button and loop share a per-event mutex,
 while the SQLite transaction protects against other local writers. Empty and
 duplicate-only polls do not rewrite the protocol.
 
-Known follow-up: imported/manual `members.start_time_ms` and a start derived from
-RFID currently share one column without provenance. Existing full and targeted
-recount both preserve it. Before automatically repairing a disabled or corrected
-start observation, add explicit start provenance so replay cannot erase a judge's
-manual start or retain a stale RFID-derived start silently.
+Chrono Desk stores explicit start provenance beside `members.start_time_ms`:
+`unknown` for imported/legacy values, `manual` for judge edits,
+`race_default` for fallback to the race start, and `observation` plus
+`start_observation_id` for an RFID START. Full and targeted recount clear only
+the two derived sources before replay and preserve `manual`/`unknown`; disabling
+the observation that supplied a start can therefore remove it without erasing a
+judge decision. RUN5/rfid-sync adoption remains a coordinated expand-only
+follow-up before this provenance can cross the site sync boundary.
 
 ## Replay concurrency: a Laravel lock is not enough
 

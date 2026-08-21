@@ -129,6 +129,37 @@ func TestSchemaIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestMigrationAddsStartProvenanceToExistingMembers(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "legacy-start.chrono"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE members (
+			id TEXT PRIMARY KEY, event_id TEXT NOT NULL, race_id TEXT NOT NULL,
+			start_time_ms INTEGER
+		);
+		INSERT INTO members (id, event_id, race_id, start_time_ms)
+		VALUES ('legacy', 'event', 'race', 1000)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := addMemberStartProvenance(db); err != nil {
+		t.Fatalf("migrate legacy members: %v", err)
+	}
+
+	var source string
+	var observationID sql.NullString
+	if err := db.QueryRow(`
+		SELECT start_time_source, start_observation_id FROM members WHERE id = 'legacy'`).
+		Scan(&source, &observationID); err != nil {
+		t.Fatal(err)
+	}
+	if source != "unknown" || observationID.Valid {
+		t.Fatalf("migrated provenance = %q/%v, want unknown/NULL", source, observationID)
+	}
+}
+
 func TestMigrationAddsObservationOriginToExistingRfidLogs(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "legacy.chrono"))
 	if err != nil {

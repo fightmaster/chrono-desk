@@ -32,6 +32,15 @@ const (
 	StatusDSQ MemberStatus = 3
 )
 
+type StartTimeSource string
+
+const (
+	StartTimeSourceUnknown     StartTimeSource = "unknown"
+	StartTimeSourceManual      StartTimeSource = "manual"
+	StartTimeSourceRaceDefault StartTimeSource = "race_default"
+	StartTimeSourceObservation StartTimeSource = "observation"
+)
+
 type Event struct {
 	ID                string
 	Name              string

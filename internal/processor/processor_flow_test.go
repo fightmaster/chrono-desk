@@ -97,7 +97,7 @@ func (r *fakeProcessorRepository) InsertResult(_ context.Context, _ domain.RfidL
 	return true, nil
 }
 
-func (r *fakeProcessorRepository) UpdateMemberTimes(_ context.Context, _ Member, checkpoint Checkpoint, _ int64) error {
+func (r *fakeProcessorRepository) UpdateMemberTimes(_ context.Context, _ Member, checkpoint Checkpoint, _ int64, _ string) error {
 	r.updateCheckpointIDs = append(r.updateCheckpointIDs, checkpoint.ID)
 	return r.updateMemberErr
 }

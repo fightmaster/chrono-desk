@@ -49,10 +49,10 @@ func (r *ProcessorRepo) RfidLogDisabled(ctx context.Context, rfidLogID string) (
 }
 
 const (
-	memberByNumberSQL = `SELECT m.id, m.race_id, m.number, m.start_time_ms, m.finish_time_ms, r.started_at_ms
+	memberByNumberSQL = `SELECT m.id, m.race_id, m.number, m.start_time_ms, m.start_time_source, m.finish_time_ms, r.started_at_ms
 		FROM members m JOIN races r ON r.id = m.race_id
 		WHERE m.event_id = ? AND m.number = ? ORDER BY m.id LIMIT 2`
-	memberByEPCSQL = `SELECT m.id, m.race_id, m.number, m.start_time_ms, m.finish_time_ms, r.started_at_ms
+	memberByEPCSQL = `SELECT m.id, m.race_id, m.number, m.start_time_ms, m.start_time_source, m.finish_time_ms, r.started_at_ms
 		FROM members m JOIN races r ON r.id = m.race_id
 		WHERE m.event_id = ? AND m.epc = ? ORDER BY m.id LIMIT 2`
 )
@@ -81,7 +81,7 @@ func (r *ProcessorRepo) LoadMember(ctx context.Context, eventID string, logEntry
 	}
 	var m processor.Member
 	var number, startMs, finishMs, raceStartedMs sql.NullInt64
-	if err := rows.Scan(&m.ID, &m.RaceID, &number, &startMs, &finishMs, &raceStartedMs); err != nil {
+	if err := rows.Scan(&m.ID, &m.RaceID, &number, &startMs, &m.StartTimeSource, &finishMs, &raceStartedMs); err != nil {
 		return processor.Member{}, false, fmt.Errorf("load member: %w", err)
 	}
 	if rows.Next() {
@@ -206,19 +206,25 @@ func (r *ProcessorRepo) InsertResult(ctx context.Context, logEntry domain.RfidLo
 //   - backfill start from race start when the member has none,
 //   - START checkpoint overwrites start_time unconditionally,
 //   - FINISH sets finish_time + clean_time only once.
-func (r *ProcessorRepo) UpdateMemberTimes(ctx context.Context, member processor.Member, checkpoint processor.Checkpoint, eventTimeMs int64) error {
+func (r *ProcessorRepo) UpdateMemberTimes(ctx context.Context, member processor.Member, checkpoint processor.Checkpoint, eventTimeMs int64, observationID string) error {
 	plan := planMemberTimes(member, checkpoint, eventTimeMs)
 
 	switch plan.StartWrite {
 	case timing.StartWriteIfNull:
 		if _, err := r.db.ExecContext(ctx,
-			`UPDATE members SET start_time_ms = ? WHERE id = ? AND start_time_ms IS NULL`,
+			`UPDATE members SET start_time_ms = ?, start_time_source = 'race_default', start_observation_id = NULL
+			 WHERE id = ? AND start_time_ms IS NULL`,
 			*plan.StartTimeMs, member.ID); err != nil {
 			return fmt.Errorf("backfill start time: %w", err)
 		}
 	case timing.StartWriteReplace:
+		if member.StartTimeMs != nil && (member.StartTimeSource == domain.StartTimeSourceManual ||
+			member.StartTimeSource == domain.StartTimeSourceUnknown) {
+			break
+		}
 		if _, err := r.db.ExecContext(ctx,
-			`UPDATE members SET start_time_ms = ? WHERE id = ?`, *plan.StartTimeMs, member.ID); err != nil {
+			`UPDATE members SET start_time_ms = ?, start_time_source = 'observation', start_observation_id = ? WHERE id = ?`,
+			*plan.StartTimeMs, observationID, member.ID); err != nil {
 			return fmt.Errorf("set start time: %w", err)
 		}
 	}

@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS members (
     team           TEXT,
     status         INTEGER NOT NULL DEFAULT 0,
     start_time_ms  INTEGER,
+    start_time_source TEXT NOT NULL DEFAULT 'unknown',
+    start_observation_id TEXT,
     finish_time_ms INTEGER,
     clean_time     TEXT
 );

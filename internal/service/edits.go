@@ -107,6 +107,9 @@ func applyValidatedEdit(ctx context.Context, store editTxStore, req EditRequest,
 	if err != nil {
 		return err
 	}
+	if err := updateStartProvenance(ctx, store, req, value); err != nil {
+		return err
+	}
 
 	oldJSON, err := json.Marshal(normalizeDriverValue(old))
 	if err != nil {
@@ -305,9 +308,31 @@ func ReapplyLocalEdits(ctx context.Context, store editReplayStore) (applied int,
 		if _, err := store.UpdateEntityField(ctx, spec.table, c.Field, c.EntityID, value); err != nil {
 			continue // entity no longer exists in the export
 		}
+		if err := updateStartProvenance(ctx, store, EditRequest{
+			Entity: c.Entity, EntityID: c.EntityID, Field: c.Field,
+		}, value); err != nil {
+			continue
+		}
 		applied++
 	}
 	return applied, nil
+}
+
+func updateStartProvenance(ctx context.Context, store interface {
+	UpdateEntityField(ctx context.Context, table, field, id string, value any) (old any, err error)
+}, req EditRequest, value any) error {
+	if req.Entity != "member" || req.Field != "start_time_ms" {
+		return nil
+	}
+	source := "manual"
+	if value == nil {
+		source = "unknown"
+	}
+	if _, err := store.UpdateEntityField(ctx, "members", "start_time_source", req.EntityID, source); err != nil {
+		return err
+	}
+	_, err := store.UpdateEntityField(ctx, "members", "start_observation_id", req.EntityID, nil)
+	return err
 }
 
 func validateEdit(req EditRequest) (editableField, any, error) {

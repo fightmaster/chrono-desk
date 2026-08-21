@@ -24,6 +24,29 @@ func migrate(db *sql.DB) error {
 	if err := addSyncPullCursor(db); err != nil {
 		return err
 	}
+	if err := addMemberStartProvenance(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+func addMemberStartProvenance(db *sql.DB) error {
+	for _, column := range []struct {
+		name, typeSQL string
+	}{
+		{"start_time_source", "TEXT NOT NULL DEFAULT 'unknown'"},
+		{"start_observation_id", "TEXT"},
+	} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('members') WHERE name = ?`, column.name).Scan(&count); err != nil {
+			return fmt.Errorf("inspect members.%s: %w", column.name, err)
+		}
+		if count == 0 {
+			if _, err := db.Exec(`ALTER TABLE members ADD COLUMN ` + column.name + ` ` + column.typeSQL); err != nil {
+				return fmt.Errorf("add members.%s: %w", column.name, err)
+			}
+		}
+	}
 	return nil
 }
 

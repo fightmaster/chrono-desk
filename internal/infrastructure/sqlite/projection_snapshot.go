@@ -49,7 +49,8 @@ func (s *Store) projectionEvidence(ctx context.Context, eventID string) (Project
 			FROM race_categories rc JOIN races r ON r.id = rc.race_id
 			WHERE r.event_id = ? ORDER BY rc.race_id, rc.category_id`, []any{eventID}},
 		{"checkpoints", `SELECT id, event_id, race_id, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds FROM checkpoints WHERE event_id = ? ORDER BY id`, []any{eventID}},
-		{"members", `SELECT id, event_id, race_id, category_id, number, epc, gender, dob, status, start_time_ms, finish_time_ms
+		{"members", `SELECT id, event_id, race_id, category_id, number, epc, gender, dob, status,
+			start_time_ms, start_time_source, start_observation_id, finish_time_ms
 			FROM members WHERE event_id = ? ORDER BY id`, []any{eventID}},
 	} {
 		if err := hashQuery(ctx, s.db, config, query.label, query.sql, query.args...); err != nil {

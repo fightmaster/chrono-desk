@@ -12,6 +12,7 @@ type Member struct {
 	RaceID          string
 	Number          *int64
 	StartTimeMs     *int64
+	StartTimeSource domain.StartTimeSource
 	FinishTimeMs    *int64
 	RaceStartedAtMs *int64
 }

@@ -125,7 +125,8 @@ func (s *Store) ShiftMemberStarts(ctx context.Context, raceID string, deltaMs in
 
 		if len(shifts) > 0 {
 			if _, err := txStore.db.ExecContext(ctx,
-				`UPDATE members SET start_time_ms = start_time_ms + ?
+				`UPDATE members SET start_time_ms = start_time_ms + ?,
+				 start_time_source = 'manual', start_observation_id = NULL
 				 WHERE race_id = ? AND start_time_ms IS NOT NULL`,
 				deltaMs, raceID); err != nil {
 				return fmt.Errorf("shift member starts: %w", err)
@@ -146,7 +147,8 @@ func (s *Store) UpdateMemberFinish(ctx context.Context, memberID string, start *
 	var err error
 	if start != nil {
 		_, err = s.db.ExecContext(ctx,
-			`UPDATE members SET start_time_ms = ?, finish_time_ms = ?, clean_time = ? WHERE id = ?`,
+			`UPDATE members SET start_time_ms = ?, start_time_source = 'race_default', start_observation_id = NULL,
+			 finish_time_ms = ?, clean_time = ? WHERE id = ?`,
 			*start, finish, clean, memberID)
 	} else {
 		_, err = s.db.ExecContext(ctx,
@@ -162,14 +164,16 @@ func (s *Store) UpdateMemberFinish(ctx context.Context, memberID string, start *
 func upsertMember(ctx context.Context, ex execer, m domain.Member) error {
 	_, err := ex.ExecContext(ctx, `
 		INSERT INTO members (id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
-			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			gender, dob, city, team, status, start_time_ms, start_time_source, start_observation_id,
+			finish_time_ms, clean_time)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', NULL, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			event_id=excluded.event_id, race_id=excluded.race_id, category_id=excluded.category_id,
 			number=excluded.number, epc=excluded.epc, rfid=excluded.rfid,
 			first_name=excluded.first_name, last_name=excluded.last_name, gender=excluded.gender,
 			dob=excluded.dob, city=excluded.city, team=excluded.team, status=excluded.status,
-			start_time_ms=excluded.start_time_ms, finish_time_ms=excluded.finish_time_ms,
+			start_time_ms=excluded.start_time_ms, start_time_source='unknown', start_observation_id=NULL,
+			finish_time_ms=excluded.finish_time_ms,
 			clean_time=excluded.clean_time`,
 		m.ID, m.EventID, m.RaceID, m.CategoryID, m.Number, m.EPC, m.RFID, m.FirstName, m.LastName,
 		m.Gender, m.DOB, m.City, m.Team, int(m.Status), m.StartTimeMs, m.FinishTimeMs, m.CleanTime)

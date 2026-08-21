@@ -178,8 +178,10 @@ open only while on.
   not yet passed, past its activation time (`since` or member start + `since_offset_seconds`),
   past the sleep window after the previous result, and with `sort` greater than the last
   passed checkpoint.
-- START sets `member.start_time`; FINISH sets `member.finish_time` and computes
-  `clean_time` (`HH:MM:SS.mmm`).
+- START sets `member.start_time` with `observation` provenance and its raw log
+  id; FINISH sets `member.finish_time` and computes `clean_time`
+  (`HH:MM:SS.mmm`). Race fallback and judge starts use distinct provenance so
+  recount clears only derived starts.
 
 ## Build & platforms
 

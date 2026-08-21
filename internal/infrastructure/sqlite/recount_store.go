@@ -23,7 +23,12 @@ func (s *Store) WipeDerivedResultsForMembers(ctx context.Context, eventID string
 		return fmt.Errorf("wipe member derived results: %w", err)
 	}
 	if _, err := s.db.ExecContext(ctx,
-		`UPDATE members SET finish_time_ms = NULL, clean_time = NULL WHERE event_id = ? AND id IN (`+ids+`)`, args...); err != nil {
+		`UPDATE members SET
+			start_time_ms = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_time_ms END,
+			start_time_source = CASE WHEN start_time_source IN ('observation', 'race_default') THEN 'unknown' ELSE start_time_source END,
+			start_observation_id = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_observation_id END,
+			finish_time_ms = NULL, clean_time = NULL
+		 WHERE event_id = ? AND id IN (`+ids+`)`, args...); err != nil {
 		return fmt.Errorf("reset member derived times: %w", err)
 	}
 	return nil
@@ -41,14 +46,24 @@ func (s *Store) WipeDerivedResults(ctx context.Context, eventID, raceID string) 
 				`DELETE FROM results WHERE event_id = ? AND rfid_log_id IS NOT NULL`, eventID)
 			if err == nil {
 				_, err = txStore.db.ExecContext(ctx,
-					`UPDATE members SET finish_time_ms = NULL, clean_time = NULL WHERE event_id = ?`, eventID)
+					`UPDATE members SET
+						start_time_ms = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_time_ms END,
+						start_time_source = CASE WHEN start_time_source IN ('observation', 'race_default') THEN 'unknown' ELSE start_time_source END,
+						start_observation_id = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_observation_id END,
+						finish_time_ms = NULL, clean_time = NULL
+					 WHERE event_id = ?`, eventID)
 			}
 		} else {
 			_, err = txStore.db.ExecContext(ctx,
 				`DELETE FROM results WHERE event_id = ? AND race_id = ? AND rfid_log_id IS NOT NULL`, eventID, raceID)
 			if err == nil {
 				_, err = txStore.db.ExecContext(ctx,
-					`UPDATE members SET finish_time_ms = NULL, clean_time = NULL WHERE event_id = ? AND race_id = ?`, eventID, raceID)
+					`UPDATE members SET
+						start_time_ms = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_time_ms END,
+						start_time_source = CASE WHEN start_time_source IN ('observation', 'race_default') THEN 'unknown' ELSE start_time_source END,
+						start_observation_id = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_observation_id END,
+						finish_time_ms = NULL, clean_time = NULL
+					 WHERE event_id = ? AND race_id = ?`, eventID, raceID)
 			}
 		}
 		if err != nil {
