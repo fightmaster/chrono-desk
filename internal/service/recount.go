@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -69,6 +70,8 @@ func (r *Recounter) RecountPlan(ctx context.Context, eventID string, plan timing
 		return RecountStats{}, false, nil
 	}
 	var stats RecountStats
+	identity := CurrentProjectionEvidenceIdentity()
+	var attemptedCheck *sqlite.ProjectionEvidenceCheck
 	err := r.store.WithinTx(ctx, func(store recountTxStore) error {
 		actual, err := store.ProjectionFenceEvidence(ctx, eventID)
 		if err != nil {
@@ -79,10 +82,12 @@ func (r *Recounter) RecountPlan(ctx context.Context, eventID string, plan timing
 		versionMismatch := actual.RevisionVersion != expected.RevisionVersion
 		revisionMismatch := plan.EvidenceValid && (versionMismatch || exactChanged != revisionChanged)
 		if plan.EvidenceValid {
-			if err := store.RecordProjectionEvidenceCheck(ctx, eventID, sqlite.ProjectionEvidenceCheck{
+			check := sqlite.ProjectionEvidenceCheck{
 				ExactChanged: exactChanged, RevisionChanged: revisionChanged,
 				VersionMismatch: versionMismatch, CheckedAtMs: time.Now().UnixMilli(),
-			}); err != nil {
+			}
+			attemptedCheck = &check
+			if err := store.RecordProjectionEvidenceCheck(ctx, eventID, identity, check); err != nil {
 				return err
 			}
 		}
@@ -136,7 +141,28 @@ func (r *Recounter) RecountPlan(ctx context.Context, eventID string, plan timing
 		stats.RevisionEvidenceMismatch = revisionMismatch
 		return store.ClearProjectionPending(ctx, eventID)
 	})
+	if err != nil && attemptedCheck != nil {
+		failure := sqlite.ProjectionEvidenceFailure{
+			ProjectionEvidenceCheck: *attemptedCheck,
+			FailureClass:            projectionFailureClass(err),
+			FailedAtMs:              time.Now().UnixMilli(),
+		}
+		if telemetryErr := r.store.RecordProjectionEvidenceFailure(ctx, eventID, identity, failure); telemetryErr != nil {
+			err = errors.Join(err, telemetryErr)
+		}
+	}
 	return stats, hasActions, err
+}
+
+func projectionFailureClass(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "context_canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	default:
+		return "projection_transaction_failed"
+	}
 }
 
 func (r *Recounter) recount(ctx context.Context, store recountTxStore, eventID, raceID string) (RecountStats, error) {

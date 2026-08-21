@@ -26,16 +26,23 @@ func (s *Server) handleGetSyncConfig(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	parity, err := store.GetProjectionEvidenceParity(r.Context(), r.PathValue("id"))
+	identity := service.CurrentProjectionEvidenceIdentity()
+	parity, err := store.GetProjectionEvidenceParity(r.Context(), r.PathValue("id"), identity)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	parityWindows, err := store.ListProjectionEvidenceParity(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"base_url":            cfg.BaseURL,
-		"token_set":           cfg.Token != "",
-		"last_synced_at":      cfg.LastSyncedAt,
-		"projection_evidence": parity,
+		"base_url":                    cfg.BaseURL,
+		"token_set":                   cfg.Token != "",
+		"last_synced_at":              cfg.LastSyncedAt,
+		"projection_evidence":         parity,
+		"projection_evidence_windows": parityWindows,
 	})
 }
 

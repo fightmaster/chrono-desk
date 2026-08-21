@@ -235,13 +235,21 @@ uncovered writer and an over-broad/noisy trigger without risking a stale targete
 projection. Removing exact scans remains gated on field parity evidence,
 imports/local edits, crash recovery and migrated event databases.
 
-Successful planned recount transactions accumulate that evidence in
-`projection_evidence_parity`: total checks, matches, hash-only, revision-only and
-contract-version mismatches plus the last check/mismatch timestamps. A failed
-recount rolls the telemetry update back with the projection; its error remains in
-the application log. The authenticated `GET /api/events/{id}/sync-config`
-response exposes the counters as `projection_evidence`. Plans without valid exact
-evidence fail closed but are not counted as parity samples.
+Successful planned recount transactions accumulate versioned evidence in
+`projection_evidence_acceptance`: attempts, committed checks and matches,
+hash-only, revision-only and contract-version mismatches. Rows are isolated by
+event, revision contract, acceptance window and application build. A failed
+recount rolls the committed check back with the projection, then writes a
+separate durable failure attempt after rollback, including its comparison result,
+failure class and timestamp. A failed attempt never counts as a committed match,
+but always blocks switching authority away from exact SHA evidence.
+
+The authenticated `GET /api/events/{id}/sync-config` response exposes the
+current row as `projection_evidence` and all retained build/window rows as the
+additive `projection_evidence_windows` array. Plans without valid exact evidence
+fail closed but are not counted as parity samples. Starting another acceptance
+window is an explicit versioned code/documentation change, not an automatic
+counter reset.
 
 Every feed transaction that inserts an observation or changes its disabled state
 also sets durable `sync_config.projection_pending=1` alongside the new cursor. The

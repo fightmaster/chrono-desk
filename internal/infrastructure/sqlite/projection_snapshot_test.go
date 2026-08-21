@@ -209,6 +209,11 @@ func TestProjectionFenceEvidenceReadsExactAndRevisionsFromOneSnapshot(t *testing
 func TestProjectionEvidenceParityAccumulatesFieldAcceptanceCounters(t *testing.T) {
 	store := newChangeFeedStore(t)
 	ctx := context.Background()
+	identity := ProjectionEvidenceIdentity{
+		RevisionVersion:  ProjectionRevisionVersion,
+		AcceptanceWindow: "field-window-1",
+		AppBuild:         "test+1@abc123",
+	}
 	checks := []ProjectionEvidenceCheck{
 		{CheckedAtMs: 1000},
 		{ExactChanged: true, RevisionChanged: true, CheckedAtMs: 2000},
@@ -217,17 +222,48 @@ func TestProjectionEvidenceParityAccumulatesFieldAcceptanceCounters(t *testing.T
 		{VersionMismatch: true, CheckedAtMs: 5000},
 	}
 	for _, check := range checks {
-		if err := store.RecordProjectionEvidenceCheck(ctx, "ev1", check); err != nil {
+		if err := store.RecordProjectionEvidenceCheck(ctx, "ev1", identity, check); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	parity, err := store.GetProjectionEvidenceParity(ctx, "ev1")
+	parity, err := store.GetProjectionEvidenceParity(ctx, "ev1", identity)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parity.RevisionVersion != ProjectionRevisionVersion || parity.Checks != 5 || parity.Matches != 2 || parity.Mismatches != 3 || parity.HashOnlyMismatches != 1 || parity.RevisionOnlyMismatches != 1 || parity.VersionMismatches != 1 || parity.LastCheckedAtMs != 5000 || parity.LastMismatchAtMs == nil || *parity.LastMismatchAtMs != 5000 {
+	if parity.RevisionVersion != ProjectionRevisionVersion || parity.AcceptanceWindow != identity.AcceptanceWindow || parity.AppBuild != identity.AppBuild || parity.Attempts != 5 || parity.Checks != 5 || parity.Matches != 2 || parity.Mismatches != 3 || parity.HashOnlyMismatches != 1 || parity.RevisionOnlyMismatches != 1 || parity.VersionMismatches != 1 || parity.ReplayFailures != 0 || parity.LastAttemptAtMs != 5000 || parity.LastCheckedAtMs != 5000 || parity.LastMismatchAtMs == nil || *parity.LastMismatchAtMs != 5000 || parity.AuthoritySwitchBlocked != true {
 		t.Fatalf("parity=%+v", parity)
+	}
+}
+
+func TestProjectionEvidenceParityIsolatesWindowsVersionsAndBuilds(t *testing.T) {
+	store := newChangeFeedStore(t)
+	ctx := context.Background()
+	identities := []ProjectionEvidenceIdentity{
+		{RevisionVersion: "revision-v1", AcceptanceWindow: "window-1", AppBuild: "build-1"},
+		{RevisionVersion: "revision-v1", AcceptanceWindow: "window-2", AppBuild: "build-1"},
+		{RevisionVersion: "revision-v2", AcceptanceWindow: "window-2", AppBuild: "build-2"},
+	}
+	for index, identity := range identities {
+		if err := store.RecordProjectionEvidenceCheck(ctx, "ev1", identity, ProjectionEvidenceCheck{CheckedAtMs: int64(index + 1)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, identity := range identities {
+		parity, err := store.GetProjectionEvidenceParity(ctx, "ev1", identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if parity.Attempts != 1 || parity.Checks != 1 || parity.Matches != 1 || parity.RevisionVersion != identity.RevisionVersion || parity.AcceptanceWindow != identity.AcceptanceWindow || parity.AppBuild != identity.AppBuild {
+			t.Fatalf("identity=%+v parity=%+v", identity, parity)
+		}
+	}
+	windows, err := store.ListProjectionEvidenceParity(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(windows) != len(identities) {
+		t.Fatalf("windows=%+v", windows)
 	}
 }
 

@@ -61,12 +61,13 @@ type manualFinishStore interface {
 
 type recountStore interface {
 	WithinTx(ctx context.Context, fn func(recountTxStore) error) error
+	RecordProjectionEvidenceFailure(ctx context.Context, eventID string, identity sqlite.ProjectionEvidenceIdentity, failure sqlite.ProjectionEvidenceFailure) error
 }
 
 type recountTxStore interface {
 	manualFinishStore
 	ProjectionFenceEvidence(ctx context.Context, eventID string) (sqlite.ProjectionFenceEvidence, error)
-	RecordProjectionEvidenceCheck(ctx context.Context, eventID string, check sqlite.ProjectionEvidenceCheck) error
+	RecordProjectionEvidenceCheck(ctx context.Context, eventID string, identity sqlite.ProjectionEvidenceIdentity, check sqlite.ProjectionEvidenceCheck) error
 	ClearProjectionPending(ctx context.Context, eventID string) error
 	WipeDerivedResults(ctx context.Context, eventID, raceID string) error
 	WipeDerivedResultsForMembers(ctx context.Context, eventID string, memberIDs []string) error
@@ -91,6 +92,10 @@ func (s sqliteRecountStore) WithinTx(ctx context.Context, fn func(recountTxStore
 	})
 }
 
+func (s sqliteRecountStore) RecordProjectionEvidenceFailure(ctx context.Context, eventID string, identity sqlite.ProjectionEvidenceIdentity, failure sqlite.ProjectionEvidenceFailure) error {
+	return s.store.RecordProjectionEvidenceFailure(ctx, eventID, identity, failure)
+}
+
 type sqliteRecountTxStore struct {
 	store *sqlite.Store
 }
@@ -111,8 +116,8 @@ func (s sqliteRecountTxStore) ProjectionFenceEvidence(ctx context.Context, event
 	return s.store.ProjectionFenceEvidence(ctx, eventID)
 }
 
-func (s sqliteRecountTxStore) RecordProjectionEvidenceCheck(ctx context.Context, eventID string, check sqlite.ProjectionEvidenceCheck) error {
-	return s.store.RecordProjectionEvidenceCheck(ctx, eventID, check)
+func (s sqliteRecountTxStore) RecordProjectionEvidenceCheck(ctx context.Context, eventID string, identity sqlite.ProjectionEvidenceIdentity, check sqlite.ProjectionEvidenceCheck) error {
+	return s.store.RecordProjectionEvidenceCheck(ctx, eventID, identity, check)
 }
 
 func (s sqliteRecountTxStore) ClearProjectionPending(ctx context.Context, eventID string) error {

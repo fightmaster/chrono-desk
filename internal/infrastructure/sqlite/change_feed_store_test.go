@@ -34,6 +34,10 @@ func TestMigrationAddsPullCursorToExistingSyncConfig(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='projection_evidence_parity'`).Scan(&parityTables); err != nil || parityTables != 1 {
 		t.Fatalf("projection_evidence_parity table count=%d err=%v", parityTables, err)
 	}
+	var acceptanceTables int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='projection_evidence_acceptance'`).Scan(&acceptanceTables); err != nil || acceptanceTables != 1 {
+		t.Fatalf("projection_evidence_acceptance table count=%d err=%v", acceptanceTables, err)
+	}
 }
 
 func TestApplyObservationFeedPageCommitsRowsAndCursorAtomically(t *testing.T) {

@@ -250,3 +250,31 @@ CREATE TABLE IF NOT EXISTS projection_evidence_parity (
     last_checked_at_ms        INTEGER NOT NULL,
     last_mismatch_at_ms       INTEGER
 );
+
+-- Versioned field-acceptance evidence. The legacy event-only table above is
+-- retained read-only so existing databases are upgraded additively without
+-- misattributing historical counters to a newer contract or application build.
+CREATE TABLE IF NOT EXISTS projection_evidence_acceptance (
+    event_id                       TEXT NOT NULL,
+    revision_version               TEXT NOT NULL,
+    acceptance_window              TEXT NOT NULL,
+    app_build                      TEXT NOT NULL,
+    attempts                       INTEGER NOT NULL DEFAULT 0,
+    checks                         INTEGER NOT NULL DEFAULT 0,
+    matches                        INTEGER NOT NULL DEFAULT 0,
+    mismatches                     INTEGER NOT NULL DEFAULT 0,
+    hash_only_mismatches           INTEGER NOT NULL DEFAULT 0,
+    revision_only_mismatches       INTEGER NOT NULL DEFAULT 0,
+    version_mismatches             INTEGER NOT NULL DEFAULT 0,
+    replay_failures                INTEGER NOT NULL DEFAULT 0,
+    failed_mismatch_attempts       INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at_ms             INTEGER NOT NULL DEFAULT 0,
+    last_checked_at_ms             INTEGER NOT NULL DEFAULT 0,
+    last_mismatch_at_ms            INTEGER,
+    last_failure_at_ms             INTEGER,
+    last_failure_class             TEXT NOT NULL DEFAULT '',
+    last_failure_exact_changed     INTEGER NOT NULL DEFAULT 0,
+    last_failure_revision_changed  INTEGER NOT NULL DEFAULT 0,
+    last_failure_version_mismatch  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (event_id, revision_version, acceptance_window, app_build)
+);

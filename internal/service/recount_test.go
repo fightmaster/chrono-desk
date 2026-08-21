@@ -290,7 +290,8 @@ func TestRecountPlanTargetsOneMemberAndFailsClosedOnStaleEvidence(t *testing.T) 
 	if err != nil || !executed || !stats.EventReplayed || stats.EvidenceFallback || !stats.RevisionEvidenceChecked || stats.RevisionEvidenceMismatch {
 		t.Fatalf("large-plan fallback executed=%v stats=%+v err=%v", executed, stats, err)
 	}
-	parity, err := store.GetProjectionEvidenceParity(ctx, "ev1")
+	identity := CurrentProjectionEvidenceIdentity()
+	parity, err := store.GetProjectionEvidenceParity(ctx, "ev1", identity)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,12 +313,35 @@ func TestRecountPlanTargetsOneMemberAndFailsClosedOnStaleEvidence(t *testing.T) 
 	if _, _, err := recounter.RecountPlan(ctx, "ev1", rollbackPlan, rollbackEvidence); err == nil {
 		t.Fatal("expected recount failure")
 	}
-	afterFailedRecount, err := store.GetProjectionEvidenceParity(ctx, "ev1")
+	afterFailedRecount, err := store.GetProjectionEvidenceParity(ctx, "ev1", identity)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if afterFailedRecount.Checks != parity.Checks || afterFailedRecount.Matches != parity.Matches || afterFailedRecount.Mismatches != parity.Mismatches {
 		t.Fatalf("failed recount committed parity telemetry: before=%+v after=%+v", parity, afterFailedRecount)
+	}
+	if afterFailedRecount.Attempts != parity.Attempts+1 || afterFailedRecount.ReplayFailures != 1 || afterFailedRecount.LastFailureAtMs == nil || afterFailedRecount.LastFailureClass != "projection_transaction_failed" || afterFailedRecount.AuthoritySwitchBlocked != true {
+		t.Fatalf("failed recount not recorded durably: before=%+v after=%+v", parity, afterFailedRecount)
+	}
+
+	mismatchEvidence, err := store.ProjectionFenceEvidence(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatchPlan := timing.BuildProjectionPlan([]timing.ProjectionChange[string, string]{{
+		MemberID: &memberID, RaceID: &raceID, Scope: timing.ImpactReplayMember,
+		ConfigVersion: mismatchEvidence.Exact.ConfigVersion, InputWatermark: mismatchEvidence.Exact.InputWatermark,
+	}})
+	mismatchEvidence.RevisionVersion = "projection-revision-v0"
+	if _, _, err := recounter.RecountPlan(ctx, "ev1", mismatchPlan, mismatchEvidence); err == nil {
+		t.Fatal("expected mismatch fallback recount failure")
+	}
+	afterMismatchFailure, err := store.GetProjectionEvidenceParity(ctx, "ev1", identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterMismatchFailure.Attempts != afterFailedRecount.Attempts+1 || afterMismatchFailure.Checks != parity.Checks || afterMismatchFailure.ReplayFailures != 2 || !afterMismatchFailure.LastFailureVersionMismatch {
+		t.Fatalf("failed mismatch recount not recorded durably: %+v", afterMismatchFailure)
 	}
 }
 

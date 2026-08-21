@@ -124,9 +124,12 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    Planning and execution read exact SHA-256 evidence together with
    transaction-coupled `projection-revision-v1` counters. Exact hashes remain
    authoritative; if only one evidence form changes, Chrono Desk logs the parity
-   mismatch and fails closed to a full event replay. Per-event field acceptance
-   counters are stored outside projection input and exposed by the authenticated
-   sync-config endpoint.
+   mismatch and fails closed to a full event replay. Field acceptance is keyed
+   by event, revision contract, deliberate acceptance window and application
+   build, so a new algorithm or release cannot inherit older samples. Committed
+   checks remain in the projection transaction; a failed transaction records a
+   separate durable attempt after rollback. Both current and historical windows
+   are exposed by the authenticated sync-config endpoint.
 8. **Application ports are declared next to their consumers, not in SQLite.**
    `service.BuildProtocol` depends on a small `ProtocolStore`; recount, local edits and
    event import use similarly narrow consumer-side ports with thin SQLite adapters inside
@@ -175,6 +178,11 @@ and execution. `projection-revision-v1` adds transaction-coupled SQLite shadow
 counters through versioned triggers over every evidence table. They are not an
 authority switch: exact hashes stay fail-closed while dual-read parity and
 legacy-database migration coverage are collected.
+
+Parity telemetry is operational evidence, not projection state. Any committed
+mismatch or replay failure marks its acceptance window as blocking an authority
+switch. Exact SHA scans cannot be removed merely because a later build has clean
+samples.
 
 LAN broadcast (shipped): spectators' phones ──HTTP──▶ chrono-desk `publicweb` (read-only,
 PII-trimmed) — distance dropdown + Призёры/Протокол tabs (absolute & age-group podiums,
