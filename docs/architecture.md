@@ -130,6 +130,9 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    checks remain in the projection transaction; a failed transaction records a
    separate durable attempt after rollback. Both current and historical windows
    are exposed by the authenticated sync-config endpoint.
+   The same endpoint reports main database, WAL, SHM and total byte sizes by
+   filesystem metadata only. It neither checkpoints SQLite nor exposes local
+   paths, allowing non-perturbing field growth measurements from the UI.
 8. **Application ports are declared next to their consumers, not in SQLite.**
    `service.BuildProtocol` depends on a small `ProtocolStore`; recount, local edits and
    event import use similarly narrow consumer-side ports with thin SQLite adapters inside

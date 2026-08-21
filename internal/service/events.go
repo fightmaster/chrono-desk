@@ -49,6 +49,11 @@ func (s *EventService) Open(eventID string) (*sqlite.Store, error) {
 	return s.catalog.Open(eventID)
 }
 
+// StorageStats returns SQLite main/WAL/SHM sizes without checkpointing.
+func (s *EventService) StorageStats(eventID string) (sqlite.EventStorageStats, error) {
+	return s.catalog.StorageStats(eventID)
+}
+
 // ImportExport parses a run5 event export and applies it to the event's
 // database file, creating the file on first import. Local edits win.
 func (s *EventService) ImportExport(ctx context.Context, r io.Reader) (ImportStats, error) {

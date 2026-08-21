@@ -11,6 +11,7 @@
   let token = ''
   let tokenSet = false
   let lastSyncedAt = null
+  let storage = null
   let overwrite = true
   let siteWins = false
   let busy = ''
@@ -27,8 +28,16 @@
       baseUrl = cfg.base_url || ''
       tokenSet = cfg.token_set
       lastSyncedAt = cfg.last_synced_at
+      storage = cfg.storage || null
       loaded = true
     } catch (e) { error = e.message }
+  }
+
+  function fmtBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return '—'
+    if (bytes < 1024) return `${bytes} Б`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
   }
   $: eventId && !loaded && loadConfig()
 
@@ -87,6 +96,12 @@
         <input class="input" type="password" placeholder={tokenSet ? '•••••• (задан)' : 'вставьте токен'} bind:value={token}/></div>
       <button class="btn" on:click={saveConfig}>Сохранить</button>
       {#if saved}<span class="ok-text saved">сохранено</span>{/if}
+      {#if storage}
+        <span class="storage faint" title="Размеры снимаются без checkpoint WAL">
+          SQLite: {fmtBytes(storage.database_bytes)} · WAL: {fmtBytes(storage.wal_bytes)} ·
+          всего: {fmtBytes(storage.total_bytes)}
+        </span>
+      {/if}
     </div>
   {/if}
 
@@ -133,6 +148,7 @@
   .cfg { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin-top: 14px; }
   .cfg .input { min-width: 16rem; }
   .saved { font-size: 13px; align-self: center; }
+  .storage { width: 100%; font-size: 12.5px; }
   .actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   .check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--dim); cursor: pointer; }
   .check input { accent-color: var(--accent); }

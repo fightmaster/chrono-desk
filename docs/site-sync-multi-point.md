@@ -251,6 +251,13 @@ fail closed but are not counted as parity samples. Starting another acceptance
 window is an explicit versioned code/documentation change, not an automatic
 counter reset.
 
+The same authenticated response exposes a read-only `storage` snapshot with
+`database_bytes`, `wal_bytes`, `shm_bytes` and `total_bytes`. Chrono Desk obtains
+these values from the SQLite files without executing a query or WAL checkpoint,
+so sampling does not hide the WAL growth being measured. Filesystem paths are
+not part of the response. The connection settings panel displays the database,
+WAL and total values for before/peak/after field evidence.
+
 Every feed transaction that inserts an observation or changes its disabled state
 also sets durable `sync_config.projection_pending=1` alongside the new cursor. The
 flag is cleared only inside the successful replay/plan transaction. Therefore a

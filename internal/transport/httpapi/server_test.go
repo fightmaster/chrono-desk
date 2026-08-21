@@ -118,6 +118,7 @@ func TestSyncConfigReportsProjectionEvidenceParity(t *testing.T) {
 	var body struct {
 		ProjectionEvidence        sqlite.ProjectionEvidenceParity   `json:"projection_evidence"`
 		ProjectionEvidenceWindows []sqlite.ProjectionEvidenceParity `json:"projection_evidence_windows"`
+		Storage                   sqlite.EventStorageStats          `json:"storage"`
 	}
 	decodeBody(t, resp, &body)
 	if body.ProjectionEvidence.Attempts != 1 || body.ProjectionEvidence.Checks != 1 || body.ProjectionEvidence.RevisionOnlyMismatches != 1 || !body.ProjectionEvidence.AuthoritySwitchBlocked {
@@ -125,6 +126,9 @@ func TestSyncConfigReportsProjectionEvidenceParity(t *testing.T) {
 	}
 	if len(body.ProjectionEvidenceWindows) != 1 || body.ProjectionEvidenceWindows[0].AppBuild != body.ProjectionEvidence.AppBuild {
 		t.Fatalf("projection evidence windows=%+v", body.ProjectionEvidenceWindows)
+	}
+	if body.Storage.DatabaseBytes <= 0 || body.Storage.TotalBytes != body.Storage.DatabaseBytes+body.Storage.WALBytes+body.Storage.SHMBytes {
+		t.Fatalf("storage stats=%+v", body.Storage)
 	}
 }
 

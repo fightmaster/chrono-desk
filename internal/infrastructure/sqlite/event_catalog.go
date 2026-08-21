@@ -20,6 +20,15 @@ type EventCatalog struct {
 	stores map[string]*Store
 }
 
+// EventStorageStats is a read-only snapshot of one SQLite event file set.
+// It intentionally omits filesystem paths from the HTTP-facing shape.
+type EventStorageStats struct {
+	DatabaseBytes int64 `json:"database_bytes"`
+	WALBytes      int64 `json:"wal_bytes"`
+	SHMBytes      int64 `json:"shm_bytes"`
+	TotalBytes    int64 `json:"total_bytes"`
+}
+
 var unsafeEventFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
 func NewEventCatalog(dataDir string) (*EventCatalog, error) {
@@ -91,6 +100,52 @@ func (c *EventCatalog) ListEventIDs() ([]string, error) {
 	}
 	sort.Strings(ids)
 	return ids, nil
+}
+
+// StorageStats observes SQLite file growth without running a WAL checkpoint or
+// issuing a database query, so field measurement does not perturb the value.
+func (c *EventCatalog) StorageStats(eventID string) (EventStorageStats, error) {
+	path := c.eventPath(eventID)
+	databaseBytes, err := requiredFileSize(path)
+	if err != nil {
+		return EventStorageStats{}, fmt.Errorf("event %s storage: %w", eventID, err)
+	}
+	walBytes, err := optionalFileSize(path + "-wal")
+	if err != nil {
+		return EventStorageStats{}, fmt.Errorf("event %s wal storage: %w", eventID, err)
+	}
+	shmBytes, err := optionalFileSize(path + "-shm")
+	if err != nil {
+		return EventStorageStats{}, fmt.Errorf("event %s shm storage: %w", eventID, err)
+	}
+
+	return EventStorageStats{
+		DatabaseBytes: databaseBytes,
+		WALBytes:      walBytes,
+		SHMBytes:      shmBytes,
+		TotalBytes:    databaseBytes + walBytes + shmBytes,
+	}, nil
+}
+
+func requiredFileSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+
+	return info.Size(), nil
+}
+
+func optionalFileSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	return info.Size(), nil
 }
 
 // Close releases every open event database.
