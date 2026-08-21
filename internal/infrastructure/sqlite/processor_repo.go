@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
@@ -50,11 +51,13 @@ func (r *ProcessorRepo) RfidLogDisabled(ctx context.Context, rfidLogID string) (
 const (
 	memberByNumberSQL = `SELECT m.id, m.race_id, m.number, m.start_time_ms, m.finish_time_ms, r.started_at_ms
 		FROM members m JOIN races r ON r.id = m.race_id
-		WHERE m.event_id = ? AND m.number = ? LIMIT 1`
+		WHERE m.event_id = ? AND m.number = ? ORDER BY m.id LIMIT 2`
 	memberByEPCSQL = `SELECT m.id, m.race_id, m.number, m.start_time_ms, m.finish_time_ms, r.started_at_ms
 		FROM members m JOIN races r ON r.id = m.race_id
-		WHERE m.event_id = ? AND m.epc = ? LIMIT 1`
+		WHERE m.event_id = ? AND m.epc = ? ORDER BY m.id LIMIT 2`
 )
+
+var ErrAmbiguousMemberIdentity = errors.New("observation identity matches multiple members")
 
 // LoadMember resolves by number first, then EPC — same priority as rfid-sync.
 func (r *ProcessorRepo) LoadMember(ctx context.Context, eventID string, logEntry domain.RfidLog) (processor.Member, bool, error) {
@@ -65,14 +68,26 @@ func (r *ProcessorRepo) LoadMember(ctx context.Context, eventID string, logEntry
 		arg = logEntry.Number
 	}
 
-	var m processor.Member
-	var number, startMs, finishMs, raceStartedMs sql.NullInt64
-	err := r.db.QueryRowContext(ctx, query, eventID, arg).
-		Scan(&m.ID, &m.RaceID, &number, &startMs, &finishMs, &raceStartedMs)
-	if err == sql.ErrNoRows {
+	rows, err := r.db.QueryContext(ctx, query, eventID, arg)
+	if err != nil {
+		return processor.Member{}, false, fmt.Errorf("load member: %w", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return processor.Member{}, false, fmt.Errorf("load member: %w", err)
+		}
 		return processor.Member{}, false, nil
 	}
-	if err != nil {
+	var m processor.Member
+	var number, startMs, finishMs, raceStartedMs sql.NullInt64
+	if err := rows.Scan(&m.ID, &m.RaceID, &number, &startMs, &finishMs, &raceStartedMs); err != nil {
+		return processor.Member{}, false, fmt.Errorf("load member: %w", err)
+	}
+	if rows.Next() {
+		return processor.Member{}, false, fmt.Errorf("%w: event=%s identity=%v", ErrAmbiguousMemberIdentity, eventID, arg)
+	}
+	if err := rows.Err(); err != nil {
 		return processor.Member{}, false, fmt.Errorf("load member: %w", err)
 	}
 	m.Number = nullableInt64(number)

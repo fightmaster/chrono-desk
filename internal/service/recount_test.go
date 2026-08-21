@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
+	timing "gitlab.com/fightmaster1/timing-core"
 )
 
 func ptr(v int64) *int64    { return &v }
@@ -105,6 +107,136 @@ func TestRecountDerivesResultsAndMemberTimes(t *testing.T) {
 
 		assertMemberTimes(t, store, "mA", run, t0+10_000, t0+400_000, "00:06:30")
 		assertMemberTimes(t, store, "mB", run, t0, t0+500_000, "00:08:20")
+	}
+}
+
+func TestRecountPlanTargetsOneMemberAndFailsClosedOnStaleEvidence(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "event.chrono"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store, err := sqlite.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const t0 = int64(1_750_000_000_000)
+	if err := store.UpsertEvent(ctx, domain.Event{ID: "ev1", Name: "Targeted"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertRace(ctx, domain.Race{ID: "r1", EventID: "ev1", Name: "Race", Format: domain.FormatFixedDistance, StartedAtMs: ptr(t0)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, checkpoint := range []domain.Checkpoint{
+		{ID: "start", EventID: "ev1", RaceID: "r1", Type: domain.CheckpointStart, Sort: 1, Board: "start"},
+		{ID: "finish", EventID: "ev1", RaceID: "r1", Type: domain.CheckpointFinish, Sort: 2, Board: "finish"},
+	} {
+		if err := store.UpsertCheckpoint(ctx, checkpoint); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, member := range []domain.Member{
+		{ID: "mA", EventID: "ev1", RaceID: "r1", EPC: sptr("A")},
+		{ID: "mB", EventID: "ev1", RaceID: "r1", EPC: sptr("B")},
+	} {
+		if err := store.UpsertMember(ctx, member); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.UpsertRfidLogs(ctx, []domain.RfidLog{
+		{ID: "a-start", EventID: "ev1", EPC: "A", Board: "start", TimeMs: t0 + 10_000},
+		{ID: "a-finish", EventID: "ev1", EPC: "A", Board: "finish", TimeMs: t0 + 400_000},
+		{ID: "b-start", EventID: "ev1", EPC: "B", Board: "start", TimeMs: t0 + 20_000},
+		{ID: "b-finish", EventID: "ev1", EPC: "B", Board: "finish", TimeMs: t0 + 500_000},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recounter := NewRecounter(store, log.New(io.Discard, "", 0), false)
+	if _, err := recounter.Recount(ctx, "ev1", ""); err != nil {
+		t.Fatal(err)
+	}
+	var bResultID, bFinish int64
+	if err := store.DB().QueryRow(`SELECT id FROM results WHERE member_id='mB' AND checkpoint_id='finish'`).Scan(&bResultID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`SELECT finish_time_ms FROM members WHERE id='mB'`).Scan(&bFinish); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.UpsertRfidLogs(ctx, []domain.RfidLog{{
+		ID: "a-earlier-finish", EventID: "ev1", EPC: "A", Board: "finish", TimeMs: t0 + 300_000,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetSyncConfig(ctx, "ev1", "https://example.invalid", "token"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`UPDATE sync_config SET projection_pending=1 WHERE event_id='ev1'`); err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := store.ProjectionEvidence(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberID, raceID := "mA", "r1"
+	plan := timing.BuildProjectionPlan([]timing.ProjectionChange[string, string]{{
+		MemberID: &memberID, RaceID: &raceID, Scope: timing.ImpactReplayMember,
+		ConfigVersion: evidence.ConfigVersion, InputWatermark: evidence.InputWatermark,
+	}})
+	stats, executed, err := recounter.RecountPlan(ctx, "ev1", plan)
+	if err != nil || !executed {
+		t.Fatalf("targeted recount executed=%v stats=%+v err=%v", executed, stats, err)
+	}
+	if stats.MembersReplayed != 1 || stats.EventReplayed || stats.LogsReplayed != 3 {
+		t.Fatalf("targeted stats=%+v", stats)
+	}
+	if pending, err := store.ProjectionPending(ctx, "ev1"); err != nil || pending {
+		t.Fatalf("projection pending=%v err=%v after atomic recount", pending, err)
+	}
+	var gotBResultID, gotBFinish int64
+	if err := store.DB().QueryRow(`SELECT id FROM results WHERE member_id='mB' AND checkpoint_id='finish'`).Scan(&gotBResultID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`SELECT finish_time_ms FROM members WHERE id='mB'`).Scan(&gotBFinish); err != nil {
+		t.Fatal(err)
+	}
+	if gotBResultID != bResultID || gotBFinish != bFinish {
+		t.Fatalf("unaffected member changed: result %d->%d finish %d->%d", bResultID, gotBResultID, bFinish, gotBFinish)
+	}
+	assertMemberTimes(t, store, "mA", 1, t0+10_000, t0+300_000, "00:04:50")
+
+	staleEvidence, err := store.ProjectionEvidence(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stalePlan := timing.BuildProjectionPlan([]timing.ProjectionChange[string, string]{{
+		MemberID: &memberID, RaceID: &raceID, Scope: timing.ImpactReplayMember,
+		ConfigVersion: staleEvidence.ConfigVersion, InputWatermark: staleEvidence.InputWatermark,
+	}})
+	if err := store.UpsertRfidLogs(ctx, []domain.RfidLog{{ID: "late-unknown", EventID: "ev1", EPC: "unknown", Board: "finish", TimeMs: t0 + 600_000}}); err != nil {
+		t.Fatal(err)
+	}
+	stats, executed, err = recounter.RecountPlan(ctx, "ev1", stalePlan)
+	if err != nil || !executed || !stats.EventReplayed || !stats.EvidenceFallback {
+		t.Fatalf("stale fallback executed=%v stats=%+v err=%v", executed, stats, err)
+	}
+
+	largeEvidence, err := store.ProjectionEvidence(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	largeChanges := make([]timing.ProjectionChange[string, string], maxTargetedMembersPerPlan+1)
+	for index := range largeChanges {
+		id := fmt.Sprintf("member-%04d", index)
+		largeChanges[index] = timing.ProjectionChange[string, string]{
+			MemberID: &id, RaceID: &raceID, Scope: timing.ImpactReplayMember,
+			ConfigVersion: largeEvidence.ConfigVersion, InputWatermark: largeEvidence.InputWatermark,
+		}
+	}
+	stats, executed, err = recounter.RecountPlan(ctx, "ev1", timing.BuildProjectionPlan(largeChanges))
+	if err != nil || !executed || !stats.EventReplayed || stats.EvidenceFallback {
+		t.Fatalf("large-plan fallback executed=%v stats=%+v err=%v", executed, stats, err)
 	}
 }
 

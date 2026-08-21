@@ -6,13 +6,21 @@ import (
 	"fmt"
 	"log"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
+	timing "gitlab.com/fightmaster1/timing-core"
 )
+
+const maxTargetedMembersPerPlan = 500
 
 // RecountStats summarizes one recount run.
 type RecountStats struct {
-	LogsReplayed int `json:"logs_replayed"`
+	LogsReplayed     int  `json:"logs_replayed"`
+	MembersReplayed  int  `json:"members_replayed"`
+	RacesReplayed    int  `json:"races_replayed"`
+	EventReplayed    bool `json:"event_replayed"`
+	EvidenceFallback bool `json:"evidence_fallback"`
 }
 
 // Recounter wipes derived data and replays rfid logs through the engine —
@@ -35,9 +43,75 @@ func (r *Recounter) Recount(ctx context.Context, eventID, raceID string) (Recoun
 	err := r.store.WithinTx(ctx, func(txStore recountTxStore) error {
 		var err error
 		stats, err = r.recount(ctx, txStore, eventID, raceID)
+		if raceID == "" {
+			stats.EventReplayed = true
+		} else {
+			stats.RacesReplayed = 1
+		}
 		return err
 	})
 	return stats, err
+}
+
+// RecountPlan executes one checksum-bound plan inside the same SQLite write
+// transaction. If configuration/input changed after classification it fails
+// closed to a full event replay rather than applying stale targeted work.
+func (r *Recounter) RecountPlan(ctx context.Context, eventID string, plan timing.ProjectionPlan[string, string]) (RecountStats, bool, error) {
+	// A large targeted IN-list is slower and eventually reaches SQLite's bind
+	// variable limit. Multiple race replays also rescan the event log once per
+	// race. In both cases one event replay is the bounded operation.
+	replayEvent := plan.ReplayEvent || len(plan.Races) > 1 || len(plan.Members) > maxTargetedMembersPerPlan
+	hasActions := replayEvent || len(plan.Races) > 0 || len(plan.Members) > 0
+	hasEvidence := plan.ConfigVersion != "" && plan.InputWatermark != ""
+	if !hasActions && !hasEvidence {
+		return RecountStats{}, false, nil
+	}
+	var stats RecountStats
+	err := r.store.WithinTx(ctx, func(store recountTxStore) error {
+		evidence, err := store.ProjectionEvidence(ctx, eventID)
+		if err != nil {
+			return err
+		}
+		if !plan.EvidenceValid || evidence.ConfigVersion != plan.ConfigVersion || evidence.InputWatermark != plan.InputWatermark {
+			stats, err = r.recount(ctx, store, eventID, "")
+			stats.EventReplayed = true
+			stats.EvidenceFallback = true
+			if err != nil {
+				return err
+			}
+			return store.ClearProjectionPending(ctx, eventID)
+		}
+		if replayEvent {
+			stats, err = r.recount(ctx, store, eventID, "")
+			stats.EventReplayed = true
+			if err != nil {
+				return err
+			}
+			return store.ClearProjectionPending(ctx, eventID)
+		}
+		for _, race := range plan.Races {
+			result, err := r.recount(ctx, store, eventID, race.RaceID)
+			if err != nil {
+				return err
+			}
+			stats.LogsReplayed += result.LogsReplayed
+			stats.RacesReplayed++
+		}
+		if len(plan.Members) > 0 {
+			memberIDs := make([]string, 0, len(plan.Members))
+			for _, member := range plan.Members {
+				memberIDs = append(memberIDs, member.MemberID)
+			}
+			result, err := r.recountMembers(ctx, store, eventID, memberIDs)
+			if err != nil {
+				return err
+			}
+			stats.LogsReplayed += result.LogsReplayed
+			stats.MembersReplayed += len(memberIDs)
+		}
+		return store.ClearProjectionPending(ctx, eventID)
+	})
+	return stats, hasActions, err
 }
 
 func (r *Recounter) recount(ctx context.Context, store recountTxStore, eventID, raceID string) (RecountStats, error) {
@@ -50,11 +124,8 @@ func (r *Recounter) recount(ctx context.Context, store recountTxStore, eventID, 
 		return RecountStats{}, err
 	}
 
-	proc := processor.New(store.ProcessorRepository(), r.logger, r.debug)
-	for _, logEntry := range logs {
-		if err := proc.Process(ctx, logEntry, raceID); err != nil {
-			return RecountStats{}, fmt.Errorf("process log %s: %w", logEntry.ID, err)
-		}
+	if err := r.replayLogs(ctx, store, logs, raceID); err != nil {
+		return RecountStats{}, err
 	}
 
 	// Manual judge entries are authoritative: re-apply them on top of the
@@ -66,16 +137,54 @@ func (r *Recounter) recount(ctx context.Context, store recountTxStore, eventID, 
 	if err != nil {
 		return RecountStats{}, err
 	}
-	appliedManual := make(map[string]bool, len(manual))
-	for _, m := range manual {
-		if appliedManual[m.MemberID] {
-			continue
-		}
-		appliedManual[m.MemberID] = true
-		if err := applyManualFinish(ctx, store, m.MemberID, m.TimeMs); err != nil {
-			return RecountStats{}, err
-		}
+	if err := r.reapplyManual(ctx, store, manual); err != nil {
+		return RecountStats{}, err
 	}
 
 	return RecountStats{LogsReplayed: len(logs)}, nil
+}
+
+func (r *Recounter) recountMembers(ctx context.Context, store recountTxStore, eventID string, memberIDs []string) (RecountStats, error) {
+	if err := store.WipeDerivedResultsForMembers(ctx, eventID, memberIDs); err != nil {
+		return RecountStats{}, err
+	}
+	logs, err := store.ListRfidLogsForMembers(ctx, eventID, memberIDs)
+	if err != nil {
+		return RecountStats{}, err
+	}
+	if err := r.replayLogs(ctx, store, logs, ""); err != nil {
+		return RecountStats{}, err
+	}
+	manual, err := store.ListManualResultsForMembers(ctx, eventID, memberIDs)
+	if err != nil {
+		return RecountStats{}, err
+	}
+	if err := r.reapplyManual(ctx, store, manual); err != nil {
+		return RecountStats{}, err
+	}
+	return RecountStats{LogsReplayed: len(logs)}, nil
+}
+
+func (r *Recounter) replayLogs(ctx context.Context, store recountTxStore, logs []domain.RfidLog, raceID string) error {
+	proc := processor.New(store.ProcessorRepository(), r.logger, r.debug)
+	for _, logEntry := range logs {
+		if err := proc.Process(ctx, logEntry, raceID); err != nil {
+			return fmt.Errorf("process log %s: %w", logEntry.ID, err)
+		}
+	}
+	return nil
+}
+
+func (r *Recounter) reapplyManual(ctx context.Context, store recountTxStore, manual []sqlite.ManualResult) error {
+	applied := make(map[string]bool, len(manual))
+	for _, result := range manual {
+		if applied[result.MemberID] {
+			continue
+		}
+		applied[result.MemberID] = true
+		if err := applyManualFinish(ctx, store, result.MemberID, result.TimeMs); err != nil {
+			return err
+		}
+	}
+	return nil
 }

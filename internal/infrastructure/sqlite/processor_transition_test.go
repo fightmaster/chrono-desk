@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"errors"
 	"io"
 	"log"
 	"sync"
@@ -58,5 +59,25 @@ func TestProcessorSerializesMixedIdentityProgressionTransitions(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("once-checkpoint results = %d, want 1 after two concurrent identity paths", count)
+	}
+}
+
+func TestProcessorRejectsAmbiguousMemberIdentity(t *testing.T) {
+	store := newTestStore(t)
+	ctx := t.Context()
+	for _, statement := range []string{
+		`INSERT INTO events (id, name) VALUES ('ev1', 'Event')`,
+		`INSERT INTO races (id, event_id, name) VALUES ('race1', 'ev1', 'Race 1')`,
+		`INSERT INTO races (id, event_id, name) VALUES ('race2', 'ev1', 'Race 2')`,
+		`INSERT INTO members (id, event_id, race_id, number) VALUES ('member1', 'ev1', 'race1', 42)`,
+		`INSERT INTO members (id, event_id, race_id, number) VALUES ('member2', 'ev1', 'race2', 42)`,
+	} {
+		if _, err := store.DB().ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, found, err := NewProcessorRepo(store).LoadMember(ctx, "ev1", domain.RfidLog{Number: 42})
+	if found || !errors.Is(err, ErrAmbiguousMemberIdentity) {
+		t.Fatalf("found=%v err=%v, want ambiguity error", found, err)
 	}
 }

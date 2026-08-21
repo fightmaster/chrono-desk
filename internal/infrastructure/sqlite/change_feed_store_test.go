@@ -24,7 +24,7 @@ func TestMigrationAddsPullCursorToExistingSyncConfig(t *testing.T) {
 	if _, err := New(db); err != nil {
 		t.Fatal(err)
 	}
-	for _, column := range []string{"pull_cursor", "last_pulled_at"} {
+	for _, column := range []string{"pull_cursor", "last_pulled_at", "projection_pending"} {
 		var count int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sync_config') WHERE name = ?`, column).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("column %s count=%d err=%v", column, count, err)
@@ -126,6 +126,47 @@ func TestApplyObservationFeedPageFillsLegacyOriginAndAppliesState(t *testing.T) 
 	}
 	if gotDisabled != disabledAt || gotOrigin != "watch-1" || gotSequence != 7 {
 		t.Fatalf("updated overlap = disabled:%d origin:%q sequence:%d", gotDisabled, gotOrigin, gotSequence)
+	}
+}
+
+func TestApplyObservationFeedPageClassifiesCommittedMutations(t *testing.T) {
+	store := newChangeFeedStore(t)
+	ctx := context.Background()
+	base := domain.RfidLog{ID: "remote", EventID: "ev1", TimeMs: 1000, Board: "split"}
+
+	mutations, err := store.ApplyObservationFeedPageWithMutations(ctx, "ev1", []domain.RfidLog{base}, "cursor-1", 1000)
+	if err != nil || len(mutations) != 1 || mutations[0].Kind != ObservationFeedInserted {
+		t.Fatalf("insert mutations=%+v err=%v", mutations, err)
+	}
+	if pending, err := store.ProjectionPending(ctx, "ev1"); err != nil || !pending {
+		t.Fatalf("projection pending=%v err=%v after insert", pending, err)
+	}
+
+	enriched := base
+	enriched.ObservationVersion = 1
+	enriched.OriginSystem = "stopwatch"
+	mutations, err = store.ApplyObservationFeedPageWithMutations(ctx, "ev1", []domain.RfidLog{enriched}, "cursor-2", 2000)
+	if err != nil || len(mutations) != 1 || mutations[0].Kind != ObservationFeedDuplicate {
+		t.Fatalf("metadata-only mutations=%+v err=%v", mutations, err)
+	}
+
+	disabledAt := int64(3000)
+	disabled := enriched
+	disabled.DisabledAt = &disabledAt
+	mutations, err = store.ApplyObservationFeedPageWithMutations(ctx, "ev1", []domain.RfidLog{disabled}, "cursor-3", 3000)
+	if err != nil || len(mutations) != 1 || mutations[0].Kind != ObservationFeedStateChanged {
+		t.Fatalf("state mutations=%+v err=%v", mutations, err)
+	}
+
+	mutations, err = store.ApplyObservationFeedPageWithMutations(ctx, "ev1", []domain.RfidLog{disabled}, "cursor-4", 4000)
+	if err != nil || len(mutations) != 1 || mutations[0].Kind != ObservationFeedDuplicate {
+		t.Fatalf("repeated state mutations=%+v err=%v", mutations, err)
+	}
+	if err := store.ClearProjectionPending(ctx, "ev1"); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := store.ProjectionPending(ctx, "ev1"); err != nil || pending {
+		t.Fatalf("projection pending=%v err=%v after clear", pending, err)
 	}
 }
 

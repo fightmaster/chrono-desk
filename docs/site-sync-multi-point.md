@@ -178,12 +178,43 @@ SQLite transaction. A raw identity conflict rolls back the page; an imported
 row never creates `observation_outbox`. Overlap with the snapshot fills missing
 origin metadata but preserves Chrono Desk ownership already recorded locally.
 
-After the feed is drained the current implementation performs one full local
-recount when observations changed. This is deliberately the compatibility path
-until the impact classifier can prove a narrower member scope. Starting live
-Feibot ingest starts a five-second background pull loop; stopping the live
-session cancels it. The manual button and loop share a per-event mutex, avoiding
-overlapping cursor advances or recounts. Empty polls do not write SQLite.
+After the feed is drained Chrono Desk classifies the complete committed batch and
+executes one coalesced projection plan. Exact duplicates and unmatched history do
+not trigger a recount. Inserted or state-changed observations with an unambiguous
+bib/EPC trigger at most one member replay per participant, regardless of how many
+rows arrived; a race/event scope subsumes its narrower actions. Member resolution
+is cached per identity while planning, so an 11,000-row upload for one participant
+does one lookup and one member replay, not 11,000 SQL lookups or replays.
+Plans affecting more than 500 distinct participants, or more than one whole race,
+collapse to one event replay; this avoids repeated event scans and SQLite bind-list
+limits while keeping the common one/few-participant update cheap.
+
+The plan is bound to SHA-256 evidence for the exact projection configuration and
+input snapshot. The configuration hash includes event/race age policy, categories,
+race-category links, member `category_id`/gender/date of birth and checkpoint
+rules. The input watermark includes raw observations, manual results and the pull
+cursor. Evidence is recalculated after acquiring the SQLite write transaction; a
+mismatch falls back to one full event replay. Ambiguous bib/EPC lookup also fails
+closed instead of allowing SQLite's row order to select a participant.
+
+Every feed transaction that inserts an observation or changes its disabled state
+also sets durable `sync_config.projection_pending=1` alongside the new cursor. The
+flag is cleared only inside the successful replay/plan transaction. Therefore a
+crash after cursor commit but before projection cannot lose work: the next pull
+detects the flag and performs one evidence-bound full-event recovery replay. A
+crash after replay but before the HTTP response may cause a retry, but not a missing
+result. Metadata-only duplicates do not set the flag.
+
+Starting live Feibot ingest starts a five-second background pull loop; stopping
+the live session cancels it. The manual button and loop share a per-event mutex,
+while the SQLite transaction protects against other local writers. Empty and
+duplicate-only polls do not rewrite the protocol.
+
+Known follow-up: imported/manual `members.start_time_ms` and a start derived from
+RFID currently share one column without provenance. Existing full and targeted
+recount both preserve it. Before automatically repairing a disabled or corrected
+start observation, add explicit start provenance so replay cannot erase a judge's
+manual start or retain a stale RFID-derived start silently.
 
 ## Replay concurrency: a Laravel lock is not enough
 

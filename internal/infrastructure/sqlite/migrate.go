@@ -33,6 +33,7 @@ func addSyncPullCursor(db *sql.DB) error {
 	}{
 		{"pull_cursor", "TEXT"},
 		{"last_pulled_at", "INTEGER"},
+		{"projection_pending", "INTEGER NOT NULL DEFAULT 0"},
 	} {
 		var count int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sync_config') WHERE name = ?`, column.name).Scan(&count); err != nil {

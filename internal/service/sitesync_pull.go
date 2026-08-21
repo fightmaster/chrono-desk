@@ -8,19 +8,30 @@ import (
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
+	timing "gitlab.com/fightmaster1/timing-core"
 )
 
 const changeFeedSchemaVersion = 1
 
 type ChangePullStats struct {
-	Pages        int `json:"pages"`
-	Observations int `json:"observations"`
+	Pages        int                                   `json:"pages"`
+	Observations int                                   `json:"observations"`
+	Inserted     int                                   `json:"inserted"`
+	Duplicates   int                                   `json:"duplicates"`
+	StateChanges int                                   `json:"state_changes"`
+	Recovery     bool                                  `json:"recovery"`
+	Plan         timing.ProjectionPlan[string, string] `json:"-"`
+	mutations    []sqlite.ObservationFeedMutation
 }
 
 // PullEventChanges consumes every currently available feed page. Each page and
 // its opaque cursor are committed atomically by Store; a later page failure is
 // resumed from the last complete page instead of replaying the full event.
 func PullEventChanges(ctx context.Context, store *sqlite.Store, baseURL, token, eventID string, pulledAt time.Time) (ChangePullStats, error) {
+	recovery, err := store.ProjectionPending(ctx, eventID)
+	if err != nil {
+		return ChangePullStats{}, err
+	}
 	capabilities, err := GetSyncCapabilities(ctx, baseURL, token, eventID)
 	if err != nil {
 		return ChangePullStats{}, err
@@ -36,7 +47,7 @@ func PullEventChanges(ctx context.Context, store *sqlite.Store, baseURL, token, 
 	if cursor != nil {
 		after = *cursor
 	}
-	var stats ChangePullStats
+	stats := ChangePullStats{Recovery: recovery}
 	for pageNumber := 0; pageNumber < 10_000; pageNumber++ {
 		page, err := PullChangeFeedPage(ctx, baseURL, token, eventID, after, 500)
 		if err != nil {
@@ -58,19 +69,103 @@ func PullEventChanges(ctx context.Context, store *sqlite.Store, baseURL, token, 
 		}
 		if len(logs) == 0 && page.NextCursor == after {
 			stats.Pages++
-			return stats, nil
+			return finalizePullProjectionPlan(ctx, store, eventID, stats)
 		}
-		if err := store.ApplyObservationFeedPage(ctx, eventID, logs, page.NextCursor, pulledAt.UnixMilli()); err != nil {
+		mutations, err := store.ApplyObservationFeedPageWithMutations(ctx, eventID, logs, page.NextCursor, pulledAt.UnixMilli())
+		if err != nil {
 			return stats, err
 		}
+		for _, mutation := range mutations {
+			switch mutation.Kind {
+			case sqlite.ObservationFeedInserted:
+				stats.Inserted++
+			case sqlite.ObservationFeedStateChanged:
+				stats.StateChanges++
+			default:
+				stats.Duplicates++
+			}
+		}
+		stats.mutations = append(stats.mutations, mutations...)
 		stats.Pages++
 		stats.Observations += len(logs)
 		after = page.NextCursor
 		if !page.HasMore {
-			return stats, nil
+			return finalizePullProjectionPlan(ctx, store, eventID, stats)
 		}
 	}
 	return stats, fmt.Errorf("change feed exceeded page safety limit")
+}
+
+func finalizePullProjectionPlan(ctx context.Context, store *sqlite.Store, eventID string, stats ChangePullStats) (ChangePullStats, error) {
+	evidence, err := store.ProjectionEvidence(ctx, eventID)
+	if err != nil {
+		return stats, err
+	}
+	changes := make([]timing.ProjectionChange[string, string], 0, len(stats.mutations))
+	matches := make(map[string]sqlite.ObservationMemberMatch)
+	for _, mutation := range stats.mutations {
+		observation := mutation.Observation
+		change := timing.ProjectionChange[string, string]{
+			ConfigVersion: evidence.ConfigVersion, InputWatermark: evidence.InputWatermark,
+			FromTimeMs: observation.TimeMs,
+		}
+		if mutation.Kind == sqlite.ObservationFeedDuplicate {
+			change.Scope = timing.ClassifyImpact(timing.ImpactInput{
+				Kind: timing.ChangeObservationAdded, Duplicate: true,
+			})
+			changes = append(changes, change)
+			continue
+		}
+
+		identityKey := "epc:" + observation.EPC
+		if observation.Number > 0 {
+			identityKey = fmt.Sprintf("number:%d", observation.Number)
+		}
+		match, resolved := matches[identityKey]
+		if !resolved {
+			match, err = store.ResolveObservationMember(ctx, eventID, observation.Number, observation.EPC)
+			if err != nil {
+				return stats, err
+			}
+			matches[identityKey] = match
+		}
+		if match.Ambiguous {
+			change.Scope = timing.ImpactReplayEvent
+			changes = append(changes, change)
+			continue
+		}
+		if !match.Found {
+			kind := timing.ChangeObservationAdded
+			if mutation.Kind == sqlite.ObservationFeedStateChanged {
+				kind = timing.ChangeObservationState
+			}
+			change.Scope = timing.ClassifyImpact(timing.ImpactInput{Kind: kind})
+			changes = append(changes, change)
+			continue
+		}
+
+		change.MemberID = &match.MemberID
+		change.RaceID = &match.RaceID
+		if mutation.Kind == sqlite.ObservationFeedStateChanged {
+			change.Scope = timing.ClassifyImpact(timing.ImpactInput{
+				Kind: timing.ChangeObservationState, MemberKnown: true,
+			})
+		} else {
+			// The pull adapter has not proved a direct once-pass against the
+			// current progression head. Escalate safely to one member replay;
+			// Stage 6 repeat semantics can later provide richer evidence.
+			change.Scope = timing.ImpactReplayMember
+		}
+		changes = append(changes, change)
+	}
+	if stats.Recovery {
+		changes = append(changes, timing.ProjectionChange[string, string]{
+			Scope: timing.ImpactReplayEvent, ConfigVersion: evidence.ConfigVersion, InputWatermark: evidence.InputWatermark,
+		})
+	}
+	stats.Plan = timing.BuildProjectionPlan(changes)
+	stats.mutations = nil
+	return stats, nil
 }
 
 func feedObservation(input ChangeFeedObservation) (domain.RfidLog, error) {

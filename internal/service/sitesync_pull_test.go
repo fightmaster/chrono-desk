@@ -102,6 +102,54 @@ func TestPullEventChangesKeepsFirstPageCursorWhenSecondPageIsInvalid(t *testing.
 	}
 }
 
+func TestFinalizePullProjectionPlanCoalescesElevenThousandRowsToOneMemberReplay(t *testing.T) {
+	store := newPullStore(t)
+	ctx := context.Background()
+	if err := store.UpsertRace(ctx, domain.Race{ID: "r1", EventID: "ev1", Name: "Race", Format: domain.FormatFixedDistance}); err != nil {
+		t.Fatal(err)
+	}
+	number := int64(42)
+	if err := store.UpsertMember(ctx, domain.Member{ID: "m1", EventID: "ev1", RaceID: "r1", Number: &number}); err != nil {
+		t.Fatal(err)
+	}
+	mutations := make([]sqlite.ObservationFeedMutation, 11_000)
+	for index := range mutations {
+		mutations[index] = sqlite.ObservationFeedMutation{
+			Kind: sqlite.ObservationFeedInserted,
+			Observation: domain.RfidLog{
+				ID: fmt.Sprintf("remote-%d", index), EventID: "ev1", Number: 42,
+				TimeMs: int64(index + 1), Board: "split",
+			},
+		}
+	}
+	stats, err := finalizePullProjectionPlan(ctx, store, "ev1", ChangePullStats{
+		Observations: len(mutations), mutations: mutations,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Plan.ReplayEvent || len(stats.Plan.Races) != 0 || len(stats.Plan.Members) != 1 || stats.Plan.Members[0].MemberID != "m1" {
+		t.Fatalf("plan=%+v, want one member replay", stats.Plan)
+	}
+}
+
+func TestFinalizePullProjectionPlanRecoversCommittedButUnprojectedPage(t *testing.T) {
+	store := newPullStore(t)
+	ctx := context.Background()
+	if err := store.ApplyObservationFeedPage(ctx, "ev1", []domain.RfidLog{{
+		ID: "committed-before-crash", EventID: "ev1", EPC: "unknown", TimeMs: 1000, Board: "split",
+	}}, "cursor-crash", 1000); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := finalizePullProjectionPlan(ctx, store, "ev1", ChangePullStats{Recovery: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stats.Plan.ReplayEvent || !stats.Plan.EvidenceValid {
+		t.Fatalf("recovery plan=%+v, want evidence-bound event replay", stats.Plan)
+	}
+}
+
 func newPullStore(t *testing.T) *sqlite.Store {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "event.chrono"))

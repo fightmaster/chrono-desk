@@ -65,9 +65,14 @@ type recountStore interface {
 
 type recountTxStore interface {
 	manualFinishStore
+	ProjectionEvidence(ctx context.Context, eventID string) (sqlite.ProjectionEvidence, error)
+	ClearProjectionPending(ctx context.Context, eventID string) error
 	WipeDerivedResults(ctx context.Context, eventID, raceID string) error
+	WipeDerivedResultsForMembers(ctx context.Context, eventID string, memberIDs []string) error
 	ListRfidLogs(ctx context.Context, eventID string) ([]domain.RfidLog, error)
+	ListRfidLogsForMembers(ctx context.Context, eventID string, memberIDs []string) ([]domain.RfidLog, error)
 	ListManualResults(ctx context.Context, eventID, raceID string) ([]sqlite.ManualResult, error)
+	ListManualResultsForMembers(ctx context.Context, eventID string, memberIDs []string) ([]sqlite.ManualResult, error)
 	ProcessorRepository() processor.Repository
 }
 
@@ -101,16 +106,36 @@ func (s sqliteRecountTxStore) UpdateMemberFinish(ctx context.Context, memberID s
 	return s.store.UpdateMemberFinish(ctx, memberID, start, finish, clean)
 }
 
+func (s sqliteRecountTxStore) ProjectionEvidence(ctx context.Context, eventID string) (sqlite.ProjectionEvidence, error) {
+	return s.store.ProjectionEvidence(ctx, eventID)
+}
+
+func (s sqliteRecountTxStore) ClearProjectionPending(ctx context.Context, eventID string) error {
+	return s.store.ClearProjectionPending(ctx, eventID)
+}
+
 func (s sqliteRecountTxStore) WipeDerivedResults(ctx context.Context, eventID, raceID string) error {
 	return s.store.WipeDerivedResults(ctx, eventID, raceID)
+}
+
+func (s sqliteRecountTxStore) WipeDerivedResultsForMembers(ctx context.Context, eventID string, memberIDs []string) error {
+	return s.store.WipeDerivedResultsForMembers(ctx, eventID, memberIDs)
 }
 
 func (s sqliteRecountTxStore) ListRfidLogs(ctx context.Context, eventID string) ([]domain.RfidLog, error) {
 	return s.store.ListRfidLogs(ctx, eventID)
 }
 
+func (s sqliteRecountTxStore) ListRfidLogsForMembers(ctx context.Context, eventID string, memberIDs []string) ([]domain.RfidLog, error) {
+	return s.store.ListRfidLogsForMembers(ctx, eventID, memberIDs)
+}
+
 func (s sqliteRecountTxStore) ListManualResults(ctx context.Context, eventID, raceID string) ([]sqlite.ManualResult, error) {
 	return s.store.ListManualResults(ctx, eventID, raceID)
+}
+
+func (s sqliteRecountTxStore) ListManualResultsForMembers(ctx context.Context, eventID string, memberIDs []string) ([]sqlite.ManualResult, error) {
+	return s.store.ListManualResultsForMembers(ctx, eventID, memberIDs)
 }
 
 func (s sqliteRecountTxStore) ProcessorRepository() processor.Repository {

@@ -26,6 +26,19 @@ type ObservationOutboxAck struct {
 	Reason         string
 }
 
+type ObservationFeedMutationKind uint8
+
+const (
+	ObservationFeedDuplicate ObservationFeedMutationKind = iota
+	ObservationFeedInserted
+	ObservationFeedStateChanged
+)
+
+type ObservationFeedMutation struct {
+	Observation domain.RfidLog
+	Kind        ObservationFeedMutationKind
+}
+
 // SyncConfig is the per-event run5 sync target (base URL + token) plus the last
 // push result. One row per event database.
 type SyncConfig struct {
@@ -70,10 +83,21 @@ func (s *Store) GetPullCursor(ctx context.Context, eventID string) (*string, err
 // observation without claiming ownership and advances the opaque cursor in the
 // same transaction. Any bad item rolls back the complete page and cursor.
 func (s *Store) ApplyObservationFeedPage(ctx context.Context, eventID string, logs []domain.RfidLog, nextCursor string, pulledAtMs int64) error {
+	_, err := s.ApplyObservationFeedPageWithMutations(ctx, eventID, logs, nextCursor, pulledAtMs)
+	return err
+}
+
+// ApplyObservationFeedPageWithMutations preserves the atomic page/cursor
+// boundary and reports only committed projection-relevant mutations. Origin
+// metadata enrichment is history-only and remains a duplicate for planning;
+// disabled_at changes are explicit state changes.
+func (s *Store) ApplyObservationFeedPageWithMutations(ctx context.Context, eventID string, logs []domain.RfidLog, nextCursor string, pulledAtMs int64) ([]ObservationFeedMutation, error) {
 	if strings.TrimSpace(nextCursor) == "" {
-		return fmt.Errorf("next pull cursor is required")
+		return nil, fmt.Errorf("next pull cursor is required")
 	}
-	return s.WithinTx(ctx, func(txStore *Store) error {
+	mutations := make([]ObservationFeedMutation, 0, len(logs))
+	err := s.WithinTx(ctx, func(txStore *Store) error {
+		projectionChanged := false
 		for _, incoming := range logs {
 			if incoming.EventID != eventID {
 				return fmt.Errorf("observation %s belongs to event %s", incoming.ID, incoming.EventID)
@@ -100,6 +124,12 @@ func (s *Store) ApplyObservationFeedPage(ctx context.Context, eventID string, lo
 					incoming.OriginSystem, incoming.OriginInstanceID, incoming.OriginSequence, incoming.ID); err != nil {
 					return fmt.Errorf("update feed observation %s: %w", incoming.ID, err)
 				}
+				kind := ObservationFeedDuplicate
+				if !sameNullableInt64(existing.DisabledAt, incoming.DisabledAt) {
+					kind = ObservationFeedStateChanged
+					projectionChanged = true
+				}
+				mutations = append(mutations, ObservationFeedMutation{Observation: incoming, Kind: kind})
 				continue
 			}
 			if _, err := txStore.db.ExecContext(ctx, `
@@ -114,15 +144,54 @@ func (s *Store) ApplyObservationFeedPage(ctx context.Context, eventID string, lo
 				nullablePositiveInt64(incoming.OriginSequence)); err != nil {
 				return fmt.Errorf("insert feed observation %s: %w", incoming.ID, err)
 			}
+			mutations = append(mutations, ObservationFeedMutation{Observation: incoming, Kind: ObservationFeedInserted})
+			projectionChanged = true
+		}
+		pending := 0
+		if projectionChanged {
+			pending = 1
 		}
 		if _, err := txStore.db.ExecContext(ctx, `
-			INSERT INTO sync_config (event_id, pull_cursor, last_pulled_at) VALUES (?, ?, ?)
-			ON CONFLICT(event_id) DO UPDATE SET pull_cursor=excluded.pull_cursor, last_pulled_at=excluded.last_pulled_at`,
-			eventID, nextCursor, pulledAtMs); err != nil {
+			INSERT INTO sync_config (event_id, pull_cursor, last_pulled_at, projection_pending) VALUES (?, ?, ?, ?)
+			ON CONFLICT(event_id) DO UPDATE SET
+				pull_cursor=excluded.pull_cursor,
+				last_pulled_at=excluded.last_pulled_at,
+				projection_pending=MAX(sync_config.projection_pending, excluded.projection_pending)`,
+			eventID, nextCursor, pulledAtMs, pending); err != nil {
 			return fmt.Errorf("advance pull cursor %s: %w", eventID, err)
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return mutations, nil
+}
+
+func (s *Store) ProjectionPending(ctx context.Context, eventID string) (bool, error) {
+	var pending int
+	err := s.db.QueryRowContext(ctx, `SELECT projection_pending FROM sync_config WHERE event_id = ?`, eventID).Scan(&pending)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read projection pending %s: %w", eventID, err)
+	}
+	return pending != 0, nil
+}
+
+func (s *Store) ClearProjectionPending(ctx context.Context, eventID string) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE sync_config SET projection_pending = 0 WHERE event_id = ?`, eventID); err != nil {
+		return fmt.Errorf("clear projection pending %s: %w", eventID, err)
+	}
+	return nil
+}
+
+func sameNullableInt64(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func (s *Store) findRfidLog(ctx context.Context, id string) (domain.RfidLog, bool, error) {

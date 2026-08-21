@@ -221,5 +221,6 @@ CREATE TABLE IF NOT EXISTS sync_config (
     last_synced_at    INTEGER, -- unix ms of last successful push
     last_payload_hash TEXT,    -- sha256 of last pushed payload (skip no-op re-push)
     pull_cursor       TEXT,    -- opaque RUN5 event change-feed cursor
-    last_pulled_at    INTEGER  -- unix ms of last atomically applied feed page
+    last_pulled_at    INTEGER, -- unix ms of last atomically applied feed page
+    projection_pending INTEGER NOT NULL DEFAULT 0 -- committed feed input not yet projection-acked
 );
