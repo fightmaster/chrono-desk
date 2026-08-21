@@ -259,6 +259,31 @@ detects the flag and performs one evidence-bound full-event recovery replay. A
 crash after replay but before the HTTP response may cause a retry, but not a missing
 result. Metadata-only duplicates do not set the flag.
 
+## Concurrent pull-all and push-own acceptance
+
+`TestConcurrentPullAllAndPushOwnPreservesOwnershipAndCursors` exercises both HTTP
+paths against the same event while the RUN5 acknowledgement for a local push is
+deliberately held open. During that interval a pull imports a complete snapshot
+and a new Stopwatch observation from the incremental feed. The test requires:
+
+- the outbound v3 batch to contain only the locally captured Chrono Desk row;
+- the local row to survive the concurrent snapshot/feed import and become `acked`;
+- the remote Stopwatch row to be stored exactly once without acquiring an
+  `observation_outbox` row;
+- the feed cursor to advance only after the imported page commits;
+- both HTTP operations to complete successfully under Go's race detector.
+
+The synthetic acceptance is repeatable with:
+
+```sh
+go test -race -run TestConcurrentPullAllAndPushOwnPreservesOwnershipAndCursors \
+  -count=20 ./internal/transport/httpapi
+```
+
+It proves the local SQLite ownership and cursor fences under real concurrent HTTP
+handlers. It does not replace the field test with five physical producers,
+disconnect/reconnect cycles and production network latency.
+
 Starting live Feibot ingest starts a five-second background pull loop; stopping
 the live session cancels it. The manual button and loop share a per-event mutex,
 while the SQLite transaction protects against other local writers. Empty and
