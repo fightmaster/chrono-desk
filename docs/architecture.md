@@ -124,7 +124,9 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    Planning and execution read exact SHA-256 evidence together with
    transaction-coupled `projection-revision-v1` counters. Exact hashes remain
    authoritative; if only one evidence form changes, Chrono Desk logs the parity
-   mismatch and fails closed to a full event replay.
+   mismatch and fails closed to a full event replay. Per-event field acceptance
+   counters are stored outside projection input and exposed by the authenticated
+   sync-config endpoint.
 8. **Application ports are declared next to their consumers, not in SQLite.**
    `service.BuildProtocol` depends on a small `ProtocolStore`; recount, local edits and
    event import use similarly narrow consumer-side ports with thin SQLite adapters inside

@@ -235,3 +235,18 @@ CREATE TABLE IF NOT EXISTS projection_revisions (
     config_revision INTEGER NOT NULL DEFAULT 0,
     input_revision  INTEGER NOT NULL DEFAULT 0
 );
+
+-- Durable acceptance evidence for the exact-hash/revision dual-read rollout.
+-- This is telemetry, not projection input, and therefore has no revision trigger.
+CREATE TABLE IF NOT EXISTS projection_evidence_parity (
+    event_id                  TEXT PRIMARY KEY,
+    revision_version          TEXT NOT NULL,
+    checks                    INTEGER NOT NULL DEFAULT 0,
+    matches                   INTEGER NOT NULL DEFAULT 0,
+    mismatches                INTEGER NOT NULL DEFAULT 0,
+    hash_only_mismatches      INTEGER NOT NULL DEFAULT 0,
+    revision_only_mismatches  INTEGER NOT NULL DEFAULT 0,
+    version_mismatches        INTEGER NOT NULL DEFAULT 0,
+    last_checked_at_ms        INTEGER NOT NULL,
+    last_mismatch_at_ms       INTEGER
+);

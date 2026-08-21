@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
 	"gitlab.com/fightmaster1/chrono-desk/internal/transport/publicweb"
 )
@@ -94,6 +95,32 @@ func TestControlAPIRequiresToken(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status without token = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestSyncConfigReportsProjectionEvidenceParity(t *testing.T) {
+	srv := startTestServer(t)
+	ctx := context.Background()
+	fixture, err := os.ReadFile("../../service/testdata/event-export.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustPost(t, srv.BaseURL()+"/api/events/import", "application/json", strings.NewReader(string(fixture)))
+	store, err := srv.events.Open("ev-100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordProjectionEvidenceCheck(ctx, "ev-100", sqlite.ProjectionEvidenceCheck{RevisionChanged: true, CheckedAtMs: 1234}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := mustGet(t, srv.BaseURL()+"/api/events/ev-100/sync-config")
+	var body struct {
+		ProjectionEvidence sqlite.ProjectionEvidenceParity `json:"projection_evidence"`
+	}
+	decodeBody(t, resp, &body)
+	if body.ProjectionEvidence.Checks != 1 || body.ProjectionEvidence.RevisionOnlyMismatches != 1 {
+		t.Fatalf("projection evidence=%+v", body.ProjectionEvidence)
 	}
 }
 

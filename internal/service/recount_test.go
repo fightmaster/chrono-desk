@@ -290,6 +290,35 @@ func TestRecountPlanTargetsOneMemberAndFailsClosedOnStaleEvidence(t *testing.T) 
 	if err != nil || !executed || !stats.EventReplayed || stats.EvidenceFallback || !stats.RevisionEvidenceChecked || stats.RevisionEvidenceMismatch {
 		t.Fatalf("large-plan fallback executed=%v stats=%+v err=%v", executed, stats, err)
 	}
+	parity, err := store.GetProjectionEvidenceParity(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parity.Checks != 6 || parity.Matches != 3 || parity.Mismatches != 3 || parity.HashOnlyMismatches != 1 || parity.RevisionOnlyMismatches != 1 || parity.VersionMismatches != 1 {
+		t.Fatalf("durable recount parity=%+v", parity)
+	}
+
+	rollbackEvidence, err := store.ProjectionFenceEvidence(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rollbackPlan := timing.BuildProjectionPlan([]timing.ProjectionChange[string, string]{{
+		MemberID: &memberID, RaceID: &raceID, Scope: timing.ImpactReplayMember,
+		ConfigVersion: rollbackEvidence.Exact.ConfigVersion, InputWatermark: rollbackEvidence.Exact.InputWatermark,
+	}})
+	if _, err := store.DB().Exec(`CREATE TRIGGER reject_recount_result BEFORE INSERT ON results BEGIN SELECT RAISE(ABORT, 'reject recount'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := recounter.RecountPlan(ctx, "ev1", rollbackPlan, rollbackEvidence); err == nil {
+		t.Fatal("expected recount failure")
+	}
+	afterFailedRecount, err := store.GetProjectionEvidenceParity(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterFailedRecount.Checks != parity.Checks || afterFailedRecount.Matches != parity.Matches || afterFailedRecount.Mismatches != parity.Mismatches {
+		t.Fatalf("failed recount committed parity telemetry: before=%+v after=%+v", parity, afterFailedRecount)
+	}
 }
 
 // A Stopwatch Checkpoint capture is an ordinary number-only RFID log from a

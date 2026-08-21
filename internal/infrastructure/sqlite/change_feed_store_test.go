@@ -30,6 +30,10 @@ func TestMigrationAddsPullCursorToExistingSyncConfig(t *testing.T) {
 			t.Fatalf("column %s count=%d err=%v", column, count, err)
 		}
 	}
+	var parityTables int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='projection_evidence_parity'`).Scan(&parityTables); err != nil || parityTables != 1 {
+		t.Fatalf("projection_evidence_parity table count=%d err=%v", parityTables, err)
+	}
 }
 
 func TestApplyObservationFeedPageCommitsRowsAndCursorAtomically(t *testing.T) {

@@ -235,6 +235,14 @@ uncovered writer and an over-broad/noisy trigger without risking a stale targete
 projection. Removing exact scans remains gated on field parity evidence,
 imports/local edits, crash recovery and migrated event databases.
 
+Successful planned recount transactions accumulate that evidence in
+`projection_evidence_parity`: total checks, matches, hash-only, revision-only and
+contract-version mismatches plus the last check/mismatch timestamps. A failed
+recount rolls the telemetry update back with the projection; its error remains in
+the application log. The authenticated `GET /api/events/{id}/sync-config`
+response exposes the counters as `projection_evidence`. Plans without valid exact
+evidence fail closed but are not counted as parity samples.
+
 Every feed transaction that inserts an observation or changes its disabled state
 also sets durable `sync_config.projection_pending=1` alongside the new cursor. The
 flag is cleared only inside the successful replay/plan transaction. Therefore a

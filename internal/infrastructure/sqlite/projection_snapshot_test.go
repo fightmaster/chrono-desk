@@ -206,6 +206,31 @@ func TestProjectionFenceEvidenceReadsExactAndRevisionsFromOneSnapshot(t *testing
 	}
 }
 
+func TestProjectionEvidenceParityAccumulatesFieldAcceptanceCounters(t *testing.T) {
+	store := newChangeFeedStore(t)
+	ctx := context.Background()
+	checks := []ProjectionEvidenceCheck{
+		{CheckedAtMs: 1000},
+		{ExactChanged: true, RevisionChanged: true, CheckedAtMs: 2000},
+		{ExactChanged: true, CheckedAtMs: 3000},
+		{RevisionChanged: true, CheckedAtMs: 4000},
+		{VersionMismatch: true, CheckedAtMs: 5000},
+	}
+	for _, check := range checks {
+		if err := store.RecordProjectionEvidenceCheck(ctx, "ev1", check); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	parity, err := store.GetProjectionEvidenceParity(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parity.RevisionVersion != ProjectionRevisionVersion || parity.Checks != 5 || parity.Matches != 2 || parity.Mismatches != 3 || parity.HashOnlyMismatches != 1 || parity.RevisionOnlyMismatches != 1 || parity.VersionMismatches != 1 || parity.LastCheckedAtMs != 5000 || parity.LastMismatchAtMs == nil || *parity.LastMismatchAtMs != 5000 {
+		t.Fatalf("parity=%+v", parity)
+	}
+}
+
 func TestProjectionEvidenceTracksResultConfigurationAndInputs(t *testing.T) {
 	store := newChangeFeedStore(t)
 	ctx := context.Background()

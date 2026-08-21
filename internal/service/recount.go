@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
@@ -77,6 +78,14 @@ func (r *Recounter) RecountPlan(ctx context.Context, eventID string, plan timing
 		revisionChanged := actual.Revisions != expected.Revisions
 		versionMismatch := actual.RevisionVersion != expected.RevisionVersion
 		revisionMismatch := plan.EvidenceValid && (versionMismatch || exactChanged != revisionChanged)
+		if plan.EvidenceValid {
+			if err := store.RecordProjectionEvidenceCheck(ctx, eventID, sqlite.ProjectionEvidenceCheck{
+				ExactChanged: exactChanged, RevisionChanged: revisionChanged,
+				VersionMismatch: versionMismatch, CheckedAtMs: time.Now().UnixMilli(),
+			}); err != nil {
+				return err
+			}
+		}
 		if revisionMismatch {
 			if r.logger != nil {
 				r.logger.Printf("projection evidence parity mismatch event=%s exact_changed=%t revision_changed=%t version_mismatch=%t", eventID, exactChanged, revisionChanged, versionMismatch)
