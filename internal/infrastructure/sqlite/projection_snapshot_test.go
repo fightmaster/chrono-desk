@@ -187,6 +187,25 @@ func TestProjectionRevisionsIgnoreDerivedResultsButTrackManualResults(t *testing
 	}
 }
 
+func TestProjectionFenceEvidenceReadsExactAndRevisionsFromOneSnapshot(t *testing.T) {
+	store := newChangeFeedStore(t)
+	ctx := context.Background()
+	if err := store.UpsertRace(ctx, domain.Race{ID: "r1", EventID: "ev1", Name: "Race", Format: domain.FormatFixedDistance}); err != nil {
+		t.Fatal(err)
+	}
+
+	fence, err := store.ProjectionFenceEvidence(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fence.RevisionVersion != ProjectionRevisionVersion {
+		t.Fatalf("revision version=%q, want %q", fence.RevisionVersion, ProjectionRevisionVersion)
+	}
+	if fence.Exact.ConfigVersion == "" || fence.Exact.InputWatermark == "" || fence.Revisions.ConfigRevision == 0 {
+		t.Fatalf("incomplete fence evidence: %+v", fence)
+	}
+}
+
 func TestProjectionEvidenceTracksResultConfigurationAndInputs(t *testing.T) {
 	store := newChangeFeedStore(t)
 	ctx := context.Background()

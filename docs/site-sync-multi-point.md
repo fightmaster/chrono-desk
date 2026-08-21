@@ -225,9 +225,15 @@ updates are suppressed; derived result rows do not advance the input revision;
 rollback restores both data and counters. Trigger inventory and special manual/
 category paths have executable tests. On the same 11k/11k fixture an O(1)
 revision read takes about 36 microseconds, 768 bytes and 21 allocations. These
-counters are shadow evidence only: planning/execution still uses exact hashes
-until dual-read parity covers imports, local edits, crash recovery and migrated
-event databases.
+counters now run in dual-read parity: planning captures exact hashes and
+revisions in one snapshot, then execution compares both inside the replay write
+transaction. Exact hashes remain authoritative. If both forms are stable,
+targeted replay proceeds; if both changed, the stale plan falls back to one event
+replay; if only one changed, the same fallback occurs and
+`revision_evidence_mismatch` is reported and logged. This catches both an
+uncovered writer and an over-broad/noisy trigger without risking a stale targeted
+projection. Removing exact scans remains gated on field parity evidence,
+imports/local edits, crash recovery and migrated event databases.
 
 Every feed transaction that inserts an observation or changes its disabled state
 also sets durable `sync_config.projection_pending=1` alongside the new cursor. The

@@ -131,6 +131,9 @@ func TestFinalizePullProjectionPlanCoalescesElevenThousandRowsToOneMemberReplay(
 	if stats.Plan.ReplayEvent || len(stats.Plan.Races) != 0 || len(stats.Plan.Members) != 1 || stats.Plan.Members[0].MemberID != "m1" {
 		t.Fatalf("plan=%+v, want one member replay", stats.Plan)
 	}
+	if stats.Evidence.RevisionVersion != sqlite.ProjectionRevisionVersion || stats.Evidence.Exact.ConfigVersion != stats.Plan.ConfigVersion || stats.Evidence.Exact.InputWatermark != stats.Plan.InputWatermark {
+		t.Fatalf("planning evidence=%+v does not bind both evidence forms to the plan", stats.Evidence)
+	}
 }
 
 func TestFinalizePullProjectionPlanRecoversCommittedButUnprojectedPage(t *testing.T) {

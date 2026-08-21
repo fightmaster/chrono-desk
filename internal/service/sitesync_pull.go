@@ -21,6 +21,7 @@ type ChangePullStats struct {
 	StateChanges int                                   `json:"state_changes"`
 	Recovery     bool                                  `json:"recovery"`
 	Plan         timing.ProjectionPlan[string, string] `json:"-"`
+	Evidence     sqlite.ProjectionFenceEvidence        `json:"-"`
 	mutations    []sqlite.ObservationFeedMutation
 }
 
@@ -97,7 +98,7 @@ func PullEventChanges(ctx context.Context, store *sqlite.Store, baseURL, token, 
 }
 
 func finalizePullProjectionPlan(ctx context.Context, store *sqlite.Store, eventID string, stats ChangePullStats) (ChangePullStats, error) {
-	evidence, err := store.ProjectionEvidence(ctx, eventID)
+	evidence, err := store.ProjectionFenceEvidence(ctx, eventID)
 	if err != nil {
 		return stats, err
 	}
@@ -106,7 +107,7 @@ func finalizePullProjectionPlan(ctx context.Context, store *sqlite.Store, eventI
 	for _, mutation := range stats.mutations {
 		observation := mutation.Observation
 		change := timing.ProjectionChange[string, string]{
-			ConfigVersion: evidence.ConfigVersion, InputWatermark: evidence.InputWatermark,
+			ConfigVersion: evidence.Exact.ConfigVersion, InputWatermark: evidence.Exact.InputWatermark,
 			FromTimeMs: observation.TimeMs,
 		}
 		if mutation.Kind == sqlite.ObservationFeedDuplicate {
@@ -160,10 +161,11 @@ func finalizePullProjectionPlan(ctx context.Context, store *sqlite.Store, eventI
 	}
 	if stats.Recovery {
 		changes = append(changes, timing.ProjectionChange[string, string]{
-			Scope: timing.ImpactReplayEvent, ConfigVersion: evidence.ConfigVersion, InputWatermark: evidence.InputWatermark,
+			Scope: timing.ImpactReplayEvent, ConfigVersion: evidence.Exact.ConfigVersion, InputWatermark: evidence.Exact.InputWatermark,
 		})
 	}
 	stats.Plan = timing.BuildProjectionPlan(changes)
+	stats.Evidence = evidence
 	stats.mutations = nil
 	return stats, nil
 }

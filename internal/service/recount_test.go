@@ -175,20 +175,20 @@ func TestRecountPlanTargetsOneMemberAndFailsClosedOnStaleEvidence(t *testing.T) 
 	if _, err := store.DB().Exec(`UPDATE sync_config SET projection_pending=1 WHERE event_id='ev1'`); err != nil {
 		t.Fatal(err)
 	}
-	evidence, err := store.ProjectionEvidence(ctx, "ev1")
+	evidence, err := store.ProjectionFenceEvidence(ctx, "ev1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	memberID, raceID := "mA", "r1"
 	plan := timing.BuildProjectionPlan([]timing.ProjectionChange[string, string]{{
 		MemberID: &memberID, RaceID: &raceID, Scope: timing.ImpactReplayMember,
-		ConfigVersion: evidence.ConfigVersion, InputWatermark: evidence.InputWatermark,
+		ConfigVersion: evidence.Exact.ConfigVersion, InputWatermark: evidence.Exact.InputWatermark,
 	}})
-	stats, executed, err := recounter.RecountPlan(ctx, "ev1", plan)
+	stats, executed, err := recounter.RecountPlan(ctx, "ev1", plan, evidence)
 	if err != nil || !executed {
 		t.Fatalf("targeted recount executed=%v stats=%+v err=%v", executed, stats, err)
 	}
-	if stats.MembersReplayed != 1 || stats.EventReplayed || stats.LogsReplayed != 3 {
+	if stats.MembersReplayed != 1 || stats.EventReplayed || stats.LogsReplayed != 3 || !stats.RevisionEvidenceChecked || stats.RevisionEvidenceMismatch {
 		t.Fatalf("targeted stats=%+v", stats)
 	}
 	if pending, err := store.ProjectionPending(ctx, "ev1"); err != nil || pending {
@@ -206,23 +206,75 @@ func TestRecountPlanTargetsOneMemberAndFailsClosedOnStaleEvidence(t *testing.T) 
 	}
 	assertMemberTimes(t, store, "mA", 1, t0+10_000, t0+300_000, "00:04:50")
 
-	staleEvidence, err := store.ProjectionEvidence(ctx, "ev1")
+	staleEvidence, err := store.ProjectionFenceEvidence(ctx, "ev1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	stalePlan := timing.BuildProjectionPlan([]timing.ProjectionChange[string, string]{{
 		MemberID: &memberID, RaceID: &raceID, Scope: timing.ImpactReplayMember,
-		ConfigVersion: staleEvidence.ConfigVersion, InputWatermark: staleEvidence.InputWatermark,
+		ConfigVersion: staleEvidence.Exact.ConfigVersion, InputWatermark: staleEvidence.Exact.InputWatermark,
 	}})
 	if err := store.UpsertRfidLogs(ctx, []domain.RfidLog{{ID: "late-unknown", EventID: "ev1", EPC: "unknown", Board: "finish", TimeMs: t0 + 600_000}}); err != nil {
 		t.Fatal(err)
 	}
-	stats, executed, err = recounter.RecountPlan(ctx, "ev1", stalePlan)
+	stats, executed, err = recounter.RecountPlan(ctx, "ev1", stalePlan, staleEvidence)
 	if err != nil || !executed || !stats.EventReplayed || !stats.EvidenceFallback {
 		t.Fatalf("stale fallback executed=%v stats=%+v err=%v", executed, stats, err)
 	}
+	if !stats.RevisionEvidenceChecked || stats.RevisionEvidenceMismatch {
+		t.Fatalf("both stale evidence forms should agree: stats=%+v", stats)
+	}
 
-	largeEvidence, err := store.ProjectionEvidence(ctx, "ev1")
+	falsePositiveEvidence, err := store.ProjectionFenceEvidence(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	falsePositivePlan := timing.BuildProjectionPlan([]timing.ProjectionChange[string, string]{{
+		MemberID: &memberID, RaceID: &raceID, Scope: timing.ImpactReplayMember,
+		ConfigVersion: falsePositiveEvidence.Exact.ConfigVersion, InputWatermark: falsePositiveEvidence.Exact.InputWatermark,
+	}})
+	if _, err := store.DB().Exec(`UPDATE projection_revisions SET input_revision=input_revision+1 WHERE event_id='ev1'`); err != nil {
+		t.Fatal(err)
+	}
+	stats, executed, err = recounter.RecountPlan(ctx, "ev1", falsePositivePlan, falsePositiveEvidence)
+	if err != nil || !executed || !stats.EventReplayed || !stats.EvidenceFallback || !stats.RevisionEvidenceMismatch {
+		t.Fatalf("revision-only divergence executed=%v stats=%+v err=%v", executed, stats, err)
+	}
+
+	versionEvidence, err := store.ProjectionFenceEvidence(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	versionPlan := timing.BuildProjectionPlan([]timing.ProjectionChange[string, string]{{
+		MemberID: &memberID, RaceID: &raceID, Scope: timing.ImpactReplayMember,
+		ConfigVersion: versionEvidence.Exact.ConfigVersion, InputWatermark: versionEvidence.Exact.InputWatermark,
+	}})
+	versionEvidence.RevisionVersion = "projection-revision-v0"
+	stats, executed, err = recounter.RecountPlan(ctx, "ev1", versionPlan, versionEvidence)
+	if err != nil || !executed || !stats.EventReplayed || !stats.EvidenceFallback || !stats.RevisionEvidenceMismatch {
+		t.Fatalf("revision-version divergence executed=%v stats=%+v err=%v", executed, stats, err)
+	}
+
+	uncoveredWriterEvidence, err := store.ProjectionFenceEvidence(ctx, "ev1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncoveredWriterPlan := timing.BuildProjectionPlan([]timing.ProjectionChange[string, string]{{
+		MemberID: &memberID, RaceID: &raceID, Scope: timing.ImpactReplayMember,
+		ConfigVersion: uncoveredWriterEvidence.Exact.ConfigVersion, InputWatermark: uncoveredWriterEvidence.Exact.InputWatermark,
+	}})
+	if _, err := store.DB().Exec(`DROP TRIGGER projection_revision_v1_members_update`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`UPDATE members SET dob='2000-01-01' WHERE id='mA'`); err != nil {
+		t.Fatal(err)
+	}
+	stats, executed, err = recounter.RecountPlan(ctx, "ev1", uncoveredWriterPlan, uncoveredWriterEvidence)
+	if err != nil || !executed || !stats.EventReplayed || !stats.EvidenceFallback || !stats.RevisionEvidenceMismatch {
+		t.Fatalf("hash-only divergence executed=%v stats=%+v err=%v", executed, stats, err)
+	}
+
+	largeEvidence, err := store.ProjectionFenceEvidence(ctx, "ev1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,11 +283,11 @@ func TestRecountPlanTargetsOneMemberAndFailsClosedOnStaleEvidence(t *testing.T) 
 		id := fmt.Sprintf("member-%04d", index)
 		largeChanges[index] = timing.ProjectionChange[string, string]{
 			MemberID: &id, RaceID: &raceID, Scope: timing.ImpactReplayMember,
-			ConfigVersion: largeEvidence.ConfigVersion, InputWatermark: largeEvidence.InputWatermark,
+			ConfigVersion: largeEvidence.Exact.ConfigVersion, InputWatermark: largeEvidence.Exact.InputWatermark,
 		}
 	}
-	stats, executed, err = recounter.RecountPlan(ctx, "ev1", timing.BuildProjectionPlan(largeChanges))
-	if err != nil || !executed || !stats.EventReplayed || stats.EvidenceFallback {
+	stats, executed, err = recounter.RecountPlan(ctx, "ev1", timing.BuildProjectionPlan(largeChanges), largeEvidence)
+	if err != nil || !executed || !stats.EventReplayed || stats.EvidenceFallback || !stats.RevisionEvidenceChecked || stats.RevisionEvidenceMismatch {
 		t.Fatalf("large-plan fallback executed=%v stats=%+v err=%v", executed, stats, err)
 	}
 }

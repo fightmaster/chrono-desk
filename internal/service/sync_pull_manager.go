@@ -113,7 +113,7 @@ func (m *SyncPullManager) PullNow(ctx context.Context, eventID string) (SyncPull
 	}
 	result := SyncPullResult{Changes: changes}
 	if changes.Plan.ConfigVersion != "" || changes.Plan.ReplayEvent || len(changes.Plan.Races) > 0 || len(changes.Plan.Members) > 0 {
-		recount, executed, err := NewRecounter(store, m.logger, false).RecountPlan(ctx, eventID, changes.Plan)
+		recount, executed, err := NewRecounter(store, m.logger, false).RecountPlan(ctx, eventID, changes.Plan, changes.Evidence)
 		if err != nil {
 			return SyncPullResult{}, err
 		}

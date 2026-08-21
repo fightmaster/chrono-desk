@@ -121,6 +121,10 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    projection-relevant cursor advance and clears it only in the successful
    projection transaction. Recovery after a process crash therefore escalates to
    one full event replay instead of silently skipping already-cursored input.
+   Planning and execution read exact SHA-256 evidence together with
+   transaction-coupled `projection-revision-v1` counters. Exact hashes remain
+   authoritative; if only one evidence form changes, Chrono Desk logs the parity
+   mismatch and fails closed to a full event replay.
 8. **Application ports are declared next to their consumers, not in SQLite.**
    `service.BuildProtocol` depends on a small `ProtocolStore`; recount, local edits and
    event import use similarly narrow consumer-side ports with thin SQLite adapters inside

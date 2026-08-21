@@ -16,11 +16,13 @@ const maxTargetedMembersPerPlan = 500
 
 // RecountStats summarizes one recount run.
 type RecountStats struct {
-	LogsReplayed     int  `json:"logs_replayed"`
-	MembersReplayed  int  `json:"members_replayed"`
-	RacesReplayed    int  `json:"races_replayed"`
-	EventReplayed    bool `json:"event_replayed"`
-	EvidenceFallback bool `json:"evidence_fallback"`
+	LogsReplayed             int  `json:"logs_replayed"`
+	MembersReplayed          int  `json:"members_replayed"`
+	RacesReplayed            int  `json:"races_replayed"`
+	EventReplayed            bool `json:"event_replayed"`
+	EvidenceFallback         bool `json:"evidence_fallback"`
+	RevisionEvidenceChecked  bool `json:"revision_evidence_checked"`
+	RevisionEvidenceMismatch bool `json:"revision_evidence_mismatch"`
 }
 
 // Recounter wipes derived data and replays rfid logs through the engine —
@@ -53,10 +55,9 @@ func (r *Recounter) Recount(ctx context.Context, eventID, raceID string) (Recoun
 	return stats, err
 }
 
-// RecountPlan executes one checksum-bound plan inside the same SQLite write
-// transaction. If configuration/input changed after classification it fails
-// closed to a full event replay rather than applying stale targeted work.
-func (r *Recounter) RecountPlan(ctx context.Context, eventID string, plan timing.ProjectionPlan[string, string]) (RecountStats, bool, error) {
+// RecountPlan executes a dual-evidence-bound plan inside one SQLite write
+// transaction. Any exact/revision disagreement fails closed to event replay.
+func (r *Recounter) RecountPlan(ctx context.Context, eventID string, plan timing.ProjectionPlan[string, string], expected sqlite.ProjectionFenceEvidence) (RecountStats, bool, error) {
 	// A large targeted IN-list is slower and eventually reaches SQLite's bind
 	// variable limit. Multiple race replays also rescan the event log once per
 	// race. In both cases one event replay is the bounded operation.
@@ -68,14 +69,25 @@ func (r *Recounter) RecountPlan(ctx context.Context, eventID string, plan timing
 	}
 	var stats RecountStats
 	err := r.store.WithinTx(ctx, func(store recountTxStore) error {
-		evidence, err := store.ProjectionEvidence(ctx, eventID)
+		actual, err := store.ProjectionFenceEvidence(ctx, eventID)
 		if err != nil {
 			return err
 		}
-		if !plan.EvidenceValid || evidence.ConfigVersion != plan.ConfigVersion || evidence.InputWatermark != plan.InputWatermark {
+		exactChanged := !plan.EvidenceValid || actual.Exact.ConfigVersion != plan.ConfigVersion || actual.Exact.InputWatermark != plan.InputWatermark
+		revisionChanged := actual.Revisions != expected.Revisions
+		versionMismatch := actual.RevisionVersion != expected.RevisionVersion
+		revisionMismatch := plan.EvidenceValid && (versionMismatch || exactChanged != revisionChanged)
+		if revisionMismatch {
+			if r.logger != nil {
+				r.logger.Printf("projection evidence parity mismatch event=%s exact_changed=%t revision_changed=%t version_mismatch=%t", eventID, exactChanged, revisionChanged, versionMismatch)
+			}
+		}
+		if exactChanged || revisionChanged || versionMismatch {
 			stats, err = r.recount(ctx, store, eventID, "")
 			stats.EventReplayed = true
 			stats.EvidenceFallback = true
+			stats.RevisionEvidenceChecked = true
+			stats.RevisionEvidenceMismatch = revisionMismatch
 			if err != nil {
 				return err
 			}
@@ -84,6 +96,8 @@ func (r *Recounter) RecountPlan(ctx context.Context, eventID string, plan timing
 		if replayEvent {
 			stats, err = r.recount(ctx, store, eventID, "")
 			stats.EventReplayed = true
+			stats.RevisionEvidenceChecked = true
+			stats.RevisionEvidenceMismatch = revisionMismatch
 			if err != nil {
 				return err
 			}
@@ -109,6 +123,8 @@ func (r *Recounter) RecountPlan(ctx context.Context, eventID string, plan timing
 			stats.LogsReplayed += result.LogsReplayed
 			stats.MembersReplayed += len(memberIDs)
 		}
+		stats.RevisionEvidenceChecked = true
+		stats.RevisionEvidenceMismatch = revisionMismatch
 		return store.ClearProjectionPending(ctx, eventID)
 	})
 	return stats, hasActions, err

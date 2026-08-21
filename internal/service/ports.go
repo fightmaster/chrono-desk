@@ -65,7 +65,7 @@ type recountStore interface {
 
 type recountTxStore interface {
 	manualFinishStore
-	ProjectionEvidence(ctx context.Context, eventID string) (sqlite.ProjectionEvidence, error)
+	ProjectionFenceEvidence(ctx context.Context, eventID string) (sqlite.ProjectionFenceEvidence, error)
 	ClearProjectionPending(ctx context.Context, eventID string) error
 	WipeDerivedResults(ctx context.Context, eventID, raceID string) error
 	WipeDerivedResultsForMembers(ctx context.Context, eventID string, memberIDs []string) error
@@ -106,8 +106,8 @@ func (s sqliteRecountTxStore) UpdateMemberFinish(ctx context.Context, memberID s
 	return s.store.UpdateMemberFinish(ctx, memberID, start, finish, clean)
 }
 
-func (s sqliteRecountTxStore) ProjectionEvidence(ctx context.Context, eventID string) (sqlite.ProjectionEvidence, error) {
-	return s.store.ProjectionEvidence(ctx, eventID)
+func (s sqliteRecountTxStore) ProjectionFenceEvidence(ctx context.Context, eventID string) (sqlite.ProjectionFenceEvidence, error) {
+	return s.store.ProjectionFenceEvidence(ctx, eventID)
 }
 
 func (s sqliteRecountTxStore) ClearProjectionPending(ctx context.Context, eventID string) error {

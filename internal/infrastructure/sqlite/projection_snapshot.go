@@ -24,10 +24,22 @@ type ProjectionRevisions struct {
 	InputRevision  int64
 }
 
+// ProjectionFenceEvidence binds the exact authority and the O(1) shadow
+// counters to one database snapshot.
+type ProjectionFenceEvidence struct {
+	Exact           ProjectionEvidence
+	Revisions       ProjectionRevisions
+	RevisionVersion string
+}
+
 // ProjectionRevisions returns transaction-coupled O(1) shadow evidence. Exact
 // hashes remain authoritative during rollout until every writer and migration
 // path has passed parity/crash verification.
 func (s *Store) ProjectionRevisions(ctx context.Context, eventID string) (ProjectionRevisions, error) {
+	return s.projectionRevisions(ctx, eventID)
+}
+
+func (s *Store) projectionRevisions(ctx context.Context, eventID string) (ProjectionRevisions, error) {
 	var revisions ProjectionRevisions
 	err := s.db.QueryRowContext(ctx, `
 		SELECT
@@ -39,6 +51,27 @@ func (s *Store) ProjectionRevisions(ctx context.Context, eventID string) (Projec
 		return ProjectionRevisions{}, fmt.Errorf("read projection revisions: %w", err)
 	}
 	return revisions, nil
+}
+
+// ProjectionFenceEvidence reads exact and revision evidence inside one
+// transaction. Exact hashes remain authoritative during the dual-read rollout.
+func (s *Store) ProjectionFenceEvidence(ctx context.Context, eventID string) (ProjectionFenceEvidence, error) {
+	var evidence ProjectionFenceEvidence
+	err := s.WithinTx(ctx, func(txStore *Store) error {
+		exact, err := txStore.projectionEvidence(ctx, eventID)
+		if err != nil {
+			return err
+		}
+		revisions, err := txStore.projectionRevisions(ctx, eventID)
+		if err != nil {
+			return err
+		}
+		evidence = ProjectionFenceEvidence{
+			Exact: exact, Revisions: revisions, RevisionVersion: ProjectionRevisionVersion,
+		}
+		return nil
+	})
+	return evidence, err
 }
 
 func (s *Store) ProjectionEvidence(ctx context.Context, eventID string) (ProjectionEvidence, error) {
