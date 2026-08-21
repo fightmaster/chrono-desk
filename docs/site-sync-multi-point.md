@@ -197,6 +197,26 @@ cursor. Evidence is recalculated after acquiring the SQLite write transaction; a
 mismatch falls back to one full event replay. Ambiguous bib/EPC lookup also fails
 closed instead of allowing SQLite's row order to select a participant.
 
+Run the production-size evidence benchmark with:
+
+```sh
+go test -run '^$' -bench BenchmarkProjectionEvidenceElevenThousand \
+  -benchmem -count=5 ./internal/infrastructure/sqlite
+```
+
+It seeds 11,000 members and 11,000 observations outside the timed section and
+measures one exact configuration/input scan per iteration. Planning plus the
+transaction-fenced execution check performs two such scans.
+
+Baseline on Linux/amd64, Intel i5-3570, Go 1.24.13 (five runs): one scan took
+167–187 ms (median 175 ms), allocated about 22.5 MiB and made about 770,000
+allocations. The current two-scan path is therefore approximately 350 ms,
+45 MiB and 1.54 million allocations for an impactful 11k/11k batch. This is
+bounded but material on field hardware and justifies a transaction-coupled
+revision-counter slice. Exact hashes remain the active safety fence until every
+configuration/input writer increments those counters atomically and crash/
+rollback tests prove the replacement.
+
 Every feed transaction that inserts an observation or changes its disabled state
 also sets durable `sync_config.projection_pending=1` alongside the new cursor. The
 flag is cleared only inside the successful replay/plan transaction. Therefore a
@@ -216,8 +236,8 @@ Chrono Desk stores explicit start provenance beside `members.start_time_ms`:
 `start_observation_id` for an RFID START. Full and targeted recount clear only
 the two derived sources before replay and preserve `manual`/`unknown`; disabling
 the observation that supplied a start can therefore remove it without erasing a
-judge decision. RUN5/rfid-sync adoption remains a coordinated expand-only
-follow-up before this provenance can cross the site sync boundary.
+judge decision. Chrono Desk and rfid-sync consume `timing-core v0.7.0`; rfid-sync
+deployment remains gated on the additive RUN5 provenance migration.
 
 ## Replay concurrency: a Laravel lock is not enough
 
