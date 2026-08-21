@@ -15,7 +15,7 @@ func TestPlanMemberTimesMapsDesktopDomainToSharedProjection(t *testing.T) {
 	}
 	checkpoint := processor.Checkpoint{ID: "finish", Type: domain.CheckpointFinish}
 
-	plan := planMemberTimes(member, checkpoint, 61_007)
+	plan := planMemberTimes(member, checkpoint, 61_007, "finish")
 	if plan.StartWrite != timing.StartWriteIfNull || plan.StartTimeMs == nil || *plan.StartTimeMs != raceStart {
 		t.Fatalf("start plan=%+v, want race-start backfill", plan)
 	}
@@ -35,7 +35,7 @@ func TestPlanMemberTimesMapsExistingDesktopFinish(t *testing.T) {
 	}
 	checkpoint := processor.Checkpoint{ID: "finish", Type: domain.CheckpointFinish}
 
-	plan := planMemberTimes(member, checkpoint, 9_000)
+	plan := planMemberTimes(member, checkpoint, 9_000, "finish")
 	if plan.FinishTimeMs != nil || plan.EffectiveFinishTimeMs == nil || *plan.EffectiveFinishTimeMs != finish {
 		t.Fatalf("finish plan=%+v, want existing finish preserved", plan)
 	}

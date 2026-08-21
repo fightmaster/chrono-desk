@@ -8,13 +8,14 @@ import "gitlab.com/fightmaster1/chrono-desk/internal/domain"
 
 // Member is the engine's view of a participant.
 type Member struct {
-	ID              string
-	RaceID          string
-	Number          *int64
-	StartTimeMs     *int64
-	StartTimeSource domain.StartTimeSource
-	FinishTimeMs    *int64
-	RaceStartedAtMs *int64
+	ID                 string
+	RaceID             string
+	Number             *int64
+	StartTimeMs        *int64
+	StartTimeSource    domain.StartTimeSource
+	StartObservationID string
+	FinishTimeMs       *int64
+	RaceStartedAtMs    *int64
 }
 
 // Checkpoint is the engine's view of a checkpoint bound to a board.

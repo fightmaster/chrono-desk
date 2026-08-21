@@ -96,13 +96,16 @@ make check            # required gate: gofmt, test, race, vet, staticcheck
 make audit            # vulnerability report (known Go 1.24 findings; see architecture)
 ```
 
-`timing-core` is pinned to `v0.6.0`; release builds never use a mutable sibling
+`timing-core` is pinned to `v0.7.0`; release builds never use a mutable sibling
 replacement. Because the canonical GitLab project is private, GitHub Actions
 requires a read-only GitLab project access token in the
 `TIMING_CORE_READ_TOKEN` repository secret. The workflow fails before the Wails
 build with an explicit error when the secret is absent or cannot read the tag.
 The same workflow runs backend tests, race detection, formatting, vet,
 staticcheck and the frontend production build before either release artifact.
+The version API exposes `member_time_version=member-time-v2-start-provenance`;
+manual and unclassified starts remain protected while machine-owned starts
+trace their race default or immutable observation.
 
 ## Docs
 

@@ -3,6 +3,8 @@
 // milliseconds unless a field is documented otherwise.
 package domain
 
+import timing "gitlab.com/fightmaster1/timing-core"
+
 // RaceFormat mirrors run5's races.format enum.
 type RaceFormat string
 
@@ -32,13 +34,13 @@ const (
 	StatusDSQ MemberStatus = 3
 )
 
-type StartTimeSource string
+type StartTimeSource = timing.StartTimeSource
 
 const (
-	StartTimeSourceUnknown     StartTimeSource = "unknown"
-	StartTimeSourceManual      StartTimeSource = "manual"
-	StartTimeSourceRaceDefault StartTimeSource = "race_default"
-	StartTimeSourceObservation StartTimeSource = "observation"
+	StartTimeSourceUnknown     = timing.StartTimeUnknown
+	StartTimeSourceManual      = timing.StartTimeManual
+	StartTimeSourceRaceDefault = timing.StartTimeRaceDefault
+	StartTimeSourceObservation = timing.StartTimeObservation
 )
 
 type Event struct {

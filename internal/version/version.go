@@ -20,6 +20,7 @@ type Info struct {
 	Date              string `json:"date"`
 	TimingCoreVersion string `json:"timing_core_version"`
 	MatcherVersion    string `json:"matcher_version"`
+	MemberTimeVersion string `json:"member_time_version"`
 	OutcomeVersion    string `json:"outcome_version"`
 	RankingVersion    string `json:"ranking_version"`
 }
@@ -30,6 +31,7 @@ func Get() Info {
 		Version: Semver, Build: Build, Commit: Commit, Date: Date,
 		TimingCoreVersion: timing.ModuleVersion,
 		MatcherVersion:    timing.MatcherVersion,
+		MemberTimeVersion: timing.MemberTimeVersion,
 		OutcomeVersion:    timing.ResultOutcomeVersion,
 		RankingVersion:    timing.RankingVersion,
 	}
