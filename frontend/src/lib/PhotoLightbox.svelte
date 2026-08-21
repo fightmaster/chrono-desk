@@ -34,7 +34,7 @@
 </script>
 
 <svelte:window on:keydown={onKey}/>
-<div class="overlay" on:click={() => dispatch('close')}></div>
+<button type="button" class="overlay" aria-label="Закрыть просмотр фотографии" on:click={() => dispatch('close')}></button>
 <div class="box">
   <div class="head">
     <div class="info">
@@ -75,7 +75,7 @@
 </div>
 
 <style>
-  .overlay { position: fixed; inset: 0; background: rgba(4, 9, 18, .72); z-index: 80; }
+  .overlay { position: fixed; inset: 0; padding: 0; border: 0; background: rgba(4, 9, 18, .72); z-index: 80; }
   .box {
     position: fixed; inset: 4vh 4vw; z-index: 81; display: flex; flex-direction: column;
     background: var(--surface); border: 1px solid var(--border2); border-radius: 16px;

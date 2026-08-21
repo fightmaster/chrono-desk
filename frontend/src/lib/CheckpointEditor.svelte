@@ -149,7 +149,6 @@
   }
   .row { padding: 12px 0; border-bottom: 1px solid var(--border); }
   .cpname { font-size: 14.5px; font-weight: 600; }
-  .type { font-size: 14px; color: var(--accent); font-weight: 600; }
   .cell {
     width: 100%; font: inherit; font-size: 13px;
     background: var(--input); border: 1px solid var(--border);

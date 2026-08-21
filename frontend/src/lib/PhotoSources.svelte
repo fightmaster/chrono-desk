@@ -92,7 +92,7 @@
   }
 </script>
 
-<div class="overlay" on:click={() => dispatch('close')}></div>
+<button type="button" class="overlay" aria-label="Закрыть источники фото" on:click={() => dispatch('close')}></button>
 <aside class="src-drawer">
   <div class="head">
     <span class="title">Источники фото</span>
@@ -142,7 +142,7 @@
 </aside>
 
 <style>
-  .overlay { position: fixed; inset: 0; background: rgba(4, 9, 18, .55); z-index: 70; }
+  .overlay { position: fixed; inset: 0; padding: 0; border: 0; background: rgba(4, 9, 18, .55); z-index: 70; }
   .src-drawer {
     position: fixed; top: 0; right: 0; bottom: 0; width: 480px; max-width: 94vw;
     background: var(--surface); border-left: 1px solid var(--border2);

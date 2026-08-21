@@ -78,6 +78,12 @@
 
   function setView(v) { feedView = v; refresh() }
 
+  function activateRow(event, action) {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    action()
+  }
+
   // The wall shows one card per crossing. Collapsing the same finish seen by several
   // cameras now happens server-side (GET /photos/merged) so the wall, matching and
   // export agree and it can enforce "never merge two photos from one camera". Each
@@ -316,7 +322,9 @@
   {#if feedView === 'chips'}
     <div class="feed">
       {#each captures as c (c.id)}
-        <div class="row capture" class:has-photo={capturePhotos[c.id]} on:click={() => dispatch('openCapture', c)}>
+        <div class="row capture" class:has-photo={capturePhotos[c.id]} role="button" tabindex="0"
+             on:click={() => dispatch('openCapture', c)}
+             on:keydown={e => activateRow(e, () => dispatch('openCapture', c))}>
           <span class="time mono">{fmtTime(c.time_ms)}</span>
           <span class="num mono">—</span>
           <span class="name">ручной финиш</span>
@@ -328,7 +336,9 @@
         </div>
       {/each}
       {#each feed as p (p.log_id)}
-        <div class="row {passClass(p)}" class:has-photo={rowPhotos[p.log_id]} on:click={() => openRow(p)}>
+        <div class="row {passClass(p)}" class:has-photo={rowPhotos[p.log_id]} role="button" tabindex="0"
+             on:click={() => openRow(p)}
+             on:keydown={e => activateRow(e, () => openRow(p))}>
           <span class="time mono">{fmtTime(p.time_ms)}</span>
           <span class="num mono">{p.number ?? ''}</span>
           <span class="name">{#if p.member_id}{p.last_name ?? ''} {p.first_name ?? ''}{:else}<span class="epc mono">{p.epc}</span>{/if}</span>

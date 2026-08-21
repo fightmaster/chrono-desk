@@ -277,7 +277,7 @@
   }
 </script>
 
-<div class="overlay" on:click={closeDrawer}></div>
+<button type="button" class="overlay" aria-label="Закрыть карточку участника" on:click={closeDrawer}></button>
 <aside class="drawer">
   <div class="dhead">
     <span class="dtitle">{title}</span>
@@ -431,7 +431,7 @@
 {/if}
 
 <style>
-  .overlay { position: fixed; inset: 0; background: rgba(4, 9, 18, .55); z-index: 50; }
+  .overlay { position: fixed; inset: 0; padding: 0; border: 0; background: rgba(4, 9, 18, .55); z-index: 50; }
   .drawer {
     position: fixed; top: 0; right: 0; bottom: 0; width: 560px; max-width: 92vw;
     background: var(--surface); border-left: 1px solid var(--border2);

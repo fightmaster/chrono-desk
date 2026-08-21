@@ -15,11 +15,11 @@
   const entityNames = {race: 'гонка', checkpoint: 'чекпоинт', member: 'участник', rfid_log: 'лог'}
 </script>
 
-<div class="toggle" on:click={() => open = !open}>
+<button type="button" class="toggle" aria-expanded={open} on:click={() => open = !open}>
   <span class="arrow amber-text">{open ? '▾' : '▸'}</span>
   <span class="title amber-text">Локальные правки ({changes.length})</span>
   <span class="faint hint">— побеждают при реимпорте с сайта</span>
-</div>
+</button>
 
 {#if open && changes.length}
   <div class="scroll">
@@ -43,7 +43,11 @@
 {/if}
 
 <style>
-  .toggle { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+  .toggle {
+    display: flex; align-items: center; gap: 12px; width: 100%; padding: 0;
+    cursor: pointer; color: inherit; background: none; border: 0; font: inherit;
+    text-align: left;
+  }
   .arrow { font-size: 14px; }
   .title { font-size: 14px; font-weight: 700; }
   .hint { font-size: 13px; }
