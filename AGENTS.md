@@ -69,3 +69,16 @@ observations only from its own durable outbound journal. Imported site rows must
 never become desktop-owned. Absence from a payload is never deletion of another
 producer's data. Raw observations are immutable; correction is an explicit
 audited command.
+
+## Central Task Workflow
+
+- Before implementation, read `chrono-docs/CURRENT_STATE.md` and
+  `chrono-docs/TODO.md`, then select or create a stable `CHR-<AREA>-NNN` task.
+- `chrono-docs/TODO.md` is the only owner of open RUN5/Chrono work, priority,
+  scope and acceptance. Local plans/checklists may hold implementation details
+  and evidence only when linked to the central task ID.
+- Add follow-up work discovered during implementation/review to the central
+  TODO in the same change set. Remove completed tasks there and update current
+  state/evidence; Git history remains the completion record.
+- Commit/MR metadata must include `Task: CHR-...` or a justified
+  `Task: NO-TASK`, together with the required `Docs-Impact` marker.
