@@ -14,7 +14,7 @@ COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -X $(VPKG).Semver=$(VERSION) -X $(VPKG).Build=$(BUILD) -X $(VPKG).Commit=$(COMMIT) -X $(VPKG).Date=$(BUILD_DATE)
 
-.PHONY: dev build test race check audit fmt vet lint vuln frontend
+.PHONY: dev build test race check quality audit fmt vet lint vuln frontend frontend-ci
 
 dev:
 	wails dev -tags $(TAGS) -ldflags "$(LDFLAGS)"
@@ -24,6 +24,9 @@ build:
 
 frontend:
 	cd frontend && npm install && npm run build
+
+frontend-ci:
+	cd frontend && npm ci && npm run build
 
 test:
 	go test ./...
@@ -46,5 +49,9 @@ vuln:
 # Required local/CI quality gate. The Go 1.24 vulnerability audit is separate:
 # macOS 11 compatibility currently prevents applying its stdlib fixes.
 check: fmt vet lint test race
+
+# Clean-checkout/release gate. The frontend must exist before Go compiles the
+# root package because main.go embeds frontend/dist.
+quality: frontend-ci check
 
 audit: vuln

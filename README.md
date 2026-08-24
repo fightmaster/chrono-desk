@@ -93,6 +93,7 @@ make build            # production binary for the current OS
 make test             # full test suite
 make race             # race-detector pass
 make check            # required gate: gofmt, test, race, vet, staticcheck
+make quality          # clean-checkout gate: npm ci/build, then make check
 make audit            # vulnerability report (known Go 1.24 findings; see architecture)
 ```
 
@@ -101,8 +102,11 @@ replacement. Because the canonical GitLab project is private, GitHub Actions
 requires a read-only GitLab project access token in the
 `TIMING_CORE_READ_TOKEN` repository secret. The workflow fails before the Wails
 build with an explicit error when the secret is absent or cannot read the tag.
-The same workflow runs backend tests, race detection, formatting, vet,
-staticcheck and the frontend production build before either release artifact.
+Generated Wails JavaScript bindings are tracked because the frontend quality
+gate must build from a clean checkout without launching Wails. GitHub Actions
+builds the frontend first because `main.go` embeds `frontend/dist`, then runs
+backend tests, race detection, formatting, vet and staticcheck before either
+release artifact.
 The version API exposes `member_time_version=member-time-v2-start-provenance`;
 manual and unclassified starts remain protected while machine-owned starts
 trace their race default or immutable observation.

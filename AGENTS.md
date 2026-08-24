@@ -16,6 +16,8 @@
 - `wails build` — production binary for the current OS.
 - `go test ./...` — full test suite; `go test -run TestName ./path/to/pkg` for one test.
 - `cd frontend && npm install && npm run build` — frontend only.
+- `make quality` — clean-checkout release gate; builds the frontend before Go
+  checks because the root package embeds `frontend/dist`.
 
 ## Coding Style & Naming Conventions
 

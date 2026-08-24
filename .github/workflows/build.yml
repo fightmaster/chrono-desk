@@ -55,6 +55,13 @@ jobs:
       - name: Install static analysis
         run: go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
 
+      # main.go embeds frontend/dist. Build it before any command that compiles
+      # the root package; the generated Wails bindings are tracked so this is
+      # reproducible from a clean checkout without starting Wails.
+      - name: Frontend quality gate
+        run: npm ci && npm run build
+        working-directory: chrono-desk/frontend
+
       - name: Go quality gate
         env:
           GOTOOLCHAIN: go1.24.13
@@ -64,10 +71,6 @@ jobs:
           go vet ./...
           staticcheck ./...
           go test -race ./...
-
-      - name: Frontend quality gate
-        run: npm ci && npm run build
-        working-directory: chrono-desk/frontend
 
   macos-intel:
     needs: quality
