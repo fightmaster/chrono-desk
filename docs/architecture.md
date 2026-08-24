@@ -237,10 +237,13 @@ open only while on.
   cross-compile from a host with the toolchain.
 - Resilience fallback: because the UI talks to an embedded HTTP API, the core can run
   headless with the UI in a regular browser if the webview misbehaves on old macOS.
-- **Private module provenance.** Release workflows fetch the immutable
-  `timing-core v0.8.0` tag with the read-only `TIMING_CORE_READ_TOKEN` GitHub
-  Actions secret. A missing/invalid secret fails in a dedicated preflight; no
-  local `replace` is permitted for this release dependency.
+- **Private module provenance.** Release workflows fetch immutable
+  `timing-core v0.8.0` and `rfid-core v0.2.0` tags with one read-only
+  `TIMING_MODULES_READ_TOKEN` GitHub Actions secret. It must be a GitLab
+  Personal Access Token with only `read_repository` and access to both private
+  projects; a project Deploy Token cannot span the independent repositories.
+  A missing/invalid secret fails in a dedicated preflight, and no local
+  `replace` is permitted for either release dependency.
 - **Release identity.** `VERSION`, full Git revision and the source commit
   timestamp are linker-stamped into `/api/version`; diagnostics also expose the
   timing-core and event-export/sync/change-feed contract versions. A `v*` tag
