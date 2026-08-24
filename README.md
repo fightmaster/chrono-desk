@@ -99,12 +99,13 @@ make quality          # clean-checkout gate: npm ci/build, then make check
 make audit            # vulnerability report (known Go 1.24 findings; see architecture)
 ```
 
-`timing-core` is pinned to `v0.7.0` and `rfid-core` to its public `v0.1.1`
-module release; release builds never use mutable sibling replacements. Because
-the canonical timing-core GitLab project is private, GitHub Actions
-requires a read-only GitLab project access token in the
-`TIMING_CORE_READ_TOKEN` repository secret. The workflow fails before the Wails
-build with an explicit error when the secret is absent or cannot read the tag.
+`timing-core` is pinned to `v0.7.0` and canonical GitLab `rfid-core` to
+`v0.2.0`; release builds never use mutable sibling replacements. Because both
+GitLab projects are private, GitHub Actions requires one read-only group/deploy
+token that can read both repositories in the `TIMING_MODULES_READ_TOKEN`
+repository secret. `TIMING_CORE_READ_TOKEN` remains a temporary fallback only
+when it already has access to both projects. The workflow fails before the
+Wails build when neither token can download both tags.
 Generated Wails JavaScript bindings are tracked because the frontend quality
 gate must build from a clean checkout without launching Wails. GitHub Actions
 builds the frontend first because `main.go` embeds `frontend/dist`, then runs

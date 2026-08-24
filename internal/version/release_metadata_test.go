@@ -28,8 +28,8 @@ func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 	}
 
 	goMod := readRepositoryFile(t, "go.mod")
-	if !strings.Contains(goMod, "github.com/fightmaster/rfid-core v0.1.1") {
-		t.Fatal("go.mod does not pin accepted immutable rfid-core v0.1.1")
+	if !strings.Contains(goMod, "gitlab.com/fightmaster1/rfid-core v0.2.0") {
+		t.Fatal("go.mod does not pin canonical GitLab rfid-core v0.2.0")
 	}
 	if strings.Contains(goMod, "replace gitlab.com/fightmaster1/rfid-core") ||
 		strings.Contains(goMod, "../rfid-core") {
@@ -44,6 +44,8 @@ func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 		"gh release create",
 		"git rev-parse HEAD",
 		"git show -s --format=%cI HEAD",
+		"TIMING_MODULES_READ_TOKEN",
+		"go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("release workflow missing %q", required)

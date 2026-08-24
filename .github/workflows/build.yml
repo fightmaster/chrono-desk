@@ -13,9 +13,9 @@ on:
 permissions:
   contents: read
 
-# rfid-core is pinned to its public immutable module tag. timing-core is a
-# private immutable GitLab module, so the repository must define a read-only
-# project access token as the TIMING_CORE_READ_TOKEN Actions secret.
+# Both shared cores are pinned private GitLab modules. The repository must
+# define a read-only group/deploy token that can read both projects as the
+# TIMING_MODULES_READ_TOKEN Actions secret.
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -31,16 +31,18 @@ jobs:
         with:
           go-version: 1.24.13
 
-      - name: Configure private timing-core access
+      - name: Configure private timing module access
         env:
+          TIMING_MODULES_READ_TOKEN: ${{ secrets.TIMING_MODULES_READ_TOKEN }}
           TIMING_CORE_READ_TOKEN: ${{ secrets.TIMING_CORE_READ_TOKEN }}
         run: |
-          if [ -z "$TIMING_CORE_READ_TOKEN" ]; then
-            echo "Missing TIMING_CORE_READ_TOKEN Actions secret" >&2
+          MODULES_READ_TOKEN="${TIMING_MODULES_READ_TOKEN:-$TIMING_CORE_READ_TOKEN}"
+          if [ -z "$MODULES_READ_TOKEN" ]; then
+            echo "Missing TIMING_MODULES_READ_TOKEN Actions secret" >&2
             exit 1
           fi
-          git config --global url."https://oauth2:${TIMING_CORE_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
-          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core
+          git config --global url."https://oauth2:${MODULES_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
+          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core
 
       - uses: actions/setup-node@v4
         with:
@@ -92,17 +94,19 @@ jobs:
         with:
           go-version: 1.24.13
 
-      - name: Configure private timing-core access
+      - name: Configure private timing module access
         shell: bash
         env:
+          TIMING_MODULES_READ_TOKEN: ${{ secrets.TIMING_MODULES_READ_TOKEN }}
           TIMING_CORE_READ_TOKEN: ${{ secrets.TIMING_CORE_READ_TOKEN }}
         run: |
-          if [ -z "$TIMING_CORE_READ_TOKEN" ]; then
-            echo "Missing TIMING_CORE_READ_TOKEN Actions secret" >&2
+          MODULES_READ_TOKEN="${TIMING_MODULES_READ_TOKEN:-$TIMING_CORE_READ_TOKEN}"
+          if [ -z "$MODULES_READ_TOKEN" ]; then
+            echo "Missing TIMING_MODULES_READ_TOKEN Actions secret" >&2
             exit 1
           fi
-          git config --global url."https://oauth2:${TIMING_CORE_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
-          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core
+          git config --global url."https://oauth2:${MODULES_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
+          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core
 
       - uses: actions/setup-node@v4
         with:
@@ -188,17 +192,19 @@ jobs:
         with:
           go-version: 1.24.13
 
-      - name: Configure private timing-core access
+      - name: Configure private timing module access
         shell: bash
         env:
+          TIMING_MODULES_READ_TOKEN: ${{ secrets.TIMING_MODULES_READ_TOKEN }}
           TIMING_CORE_READ_TOKEN: ${{ secrets.TIMING_CORE_READ_TOKEN }}
         run: |
-          if [ -z "$TIMING_CORE_READ_TOKEN" ]; then
-            echo "Missing TIMING_CORE_READ_TOKEN Actions secret" >&2
+          MODULES_READ_TOKEN="${TIMING_MODULES_READ_TOKEN:-$TIMING_CORE_READ_TOKEN}"
+          if [ -z "$MODULES_READ_TOKEN" ]; then
+            echo "Missing TIMING_MODULES_READ_TOKEN Actions secret" >&2
             exit 1
           fi
-          git config --global url."https://oauth2:${TIMING_CORE_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
-          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core
+          git config --global url."https://oauth2:${MODULES_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
+          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core
 
       - uses: actions/setup-node@v4
         with:

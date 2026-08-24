@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/fightmaster/rfid-core/ingest"
-	"github.com/fightmaster/rfid-core/tcp"
-	"github.com/fightmaster/rfid-core/telemetry"
+	"gitlab.com/fightmaster1/rfid-core/ingest"
+	"gitlab.com/fightmaster1/rfid-core/tcp"
+	"gitlab.com/fightmaster1/rfid-core/telemetry"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"

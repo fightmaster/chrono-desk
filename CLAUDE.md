@@ -42,7 +42,7 @@ Russian-zone selectbox → «Загрузить») and shows the `FeibotImportRe
 also the future to-site sync list. macOS Intel builds run via GitHub Actions
 (`.github/workflows/build.yml`); the remote repo must never receive real participants'
 PII. **v0.2 live ingest is in**: the shared TCP/adapters code lives in the
-`github.com/fightmaster/rfid-core` module, pinned to immutable `v0.1.1` in
+`gitlab.com/fightmaster1/rfid-core` module, pinned to immutable `v0.2.0` in
 go.mod; rfid-hub should migrate to it too.
 `LiveManager` runs a Feibot listener per event (reads land in SQLite and derive results
 in-process), the Live screen polls feed/status; manual judge finishes are authoritative
@@ -153,8 +153,8 @@ The LAN broadcast remains tokenless and never receives the localhost control tok
 - `../rfid-sync/internal/syncer/processor/` — **the result-derivation engine this app
   ports** (Repository interface + processor.go + table-driven `processor_flow_test.go`).
   Ranking is NOT there (site-side); chrono-desk implements its own for display.
-- `github.com/fightmaster/rfid-core` — the shared TCP/adapters module chrono-desk
-  uses for live ingest, pinned to `v0.1.1`. **v0.2 live ingest is built on it** (a SQLite
+- `gitlab.com/fightmaster1/rfid-core` — the shared TCP/adapters module chrono-desk
+  uses for live ingest, pinned to `v0.2.0`. **v0.2 live ingest is built on it** (a SQLite
   `Publisher`). `../rfid-hub/internal/tcp/` + `internal/ingest/` is the original TCP
   listener / Feibot–MyRaceNano–ChronoEvents adapter source; it should migrate to
   rfid-core too.
