@@ -108,6 +108,10 @@ token that can read both repositories in the `TIMING_MODULES_READ_TOKEN`
 repository secret. `TIMING_CORE_READ_TOKEN` remains a temporary fallback only
 when it already has access to both projects. The workflow fails before the
 Wails build when neither token can download both tags.
+Pushes to `release/**` run the same quality and macOS/Windows packaging jobs as
+a tag, allowing credentials and platform builds to be rehearsed before an
+immutable version is published. Only an exact `v$(cat VERSION)` tag creates the
+GitHub Release.
 Generated Wails JavaScript bindings are tracked because the frontend quality
 gate must build from a clean checkout without launching Wails. GitHub Actions
 builds the frontend first because `main.go` embeds `frontend/dist`, then runs
