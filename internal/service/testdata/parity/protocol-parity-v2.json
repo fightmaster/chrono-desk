@@ -1,0 +1,38 @@
+{
+  "fixture_version": 2,
+  "contracts": {"ranking":"ranking-v3-canonical-decimal-id","category_assignment":"age-category-v2-overlap-guard"},
+  "ranking": {
+    "exclude_top_by_gender": true,
+    "inputs": [
+      {"member_id":"2","status":"ok","gender":"male","category_id":"cat-m","rank_primary":-1000},
+      {"member_id":"10","status":"ok","gender":"female","category_id":"cat-f","rank_primary":-1000},
+      {"member_id":"3","status":"ok","gender":"male","category_id":"cat-m","rank_primary":-1100},
+      {"member_id":"4","status":"ok","gender":"female","category_id":"cat-f","rank_primary":-1200},
+      {"member_id":"5","status":"ok","gender":"male","category_id":"cat-m","rank_primary":-1300},
+      {"member_id":"6","status":"ok","gender":"female","category_id":"cat-f","rank_primary":-1400},
+      {"member_id":"7","status":"ok","gender":"male","category_id":"cat-m","rank_primary":-1500},
+      {"member_id":"8","status":"ok","gender":"female","category_id":"cat-f","rank_primary":-1600},
+      {"member_id":"9","status":"ok","gender":null,"category_id":"cat-m","rank_primary":-1700},
+      {"member_id":"11","status":"ok","gender":"male","category_id":null,"rank_primary":-1800},
+      {"member_id":"12","status":"dns","gender":"male","category_id":"cat-m","rank_primary":null}
+    ],
+    "expected": [
+      {"member_id":"2","place":1,"gender_place":1,"category_place":null},
+      {"member_id":"10","place":2,"gender_place":1,"category_place":null},
+      {"member_id":"3","place":3,"gender_place":2,"category_place":null},
+      {"member_id":"4","place":4,"gender_place":2,"category_place":null},
+      {"member_id":"5","place":5,"gender_place":3,"category_place":null},
+      {"member_id":"6","place":6,"gender_place":3,"category_place":null},
+      {"member_id":"7","place":7,"gender_place":4,"category_place":1},
+      {"member_id":"8","place":8,"gender_place":4,"category_place":1},
+      {"member_id":"9","place":9,"gender_place":null,"category_place":2},
+      {"member_id":"11","place":10,"gender_place":5,"category_place":null},
+      {"member_id":"12","place":null,"gender_place":null,"category_place":null}
+    ]
+  },
+  "age_cases": [
+    {"dob":"2008-07-08","race_date":"2026-07-08","year_age":18,"exact_age":18},
+    {"dob":"2008-07-09","race_date":"2026-07-08","year_age":18,"exact_age":17},
+    {"dob":"1986-06-10","race_date":"2026-06-05","year_age":40,"exact_age":39}
+  ]
+}

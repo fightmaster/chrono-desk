@@ -13,10 +13,10 @@ import (
 	timing "gitlab.com/fightmaster1/timing-core"
 )
 
-const protocolParityFixtureSHA256 = "f978966eb86b888e7976d11c8d27ae6f66656f50d40f270676ae2963c2d3baba"
+const protocolParityFixtureSHA256 = "8423a970d3d5d9fa36f78275e011b815a41bf3ec42e407debbf9c7ed1bd0dd72"
 
 func TestProtocolAdapterMatchesSharedParityFixture(t *testing.T) {
-	data, err := os.ReadFile("testdata/parity/protocol-parity-v1.json")
+	data, err := os.ReadFile("testdata/parity/protocol-parity-v2.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestProtocolAdapterMatchesSharedParityFixture(t *testing.T) {
 	if err := json.Unmarshal(data, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.FixtureVersion != 1 || fixture.Contracts.Ranking != timing.RankingVersion {
+	if fixture.FixtureVersion != 2 || fixture.Contracts.Ranking != timing.RankingVersion {
 		t.Fatalf("unsupported fixture version/contracts")
 	}
 

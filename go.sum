@@ -85,8 +85,8 @@ github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 h1:+C0TIdyyYmzadGaL/HBL
 github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9/go.mod h1:WwHg+CVyzlv/TX9xqBFXEZAuxOPxn2k1GNHwG41IIUQ=
 gitlab.com/fightmaster1/rfid-core v0.2.0 h1:gmyuCTAxTpfYDGFU6mTDcRLXGS+uF4Lv//wH72qOjsw=
 gitlab.com/fightmaster1/rfid-core v0.2.0/go.mod h1:gdqqSnDz8jV6fIkg7CYJsdQ7ej5Z1xyasTqDplL0qGQ=
-gitlab.com/fightmaster1/timing-core v0.7.0 h1:pyQjvtSJ9mRLCWtbTQzatCq9td6RPhx0REfBQMWbeqc=
-gitlab.com/fightmaster1/timing-core v0.7.0/go.mod h1:n2oVRF1zRI7/kp8GWad9bRlo/FPi0UGwtqv6rOfubmQ=
+gitlab.com/fightmaster1/timing-core v0.8.0 h1:jVJO90LQ1sZvArdn7p8SYzXtiPPguTwXEYUsDKDSMBc=
+gitlab.com/fightmaster1/timing-core v0.8.0/go.mod h1:n2oVRF1zRI7/kp8GWad9bRlo/FPi0UGwtqv6rOfubmQ=
 golang.org/x/crypto v0.48.0 h1:/VRzVqiRSggnhY7gNRxPauEQ5Drw9haKdM0jqfcCFts=
 golang.org/x/crypto v0.48.0/go.mod h1:r0kV5h3qnFPlQnBSrULhlsRfryS2pmewsg+XfMgkVos=
 golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 h1:mgKeJMpvi0yx/sU5GsxQ7p6s2wtOnGAHZWCHUM4KGzY=

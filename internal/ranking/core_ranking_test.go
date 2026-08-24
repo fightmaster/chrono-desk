@@ -16,7 +16,7 @@ func TestRankInputFromRowPreservesMemberDimensions(t *testing.T) {
 	}
 
 	input := rankInputFromRow(row)
-	if input.MemberID != "member" || input.TieBreakKey != "member" || input.Gender == nil || *input.Gender != gender || input.CategoryID == nil || *input.CategoryID != category {
+	if input.MemberID != "member" || input.TieBreakKey != "1:member" || input.Gender == nil || *input.Gender != gender || input.CategoryID == nil || *input.CategoryID != category {
 		t.Fatalf("input=%+v", input)
 	}
 	if input.RankPrimary == nil || *input.RankPrimary != -42 {

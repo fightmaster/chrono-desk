@@ -57,8 +57,9 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    The file-system concerns and open-store cache now live in `sqlite.EventCatalog`;
    application-level import/list logic stays in `service.EventService`.
 2. **Reuse one versioned timing-core, not a copied processor.** The immutable
-   `timing-core v0.7.0` release owns `legacy-once-v1` checkpoint eligibility,
-   `member-time-v2-start-provenance`, `result-outcome-v2`, deterministic `ranking-v2`, age calculation and the
+   `timing-core v0.8.0` release owns `legacy-once-v1` checkpoint eligibility,
+   `member-time-v2-start-provenance`, `result-outcome-v2`, deterministic
+   `ranking-v3-canonical-decimal-id`, age calculation and the
    ordered `impact-v3-preview` projection plan. Chrono Desk keeps the
    SQLite repository/transaction adapter; rfid-sync keeps its MySQL adapter.
    run5's `PushResult`/`RecountRfid` (PHP) remains the migration reference until
@@ -237,7 +238,7 @@ open only while on.
 - Resilience fallback: because the UI talks to an embedded HTTP API, the core can run
   headless with the UI in a regular browser if the webview misbehaves on old macOS.
 - **Private module provenance.** Release workflows fetch the immutable
-  `timing-core v0.7.0` tag with the read-only `TIMING_CORE_READ_TOKEN` GitHub
+  `timing-core v0.8.0` tag with the read-only `TIMING_CORE_READ_TOKEN` GitHub
   Actions secret. A missing/invalid secret fails in a dedicated preflight; no
   local `replace` is permitted for this release dependency.
 - **Release identity.** `VERSION`, full Git revision and the source commit

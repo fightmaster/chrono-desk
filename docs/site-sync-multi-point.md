@@ -302,8 +302,9 @@ Chrono Desk stores explicit start provenance beside `members.start_time_ms`:
 `start_observation_id` for an RFID START. Full and targeted recount clear only
 the two derived sources before replay and preserve `manual`/`unknown`; disabling
 the observation that supplied a start can therefore remove it without erasing a
-judge decision. Chrono Desk and rfid-sync consume `timing-core v0.7.0`; rfid-sync
-deployment remains gated on the additive RUN5 provenance migration.
+judge decision. Chrono Desk consumes `timing-core v0.8.0`; rfid-sync must move
+to the same immutable release before Gate 3 parity is accepted. Its deployment
+also remains gated on the additive RUN5 provenance migration.
 
 ## Replay concurrency: a Laravel lock is not enough
 

@@ -53,7 +53,7 @@ Remaining for v0.1: the run5 `event:export` command on the site.
 - **v0.2**: live TCP ingest from Feibot in the local network, live standings
 - **v0.3**: push-own observation batches with durable acknowledgements · registration
   and judge edits sync · reader heartbeat monitoring · snapshot + incremental pull
-- **v0.4**: shared `timing-core v0.7.0`, start provenance, concurrent pull-all /
+- **v0.4**: shared `timing-core v0.8.0`, start provenance, concurrent pull-all /
   push-own evidence, revision/parity telemetry and source-addressed release artifacts
 - later: RaceTorch integration, multi-tool monitoring/processing center; a machine-readable
   results feed (e.g. XML/JSON) for IPTV/streaming overlays so a broadcast can show live
@@ -101,7 +101,7 @@ make quality          # clean-checkout gate: npm ci/audit/build, then make check
 make audit            # vulnerability report (known Go 1.24 findings; see architecture)
 ```
 
-`timing-core` is pinned to `v0.7.0` and canonical GitLab `rfid-core` to
+`timing-core` is pinned to `v0.8.0` and canonical GitLab `rfid-core` to
 `v0.2.0`; release builds never use mutable sibling replacements. Because both
 GitLab projects are private, GitHub Actions requires one read-only group/deploy
 token that can read both repositories in the `TIMING_MODULES_READ_TOKEN`

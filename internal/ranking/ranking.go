@@ -170,7 +170,7 @@ func Protocol(race domain.Race, members []domain.Member, lastPasses map[string]L
 
 func rankInputFromRow(row *rankRow) timing.RankInput[string] {
 	return timing.RankInput[string]{
-		MemberID: row.member.ID, TieBreakKey: row.member.ID, Status: row.status,
+		MemberID: row.member.ID, TieBreakKey: timing.CanonicalIdentityTieBreakKey(row.member.ID), Status: row.status,
 		Gender: row.member.Gender, CategoryID: row.member.CategoryID,
 		RankPrimary: row.rankPrimary, RankSecondary: row.rankSecondary,
 		RankTertiary: row.rankTertiary,

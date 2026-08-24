@@ -20,8 +20,10 @@ not required, output parity is.
 
 - `status='ok'` rows rank ahead of `dns`/`dnf`/`dq` rows.
 - Order by `rank_primary DESC`, then `rank_secondary DESC`, then `rank_tertiary DESC`;
-  nulls sort last within each level, then by canonical member id. `ranking-v2`
-  therefore gives the same result after SQL, delivery or batch-order changes.
+  nulls sort last within each level, then by canonical member id.
+  `ranking-v3-canonical-decimal-id` orders decimal IDs numerically (`2` before
+  `10`) and opaque offline IDs deterministically, so the SQLite string adapter
+  matches RUN5's integer identity after SQL, delivery or batch-order changes.
   An official tied place is a separate audited judge decision, not this fallback.
 - Dense places `1..N` assigned to 'ok' rows only; non-ok get `place = null`.
 - Status mapping: MemberStatus enum 1=`dns`, 2=`dnf`, 3=`dq`.
