@@ -103,11 +103,14 @@ make audit            # vulnerability report (known Go 1.24 findings; see archit
 
 `timing-core` is pinned to `v0.8.0` and canonical GitLab `rfid-core` to
 `v0.2.0`; release builds never use mutable sibling replacements. Because both
-GitLab projects are private, GitHub Actions requires one read-only group/deploy
-token that can read both repositories in the `TIMING_MODULES_READ_TOKEN`
-repository secret. `TIMING_CORE_READ_TOKEN` remains a temporary fallback only
-when it already has access to both projects. The workflow fails before the
-Wails build when neither token can download both tags.
+GitLab projects are private and currently live as independent projects in the
+personal namespace, GitHub Actions requires one Personal Access Token with only
+`read_repository` and access to both repositories. Store it in the
+`TIMING_MODULES_READ_TOKEN` repository secret; never commit it. A project
+Deploy Token from RFID Hub, `rfid-core`, or `timing-core` cannot read the other
+projects. `TIMING_CORE_READ_TOKEN` remains a temporary fallback only when it
+already has access to both modules. The workflow fails before the Wails build
+when neither token can download both tags.
 Pushes to `release/**` run the same quality and macOS/Windows packaging jobs as
 a tag, allowing credentials and platform builds to be rehearsed before an
 immutable version is published. Only an exact `v$(cat VERSION)` tag creates the

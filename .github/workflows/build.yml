@@ -16,8 +16,9 @@ permissions:
   contents: read
 
 # Both shared cores are pinned private GitLab modules. The repository must
-# define a read-only group/deploy token that can read both projects as the
-# TIMING_MODULES_READ_TOKEN Actions secret.
+# define one access token with read_repository on both projects as the
+# TIMING_MODULES_READ_TOKEN Actions secret. A project Deploy Token cannot span
+# the two independent personal-namespace projects.
 jobs:
   quality:
     runs-on: ubuntu-latest
