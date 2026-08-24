@@ -111,7 +111,9 @@ Wails build when neither token can download both tags.
 Pushes to `release/**` run the same quality and macOS/Windows packaging jobs as
 a tag, allowing credentials and platform builds to be rehearsed before an
 immutable version is published. Only an exact `v$(cat VERSION)` tag creates the
-GitHub Release.
+GitHub Release. Go module and npm caches use the dependency files inside the
+`chrono-desk/` checkout subdirectory, so the rehearsal neither misses the cache
+nor relies on a repository-root layout that the workflow does not use.
 Generated Wails JavaScript bindings are tracked because the frontend quality
 gate must build from a clean checkout without launching Wails. GitHub Actions
 builds the frontend first because `main.go` embeds `frontend/dist`, then runs

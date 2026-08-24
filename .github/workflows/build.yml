@@ -25,13 +25,14 @@ jobs:
       run:
         working-directory: chrono-desk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: chrono-desk
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: 1.24.13
+          cache-dependency-path: chrono-desk/go.sum
 
       - name: Configure private timing module access
         env:
@@ -46,7 +47,7 @@ jobs:
           git config --global url."https://oauth2:${MODULES_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
           GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -87,14 +88,15 @@ jobs:
       run:
         working-directory: chrono-desk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: chrono-desk
           fetch-depth: 0   # full history so `git rev-list --count` is the real build number
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: 1.24.13
+          cache-dependency-path: chrono-desk/go.sum
 
       - name: Configure private timing module access
         shell: bash
@@ -110,7 +112,7 @@ jobs:
           git config --global url."https://oauth2:${MODULES_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
           GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -170,7 +172,7 @@ jobs:
           ARTIFACT="chrono-desk-$(cat VERSION)-macos11-intel-$(git rev-parse --short=12 HEAD).zip"
           ditto -c -k --keepParent build/bin/chrono-desk.app "$ARTIFACT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: chrono-desk-macos-intel
           path: |
@@ -185,14 +187,15 @@ jobs:
       run:
         working-directory: chrono-desk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: chrono-desk
           fetch-depth: 0   # full history so `git rev-list --count` is the real build number
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: 1.24.13
+          cache-dependency-path: chrono-desk/go.sum
 
       - name: Configure private timing module access
         shell: bash
@@ -208,7 +211,7 @@ jobs:
           git config --global url."https://oauth2:${MODULES_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
           GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -228,7 +231,7 @@ jobs:
         shell: bash
         run: mv build/bin/chrono-desk.exe "chrono-desk-$(cat VERSION)-windows-amd64-$(git rev-parse --short=12 HEAD).exe"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: chrono-desk-windows
           path: chrono-desk/chrono-desk-*-windows-amd64-*.exe
@@ -241,7 +244,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: chrono-desk-*
           path: release
