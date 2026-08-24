@@ -27,6 +27,15 @@ func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 		t.Fatal("Makefile stamps an ambiguous short source revision")
 	}
 
+	goMod := readRepositoryFile(t, "go.mod")
+	if !strings.Contains(goMod, "github.com/fightmaster/rfid-core v0.1.0") {
+		t.Fatal("go.mod does not pin immutable rfid-core v0.1.0")
+	}
+	if strings.Contains(goMod, "replace gitlab.com/fightmaster1/rfid-core") ||
+		strings.Contains(goMod, "../rfid-core") {
+		t.Fatal("release dependency graph still uses a mutable sibling rfid-core checkout")
+	}
+
 	workflow := readRepositoryFile(t, ".github/workflows/build.yml")
 	for _, required := range []string{
 		"tags: ['v*']",
@@ -39,6 +48,9 @@ func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("release workflow missing %q", required)
 		}
+	}
+	if strings.Contains(workflow, "repository: fightmaster/rfid-core") {
+		t.Fatal("release workflow still checks out mutable sibling rfid-core")
 	}
 }
 

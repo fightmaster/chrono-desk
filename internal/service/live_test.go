@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/fightmaster1/rfid-core/ingest"
-	"gitlab.com/fightmaster1/rfid-core/tcp"
-	"gitlab.com/fightmaster1/rfid-core/telemetry"
+	"github.com/fightmaster/rfid-core/ingest"
+	"github.com/fightmaster/rfid-core/tcp"
+	"github.com/fightmaster/rfid-core/telemetry"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"

@@ -5,10 +5,10 @@ go 1.24.0
 toolchain go1.24.13
 
 require (
+	github.com/fightmaster/rfid-core v0.1.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/xuri/excelize/v2 v2.10.1
-	gitlab.com/fightmaster1/rfid-core v0.0.0-00010101000000-000000000000
 	gitlab.com/fightmaster1/timing-core v0.7.0
 	modernc.org/sqlite v1.44.0
 )
@@ -54,5 +54,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
-
-replace gitlab.com/fightmaster1/rfid-core => ../rfid-core
