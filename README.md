@@ -99,7 +99,7 @@ make quality          # clean-checkout gate: npm ci/build, then make check
 make audit            # vulnerability report (known Go 1.24 findings; see architecture)
 ```
 
-`timing-core` is pinned to `v0.7.0` and `rfid-core` to its public `v0.1.0`
+`timing-core` is pinned to `v0.7.0` and `rfid-core` to its public `v0.1.1`
 module release; release builds never use mutable sibling replacements. Because
 the canonical timing-core GitLab project is private, GitHub Actions
 requires a read-only GitLab project access token in the
