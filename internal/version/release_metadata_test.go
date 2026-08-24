@@ -1,12 +1,40 @@
 package version
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestFrontendReleaseDependenciesMeetSecurityBaseline(t *testing.T) {
+	var packageJSON struct {
+		DevDependencies map[string]string `json:"devDependencies"`
+		Engines         map[string]string `json:"engines"`
+	}
+	if err := json.Unmarshal([]byte(readRepositoryFile(t, "frontend/package.json")), &packageJSON); err != nil {
+		t.Fatalf("decode frontend/package.json: %v", err)
+	}
+
+	want := map[string]string{
+		"@sveltejs/vite-plugin-svelte": "^7.3.0",
+		"svelte":                       "^5.56.10",
+		"vite":                         "^8.2.2",
+	}
+	for dependency, minimum := range want {
+		if got := packageJSON.DevDependencies[dependency]; got != minimum {
+			t.Errorf("%s = %q, want audited baseline %q", dependency, got, minimum)
+		}
+	}
+	if got := packageJSON.Engines["node"]; got != "^20.19.0 || >=22.12.0" {
+		t.Errorf("Node engine = %q, want Vite 8 runtime floor", got)
+	}
+	if makefile := readRepositoryFile(t, "Makefile"); !strings.Contains(makefile, "npm audit --audit-level=high") {
+		t.Error("clean frontend quality gate does not enforce the audited dependency baseline")
+	}
+}
 
 func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 	version := strings.TrimSpace(readRepositoryFile(t, "VERSION"))

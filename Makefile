@@ -27,7 +27,7 @@ frontend:
 	cd frontend && npm install && npm run build
 
 frontend-ci:
-	cd frontend && npm ci && npm run build
+	cd frontend && npm ci && npm audit --audit-level=high && npm run build
 
 test:
 	go test ./...

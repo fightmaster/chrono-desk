@@ -87,7 +87,9 @@ read-only LAN server and is never included in its QR codes.
 ## Development
 
 Always build through `make` — it pins `GOTOOLCHAIN=go1.24.13` (see docs/architecture.md)
-and passes the `webkit2_41` build tag for Ubuntu 24.04:
+and passes the `webkit2_41` build tag for Ubuntu 24.04. Frontend tooling requires
+Node `^20.19.0 || >=22.12.0`; the release workflow uses Node 22 and local release
+evidence uses Node 24.18.0:
 
 ```bash
 make dev              # hot reload
@@ -95,7 +97,7 @@ make build            # production binary for the current OS
 make test             # full test suite
 make race             # race-detector pass
 make check            # required gate: gofmt, test, race, vet, staticcheck
-make quality          # clean-checkout gate: npm ci/build, then make check
+make quality          # clean-checkout gate: npm ci/audit/build, then make check
 make audit            # vulnerability report (known Go 1.24 findings; see architecture)
 ```
 
