@@ -8,10 +8,11 @@ import (
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
+	"gitlab.com/fightmaster1/chrono-desk/internal/version"
 	timing "gitlab.com/fightmaster1/timing-core"
 )
 
-const changeFeedSchemaVersion = 1
+const changeFeedSchemaVersion = version.ChangeFeedSchemaVersion
 
 type ChangePullStats struct {
 	Pages        int                                   `json:"pages"`

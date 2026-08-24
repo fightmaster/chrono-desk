@@ -6,12 +6,13 @@ export GOTOOLCHAIN := go1.24.13
 TAGS := webkit2_41
 
 # Build identity, injected via -ldflags. Version is a semver in the VERSION file;
-# build is the git commit count (monotonic, works the same locally and in CI).
+# build is the git commit count. Commit and date are deterministic source
+# identity, not the wall clock of the machine that happens to package it.
 VPKG       := gitlab.com/fightmaster1/chrono-desk/internal/version
 VERSION    := $(shell cat VERSION 2>/dev/null || echo dev)
 BUILD      := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
-COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
-BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+COMMIT     := $(shell git rev-parse HEAD 2>/dev/null || echo none)
+BUILD_DATE := $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
 LDFLAGS    := -X $(VPKG).Semver=$(VERSION) -X $(VPKG).Build=$(BUILD) -X $(VPKG).Commit=$(COMMIT) -X $(VPKG).Date=$(BUILD_DATE)
 
 .PHONY: dev build test race check quality audit fmt vet lint vuln frontend frontend-ci

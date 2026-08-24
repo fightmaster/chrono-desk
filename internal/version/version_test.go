@@ -14,8 +14,12 @@ func TestGetReflectsVars(t *testing.T) {
 	}
 	if got.TimingCoreVersion != timing.ModuleVersion || got.MatcherVersion != timing.MatcherVersion ||
 		got.MemberTimeVersion != timing.MemberTimeVersion ||
-		got.OutcomeVersion != timing.ResultOutcomeVersion || got.RankingVersion != timing.RankingVersion {
+		got.OutcomeVersion != timing.ResultOutcomeVersion || got.RankingVersion != timing.RankingVersion ||
+		got.ImpactVersion != timing.ImpactVersion {
 		t.Fatalf("Get() timing-core identity = %+v, want published core constants", got)
+	}
+	if got.EventExportSchemaVersion != 3 || got.SyncPushSchemaVersion != 3 || got.ChangeFeedSchemaVersion != 1 {
+		t.Fatalf("Get() transport contract identity = %+v", got)
 	}
 	t.Logf("version=%s build=%s commit=%s date=%q", got.Version, got.Build, got.Commit, got.Date)
 }

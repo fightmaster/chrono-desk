@@ -240,6 +240,14 @@ open only while on.
   `timing-core v0.7.0` tag with the read-only `TIMING_CORE_READ_TOKEN` GitHub
   Actions secret. A missing/invalid secret fails in a dedicated preflight; no
   local `replace` is permitted for this release dependency.
+- **Release identity.** `VERSION`, full Git revision and the source commit
+  timestamp are linker-stamped into `/api/version`; diagnostics also expose the
+  timing-core and event-export/sync/change-feed contract versions. A `v*` tag
+  must equal `VERSION`. The workflow signs and strictly verifies the macOS app,
+  records whether the signature is ad-hoc or Developer ID, packages source-
+  addressed macOS/Windows filenames and publishes a verified `SHA256SUMS`.
+  Developer ID secrets are optional for direct competition use; notarization
+  and public trusted distribution remain a separate external credential step.
 
 ## Testing strategy
 

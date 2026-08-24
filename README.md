@@ -53,6 +53,8 @@ Remaining for v0.1: the run5 `event:export` command on the site.
 - **v0.2**: live TCP ingest from Feibot in the local network, live standings
 - **v0.3**: push-own observation batches with durable acknowledgements · registration
   and judge edits sync · reader heartbeat monitoring · snapshot + incremental pull
+- **v0.4**: shared `timing-core v0.7.0`, start provenance, concurrent pull-all /
+  push-own evidence, revision/parity telemetry and source-addressed release artifacts
 - later: RaceTorch integration, multi-tool monitoring/processing center; a machine-readable
   results feed (e.g. XML/JSON) for IPTV/streaming overlays so a broadcast can show live
   times and the leaderboard as on-screen text (idea — to be scoped)
@@ -110,6 +112,21 @@ release artifact.
 The version API exposes `member_time_version=member-time-v2-start-provenance`;
 manual and unclassified starts remain protected while machine-owned starts
 trace their race default or immutable observation.
+
+Release `v0.4.0` stamps the full source commit and commit timestamp into both
+the application diagnostics and projection-evidence identity. Tag builds create
+versioned macOS 11 Intel and Windows artifacts, generate and verify
+`SHA256SUMS`, and publish all files as an immutable GitHub release. The macOS
+bundle is always verified with `codesign --deep --strict`: without signing
+secrets it receives an explicit ad-hoc signature for direct competition use;
+with `DEVELOPER_ID_APPLICATION`, `MACOS_CERTIFICATE_P12` and
+`MACOS_CERTIFICATE_PASSWORD` it receives a timestamped Developer ID signature.
+The release includes `chrono-desk-macos-signing.txt`, so these modes cannot be
+confused. Notarization is not claimed.
+
+`GET /api/version` now reports the complete timing-core identity plus event
+export v3, sync push v3 and change-feed v1. The title bar remains compact, while
+the endpoint is the machine-readable evidence used during field acceptance.
 
 ## Docs
 

@@ -6,6 +6,7 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -72,9 +73,17 @@ jobs:
           staticcheck ./...
           go test -race ./...
 
+      - name: Verify release tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: test "${GITHUB_REF_NAME}" = "v$(tr -d '[:space:]' < VERSION)"
+
   macos-intel:
     needs: quality
     runs-on: macos-15
+    env:
+      DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
     defaults:
       run:
         working-directory: chrono-desk
@@ -119,7 +128,7 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: |
           VPKG=gitlab.com/fightmaster1/chrono-desk/internal/version
-          LDFLAGS="-X $VPKG.Semver=$(cat VERSION) -X $VPKG.Build=$(git rev-list --count HEAD) -X $VPKG.Commit=$(git rev-parse --short HEAD) -X $VPKG.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-X $VPKG.Semver=$(cat VERSION) -X $VPKG.Build=$(git rev-list --count HEAD) -X $VPKG.Commit=$(git rev-parse HEAD) -X $VPKG.Date=$(git show -s --format=%cI HEAD)"
           wails build -platform darwin/amd64 -clean -ldflags "$LDFLAGS"
 
       - name: Verify toolchain of the produced binary
@@ -127,13 +136,51 @@ jobs:
           go version build/bin/chrono-desk.app/Contents/MacOS/chrono-desk
           go version build/bin/chrono-desk.app/Contents/MacOS/chrono-desk | grep -q go1.24 || exit 1
 
-      - name: Zip .app (ditto preserves bundle attributes)
-        run: ditto -c -k --keepParent build/bin/chrono-desk.app chrono-desk-macos-intel.zip
+      - name: Import optional Developer ID certificate
+        if: env.DEVELOPER_ID_APPLICATION != ''
+        run: |
+          test -n "$MACOS_CERTIFICATE_P12"
+          test -n "$MACOS_CERTIFICATE_PASSWORD"
+          KEYCHAIN="$RUNNER_TEMP/chrono-desk-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | openssl base64 -d -A > "$RUNNER_TEMP/chrono-desk.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/chrono-desk.p12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" -A
+          security list-keychains -d user -s "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+      - name: Sign and verify macOS bundle
+        run: |
+          if [ -n "$DEVELOPER_ID_APPLICATION" ]; then
+            SIGNING_IDENTITY="$DEVELOPER_ID_APPLICATION"
+            SIGNING_KIND=developer-id
+            SIGNING_OPTIONS="--options runtime --timestamp"
+          else
+            SIGNING_IDENTITY=-
+            SIGNING_KIND=adhoc
+            SIGNING_OPTIONS=""
+          fi
+          codesign --force --deep $SIGNING_OPTIONS --sign "$SIGNING_IDENTITY" build/bin/chrono-desk.app
+          codesign --verify --deep --strict --verbose=2 build/bin/chrono-desk.app
+          {
+            printf 'signing_kind=%s\n' "$SIGNING_KIND"
+            printf 'source_revision=%s\n' "$(git rev-parse HEAD)"
+            codesign --display --verbose=4 build/bin/chrono-desk.app 2>&1
+          } > chrono-desk-macos-signing.txt
+
+      - name: Zip versioned .app
+        run: |
+          ARTIFACT="chrono-desk-$(cat VERSION)-macos11-intel-$(git rev-parse --short=12 HEAD).zip"
+          ditto -c -k --keepParent build/bin/chrono-desk.app "$ARTIFACT"
 
       - uses: actions/upload-artifact@v4
         with:
           name: chrono-desk-macos-intel
-          path: chrono-desk/chrono-desk-macos-intel.zip
+          path: |
+            chrono-desk/chrono-desk-*-macos11-intel-*.zip
+            chrono-desk/chrono-desk-macos-signing.txt
           retention-days: 30
 
   windows:
@@ -183,11 +230,43 @@ jobs:
         shell: bash
         run: |
           VPKG=gitlab.com/fightmaster1/chrono-desk/internal/version
-          LDFLAGS="-X $VPKG.Semver=$(cat VERSION) -X $VPKG.Build=$(git rev-list --count HEAD) -X $VPKG.Commit=$(git rev-parse --short HEAD) -X $VPKG.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-X $VPKG.Semver=$(cat VERSION) -X $VPKG.Build=$(git rev-list --count HEAD) -X $VPKG.Commit=$(git rev-parse HEAD) -X $VPKG.Date=$(git show -s --format=%cI HEAD)"
           wails build -platform windows/amd64 -clean -ldflags "$LDFLAGS"
+
+      - name: Name versioned Windows artifact
+        shell: bash
+        run: mv build/bin/chrono-desk.exe "chrono-desk-$(cat VERSION)-windows-amd64-$(git rev-parse --short=12 HEAD).exe"
 
       - uses: actions/upload-artifact@v4
         with:
           name: chrono-desk-windows
-          path: chrono-desk/build/bin/chrono-desk.exe
+          path: chrono-desk/chrono-desk-*-windows-amd64-*.exe
           retention-days: 30
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [macos-intel, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: chrono-desk-*
+          path: release
+          merge-multiple: true
+
+      - name: Create and verify checksums
+        run: |
+          cd release
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Publish immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --verify-tag \
+            --title "Chrono Desk $GITHUB_REF_NAME" \
+            --notes "Source: $GITHUB_SHA. Includes macOS signature evidence and SHA256SUMS."

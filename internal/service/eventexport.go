@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
+	"gitlab.com/fightmaster1/chrono-desk/internal/version"
 )
 
 // BuildEventExport renders the event back into the schema_version 3 contract
@@ -25,7 +26,7 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 	}
 
 	export := EventExport{
-		SchemaVersion: 3,
+		SchemaVersion: version.EventExportSchemaVersion,
 		ExportedAt:    time.Now().UTC().Format(time.RFC3339),
 		Timezone:      event.Timezone,
 		Event: exportEvent{

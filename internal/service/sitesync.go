@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
+	"gitlab.com/fightmaster1/chrono-desk/internal/version"
 )
 
 // Assembles the run5 sync payload from the event database: chip logs (with
@@ -18,7 +19,7 @@ import (
 
 const (
 	syncSchemaVersion   = 2
-	syncSchemaVersionV3 = 3
+	syncSchemaVersionV3 = version.SyncPushSchemaVersion
 )
 
 // Fields that round-trip to run5, mirroring the edit whitelist in edits.go.
