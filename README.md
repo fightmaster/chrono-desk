@@ -108,9 +108,12 @@ personal namespace, GitHub Actions requires one Personal Access Token with only
 `read_repository` and access to both repositories. Store it in the
 `TIMING_MODULES_READ_TOKEN` repository secret; never commit it. A project
 Deploy Token from RFID Hub, `rfid-core`, or `timing-core` cannot read the other
-projects. `TIMING_CORE_READ_TOKEN` remains a temporary fallback only when it
-already has access to both modules. The workflow fails before the Wails build
-when neither token can download both tags.
+projects. A token with only `read_registry` is also insufficient because Go
+fetches source repositories, not container images. `TIMING_CORE_READ_TOKEN`
+remains a temporary fallback only when it already has access to both modules.
+The workflow fails before the Wails build with a safe, module-specific error
+that distinguishes a secret unavailable to the job from denied access to
+`timing-core` or `rfid-core`; it never prints the token.
 Pushes to `release/**` run the same quality and macOS/Windows packaging jobs as
 a tag, allowing credentials and platform builds to be rehearsed before an
 immutable version is published. Only an exact `v$(cat VERSION)` tag creates the

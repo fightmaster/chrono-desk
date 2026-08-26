@@ -15,7 +15,7 @@ COMMIT     := $(shell git rev-parse HEAD 2>/dev/null || echo none)
 BUILD_DATE := $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
 LDFLAGS    := -X $(VPKG).Semver=$(VERSION) -X $(VPKG).Build=$(BUILD) -X $(VPKG).Commit=$(COMMIT) -X $(VPKG).Date=$(BUILD_DATE)
 
-.PHONY: dev build test race check quality audit fmt vet lint vuln frontend frontend-ci
+.PHONY: dev build test race check quality audit fmt vet lint vuln frontend frontend-ci ci-scripts
 
 dev:
 	wails dev -tags $(TAGS) -ldflags "$(LDFLAGS)"
@@ -28,6 +28,9 @@ frontend:
 
 frontend-ci:
 	cd frontend && npm ci && npm audit --audit-level=high && npm run build
+
+ci-scripts:
+	bash scripts/ci/configure-private-timing-modules.test.sh
 
 test:
 	go test ./...
@@ -53,6 +56,6 @@ check: fmt vet lint test race
 
 # Clean-checkout/release gate. The frontend must exist before Go compiles the
 # root package because main.go embeds frontend/dist.
-quality: frontend-ci check
+quality: ci-scripts frontend-ci check
 
 audit: vuln

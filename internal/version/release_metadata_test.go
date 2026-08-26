@@ -73,14 +73,31 @@ func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 		"git rev-parse HEAD",
 		"git show -s --format=%cI HEAD",
 		"TIMING_MODULES_READ_TOKEN",
-		"go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core",
+		"bash scripts/ci/configure-private-timing-modules.sh",
+		"bash scripts/ci/configure-private-timing-modules.test.sh",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("release workflow missing %q", required)
 		}
 	}
+	if got := strings.Count(workflow, "bash scripts/ci/configure-private-timing-modules.sh"); got != 3 {
+		t.Fatalf("private module preflight invocation count = %d, want quality + macOS + Windows", got)
+	}
 	if strings.Contains(workflow, "repository: fightmaster/rfid-core") {
 		t.Fatal("release workflow still checks out mutable sibling rfid-core")
+	}
+
+	preflight := readRepositoryFile(t, "scripts/ci/configure-private-timing-modules.sh")
+	for _, required := range []string{
+		"gitlab.com/fightmaster1/timing-core",
+		"gitlab.com/fightmaster1/rfid-core",
+		"read_repository",
+		"read_registry alone is insufficient",
+		"GIT_TERMINAL_PROMPT=0",
+	} {
+		if !strings.Contains(preflight, required) {
+			t.Fatalf("private module preflight missing %q", required)
+		}
 	}
 }
 

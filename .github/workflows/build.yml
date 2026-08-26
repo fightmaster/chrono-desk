@@ -35,18 +35,14 @@ jobs:
           go-version: 1.24.13
           cache-dependency-path: chrono-desk/go.sum
 
+      - name: Test private module preflight
+        run: bash scripts/ci/configure-private-timing-modules.test.sh
+
       - name: Configure private timing module access
         env:
           TIMING_MODULES_READ_TOKEN: ${{ secrets.TIMING_MODULES_READ_TOKEN }}
           TIMING_CORE_READ_TOKEN: ${{ secrets.TIMING_CORE_READ_TOKEN }}
-        run: |
-          MODULES_READ_TOKEN="${TIMING_MODULES_READ_TOKEN:-$TIMING_CORE_READ_TOKEN}"
-          if [ -z "$MODULES_READ_TOKEN" ]; then
-            echo "Missing TIMING_MODULES_READ_TOKEN Actions secret" >&2
-            exit 1
-          fi
-          git config --global url."https://oauth2:${MODULES_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
-          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core
+        run: bash scripts/ci/configure-private-timing-modules.sh
 
       - uses: actions/setup-node@v7
         with:
@@ -104,14 +100,7 @@ jobs:
         env:
           TIMING_MODULES_READ_TOKEN: ${{ secrets.TIMING_MODULES_READ_TOKEN }}
           TIMING_CORE_READ_TOKEN: ${{ secrets.TIMING_CORE_READ_TOKEN }}
-        run: |
-          MODULES_READ_TOKEN="${TIMING_MODULES_READ_TOKEN:-$TIMING_CORE_READ_TOKEN}"
-          if [ -z "$MODULES_READ_TOKEN" ]; then
-            echo "Missing TIMING_MODULES_READ_TOKEN Actions secret" >&2
-            exit 1
-          fi
-          git config --global url."https://oauth2:${MODULES_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
-          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core
+        run: bash scripts/ci/configure-private-timing-modules.sh
 
       - uses: actions/setup-node@v7
         with:
@@ -203,14 +192,7 @@ jobs:
         env:
           TIMING_MODULES_READ_TOKEN: ${{ secrets.TIMING_MODULES_READ_TOKEN }}
           TIMING_CORE_READ_TOKEN: ${{ secrets.TIMING_CORE_READ_TOKEN }}
-        run: |
-          MODULES_READ_TOKEN="${TIMING_MODULES_READ_TOKEN:-$TIMING_CORE_READ_TOKEN}"
-          if [ -z "$MODULES_READ_TOKEN" ]; then
-            echo "Missing TIMING_MODULES_READ_TOKEN Actions secret" >&2
-            exit 1
-          fi
-          git config --global url."https://oauth2:${MODULES_READ_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
-          GOPRIVATE=gitlab.com/fightmaster1 GONOSUMDB=gitlab.com/fightmaster1 go mod download gitlab.com/fightmaster1/timing-core gitlab.com/fightmaster1/rfid-core
+        run: bash scripts/ci/configure-private-timing-modules.sh
 
       - uses: actions/setup-node@v7
         with:
