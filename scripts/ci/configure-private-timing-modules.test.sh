@@ -69,6 +69,12 @@ assert_fails_with \
     FAIL_MODULE=gitlab.com/fightmaster1/timing-core \
     PATH="${test_root}/bin:${PATH}" bash "${subject}"
 
+assert_fails_with \
+    "read_registry alone is insufficient" \
+    env TIMING_MODULES_READ_TOKEN=test-token \
+    FAIL_MODULE=gitlab.com/fightmaster1/timing-core \
+    PATH="${test_root}/bin:${PATH}" bash "${subject}"
+
 TIMING_MODULES_READ_TOKEN=test-token run_subject >/dev/null
 
 echo "private timing module preflight tests passed"
