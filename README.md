@@ -109,8 +109,9 @@ personal namespace, GitHub Actions requires one Personal Access Token with only
 `TIMING_MODULES_READ_TOKEN` repository secret; never commit it. A project
 Deploy Token from RFID Hub, `rfid-core`, or `timing-core` cannot read the other
 projects. A token with only `read_registry` is also insufficient because Go
-fetches source repositories, not container images. `TIMING_CORE_READ_TOKEN`
-remains a temporary fallback only when it already has access to both modules.
+fetches source repositories, not container images. The deprecated
+`TIMING_CORE_READ_TOKEN` fallback is intentionally ignored so an obsolete
+single-project credential cannot silently mask a missing cross-project PAT.
 The workflow fails before the Wails build with a safe, module-specific error
 that distinguishes a secret unavailable to the job from denied access to
 `timing-core` or `rfid-core`; it never prints the token.

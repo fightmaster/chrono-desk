@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-modules_read_token="${TIMING_MODULES_READ_TOKEN:-${TIMING_CORE_READ_TOKEN:-}}"
+modules_read_token="${TIMING_MODULES_READ_TOKEN:-}"
 
 if [[ -z "${modules_read_token}" ]]; then
     echo "::error title=Private module credential missing::TIMING_MODULES_READ_TOKEN is not visible to this GitHub Actions job. Add it as a repository Actions secret, not an environment secret or GitLab CI variable." >&2

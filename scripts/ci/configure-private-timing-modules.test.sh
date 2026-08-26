@@ -47,7 +47,8 @@ assert_fails_with() {
 
 assert_fails_with \
     "TIMING_MODULES_READ_TOKEN is not visible" \
-    env -u TIMING_MODULES_READ_TOKEN -u TIMING_CORE_READ_TOKEN \
+    env -u TIMING_MODULES_READ_TOKEN \
+    TIMING_CORE_READ_TOKEN=deprecated-token \
     PATH="${test_root}/bin:${PATH}" bash "${subject}"
 
 assert_fails_with \
