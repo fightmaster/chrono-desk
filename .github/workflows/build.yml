@@ -242,6 +242,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Chrono Desk $GITHUB_REF_NAME" \
             --notes "Source: $GITHUB_SHA. Includes macOS signature evidence and SHA256SUMS."

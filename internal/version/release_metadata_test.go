@@ -38,8 +38,8 @@ func TestFrontendReleaseDependenciesMeetSecurityBaseline(t *testing.T) {
 
 func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 	version := strings.TrimSpace(readRepositoryFile(t, "VERSION"))
-	if version != "0.4.0" {
-		t.Fatalf("VERSION = %q, want 0.4.0", version)
+	if version != "0.4.1" {
+		t.Fatalf("VERSION = %q, want 0.4.1", version)
 	}
 
 	makefile := readRepositoryFile(t, "Makefile")
@@ -70,6 +70,7 @@ func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 		"codesign --verify --deep --strict",
 		"SHA256SUMS",
 		"gh release create",
+		"--repo \"$GITHUB_REPOSITORY\"",
 		"git rev-parse HEAD",
 		"git show -s --format=%cI HEAD",
 		"TIMING_MODULES_READ_TOKEN",

@@ -133,7 +133,7 @@ The version API exposes `member_time_version=member-time-v2-start-provenance`;
 manual and unclassified starts remain protected while machine-owned starts
 trace their race default or immutable observation.
 
-Release `v0.4.0` stamps the full source commit and commit timestamp into both
+Release `v0.4.1` stamps the full source commit and commit timestamp into both
 the application diagnostics and projection-evidence identity. Tag builds create
 versioned macOS 11 Intel and Windows artifacts, generate and verify
 `SHA256SUMS`, and publish all files as an immutable GitHub release. The macOS
