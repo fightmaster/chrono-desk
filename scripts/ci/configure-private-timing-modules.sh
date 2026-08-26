@@ -22,7 +22,7 @@ do
         GIT_TERMINAL_PROMPT=0 \
         go mod download "${module}" >/dev/null 2>&1
     then
-        echo "::error title=Private module access denied::Cannot download ${module}. Verify that TIMING_MODULES_READ_TOKEN is a GitLab Personal Access Token with read_repository and access to this project; read_registry alone is insufficient." >&2
+        echo "::error title=Private module access denied::Cannot download ${module}. Use a GitLab legacy PAT with read_repository or a fine-grained PAT with Code: Download across both projects. Fine-grained Code: Read and read_registry are insufficient." >&2
         exit 1
     fi
 done

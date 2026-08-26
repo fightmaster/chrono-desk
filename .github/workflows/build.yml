@@ -16,9 +16,10 @@ permissions:
   contents: read
 
 # Both shared cores are pinned private GitLab modules. The repository must
-# define one access token with read_repository on both projects as the
-# TIMING_MODULES_READ_TOKEN Actions secret. A project Deploy Token cannot span
-# the two independent personal-namespace projects.
+# define one access token for Git-over-HTTPS on both projects as the
+# TIMING_MODULES_READ_TOKEN Actions secret: legacy PAT `read_repository` or
+# fine-grained PAT `Code: Download`. Fine-grained `Code: Read` is API-only for
+# this purpose. A project Deploy Token cannot span the two independent projects.
 jobs:
   quality:
     runs-on: ubuntu-latest

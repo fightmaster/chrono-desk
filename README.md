@@ -104,12 +104,15 @@ make audit            # vulnerability report (known Go 1.24 findings; see archit
 `timing-core` is pinned to `v0.8.0` and canonical GitLab `rfid-core` to
 `v0.2.0`; release builds never use mutable sibling replacements. Because both
 GitLab projects are private and currently live as independent projects in the
-personal namespace, GitHub Actions requires one Personal Access Token with only
-`read_repository` and access to both repositories. Store it in the
-`TIMING_MODULES_READ_TOKEN` repository secret; never commit it. A project
-Deploy Token from RFID Hub, `rfid-core`, or `timing-core` cannot read the other
-projects. A token with only `read_registry` is also insufficient because Go
-fetches source repositories, not container images. The deprecated
+personal namespace, GitHub Actions requires one Personal Access Token with
+access to both repositories. Store it in the `TIMING_MODULES_READ_TOKEN`
+repository secret; never commit it. A project Deploy Token from RFID Hub,
+`rfid-core`, or `timing-core` cannot read the other projects. For a legacy PAT
+the required scope is `read_repository`; for a
+fine-grained PAT the required Git permission is `Code: Download` across both
+projects. Fine-grained `Code: Read` and `Repository: Read` cover API operations
+but do not authorize `git clone`, and `read_registry` is also insufficient
+because Go fetches source repositories, not container images. The deprecated
 `TIMING_CORE_READ_TOKEN` fallback is intentionally ignored so an obsolete
 single-project credential cannot silently mask a missing cross-project PAT.
 The workflow fails before the Wails build with a safe, module-specific error

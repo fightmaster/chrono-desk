@@ -240,8 +240,10 @@ open only while on.
 - **Private module provenance.** Release workflows fetch immutable
   `timing-core v0.8.0` and `rfid-core v0.2.0` tags with one read-only
   `TIMING_MODULES_READ_TOKEN` GitHub Actions secret. It must be a GitLab
-  Personal Access Token with only `read_repository` and access to both private
-  projects; a project Deploy Token cannot span the independent repositories.
+  Personal Access Token with access to both private projects: legacy
+  `read_repository`, or fine-grained `Code: Download`. Fine-grained
+  `Code: Read` does not authorize Git-over-HTTPS. A project Deploy Token cannot
+  span the independent repositories.
   A missing/invalid secret fails in a dedicated preflight, and no local
   `replace` is permitted for either release dependency.
 - **Release identity.** `VERSION`, full Git revision and the source commit
