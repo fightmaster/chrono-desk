@@ -60,6 +60,10 @@ jobs:
         run: npm ci && npm run build
         working-directory: chrono-desk/frontend
 
+      - name: Frontend runtime smoke
+        run: npm run smoke
+        working-directory: chrono-desk/frontend
+
       - name: Go quality gate
         env:
           GOTOOLCHAIN: go1.24.13

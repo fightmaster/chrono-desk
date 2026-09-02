@@ -127,13 +127,15 @@ nor relies on a repository-root layout that the workflow does not use.
 Generated Wails JavaScript bindings are tracked because the frontend quality
 gate must build from a clean checkout without launching Wails. GitHub Actions
 builds the frontend first because `main.go` embeds `frontend/dist`, then runs
-backend tests, race detection, formatting, vet and staticcheck before either
-release artifact.
+the built bundle in headless Chromium, and only then runs backend tests, race
+detection, formatting, vet and staticcheck before either release artifact.
+The runtime smoke checks the rendered application shell and uncaught browser
+errors; a successful Vite compilation alone is not release evidence.
 The version API exposes `member_time_version=member-time-v2-start-provenance`;
 manual and unclassified starts remain protected while machine-owned starts
 trace their race default or immutable observation.
 
-Release `v0.4.1` stamps the full source commit and commit timestamp into both
+Each release stamps the full source commit and commit timestamp into both
 the application diagnostics and projection-evidence identity. Tag builds create
 versioned macOS 11 Intel and Windows artifacts, generate and verify
 `SHA256SUMS`, and publish all files as an immutable GitHub release. The macOS

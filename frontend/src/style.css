@@ -41,6 +41,21 @@ body {
 
 #app { min-height: 100vh; }
 
+.boot-fallback {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px;
+  color: var(--text);
+  text-align: center;
+}
+
+.boot-fallback strong { font-size: 20px; }
+.boot-fallback span { color: var(--dim); }
+
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .35; transform: scale(.78); }

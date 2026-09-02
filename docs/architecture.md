@@ -215,6 +215,13 @@ open only while on.
 - **Competition machine: MacBook Pro Retina mid-2014, Intel i5, macOS 11.7 Big Sur**
   (the model's last official macOS). Wails v2 needs macOS 10.13+ — fine. Build target:
   `darwin/amd64`.
+- **The embedded frontend targets Safari/WebKit 14 explicitly.** Big Sur is the
+  compatibility floor, so Vite's moving default browser baseline is not used.
+  Svelte 5 applications must start through `mount`; the quality gate opens the
+  built bundle in headless Chromium and requires the rendered application shell
+  with no uncaught exception. This catches bootstrap failures that compilation
+  alone cannot detect. Static fallback content remains visible if JavaScript
+  cannot mount, instead of leaving an unexplained empty dark window.
 - **Go toolchain is pinned to 1.24**: Go 1.25+ binaries require macOS 12 Monterey and
   will not run on the competition MacBook (go.dev/doc/go1.25). The pin lives in the
   Makefile (`GOTOOLCHAIN=go1.24.13`) because the go.mod `toolchain` directive cannot

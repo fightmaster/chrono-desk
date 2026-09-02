@@ -187,7 +187,7 @@
   function navigate(v) { view = v }
 </script>
 
-<div class="root" data-theme={$theme}>
+<div class="root" data-theme={$theme} data-chrono-desk-ready="true">
   <div class="titlebar">
     <span class="tb-name">Chrono Desk</span>
     {#if appVersion}<span class="tb-ver" title="коммит {appVersion.commit}{appVersion.date ? ` · ${appVersion.date}` : ''} · timing-core {appVersion.timing_core_version}">v{appVersion.version}+{appVersion.build}</span>{/if}

@@ -38,8 +38,8 @@ func TestFrontendReleaseDependenciesMeetSecurityBaseline(t *testing.T) {
 
 func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 	version := strings.TrimSpace(readRepositoryFile(t, "VERSION"))
-	if version != "0.4.1" {
-		t.Fatalf("VERSION = %q, want 0.4.1", version)
+	if version != "0.4.2" {
+		t.Fatalf("VERSION = %q, want 0.4.2", version)
 	}
 
 	makefile := readRepositoryFile(t, "Makefile")
@@ -76,10 +76,22 @@ func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 		"TIMING_MODULES_READ_TOKEN",
 		"bash scripts/ci/configure-private-timing-modules.sh",
 		"bash scripts/ci/configure-private-timing-modules.test.sh",
+		"npm run smoke",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Fatalf("release workflow missing %q", required)
 		}
+	}
+
+	mainJS := readRepositoryFile(t, "frontend/src/main.js")
+	if !strings.Contains(mainJS, "import {mount} from 'svelte'") || strings.Contains(mainJS, "new App(") {
+		t.Fatal("frontend entrypoint does not use the Svelte 5 mount API")
+	}
+	if viteConfig := readRepositoryFile(t, "frontend/vite.config.js"); !strings.Contains(viteConfig, "target: 'safari14'") {
+		t.Fatal("frontend build does not preserve the Big Sur WebKit compatibility floor")
+	}
+	if indexHTML := readRepositoryFile(t, "frontend/index.html"); !strings.Contains(indexHTML, "id=\"boot-fallback\"") {
+		t.Fatal("frontend bootstrap failure would leave an empty window")
 	}
 	if got := strings.Count(workflow, "bash scripts/ci/configure-private-timing-modules.sh"); got != 3 {
 		t.Fatalf("private module preflight invocation count = %d, want quality + macOS + Windows", got)
