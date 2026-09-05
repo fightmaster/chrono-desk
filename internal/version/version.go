@@ -3,7 +3,10 @@
 // below are what an un-stamped `go run`/`go test` build reports.
 package version
 
-import timing "gitlab.com/fightmaster1/timing-core"
+import (
+	"gitlab.com/fightmaster1/rfid-core"
+	timing "gitlab.com/fightmaster1/timing-core"
+)
 
 var (
 	Semver = "dev"  // semantic version, from the VERSION file
@@ -20,16 +23,18 @@ const (
 
 // Info is the JSON shape served by GET /api/version and shown in the UI.
 type Info struct {
-	Version           string `json:"version"`
-	Build             string `json:"build"`
-	Commit            string `json:"commit"`
-	Date              string `json:"date"`
-	TimingCoreVersion string `json:"timing_core_version"`
-	MatcherVersion    string `json:"matcher_version"`
-	MemberTimeVersion string `json:"member_time_version"`
-	OutcomeVersion    string `json:"outcome_version"`
-	RankingVersion    string `json:"ranking_version"`
-	ImpactVersion     string `json:"impact_version"`
+	Version                string `json:"version"`
+	Build                  string `json:"build"`
+	Commit                 string `json:"commit"`
+	Date                   string `json:"date"`
+	TimingCoreVersion      string `json:"timing_core_version"`
+	RFIDCoreVersion        string `json:"rfid_core_version"`
+	ReaderTransportVersion int    `json:"reader_transport_version"`
+	MatcherVersion         string `json:"matcher_version"`
+	MemberTimeVersion      string `json:"member_time_version"`
+	OutcomeVersion         string `json:"outcome_version"`
+	RankingVersion         string `json:"ranking_version"`
+	ImpactVersion          string `json:"impact_version"`
 
 	EventExportSchemaVersion int `json:"event_export_schema_version"`
 	SyncPushSchemaVersion    int `json:"sync_push_schema_version"`
@@ -41,6 +46,8 @@ func Get() Info {
 	return Info{
 		Version: Semver, Build: Build, Commit: Commit, Date: Date,
 		TimingCoreVersion:        timing.ModuleVersion,
+		RFIDCoreVersion:          rfidcore.Version,
+		ReaderTransportVersion:   rfidcore.ReaderTransportVersion,
 		MatcherVersion:           timing.MatcherVersion,
 		MemberTimeVersion:        timing.MemberTimeVersion,
 		OutcomeVersion:           timing.ResultOutcomeVersion,
