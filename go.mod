@@ -8,7 +8,7 @@ require (
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/xuri/excelize/v2 v2.10.1
-	gitlab.com/fightmaster1/rfid-core v0.2.0
+	gitlab.com/fightmaster1/rfid-core v0.3.0
 	gitlab.com/fightmaster1/timing-core v0.8.0
 	modernc.org/sqlite v1.44.0
 )

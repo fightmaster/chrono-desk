@@ -101,8 +101,16 @@ make quality          # clean-checkout gate: npm ci/audit/build, then make check
 make audit            # vulnerability report (known Go 1.24 findings; see architecture)
 ```
 
+Reader transport is shared with RFID Hub (CHR-ARC-003): bounded JSON framing,
+a 1024-connection default per listener and one 250 ms shutdown ACK window per
+connection are implemented in core. Data ACK still follows successful SQLite
+publication; failed/unconfirmed data is not acknowledged. Blocked ACK writers
+are closed at the deadline. Observation identity and outbound ownership are
+unchanged. `/api/version` and the version tooltip identify the reader module;
+diagnostics expose `reader_transport_version: 1`.
+
 `timing-core` is pinned to `v0.8.0` and canonical GitLab `rfid-core` to
-`v0.2.0`; release builds never use mutable sibling replacements. Because both
+`v0.3.0`; release builds never use mutable sibling replacements. Because both
 GitLab projects are private and currently live as independent projects in the
 personal namespace, GitHub Actions requires one Personal Access Token with
 access to both repositories. Store it in the `TIMING_MODULES_READ_TOKEN`

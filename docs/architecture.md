@@ -245,7 +245,7 @@ open only while on.
 - Resilience fallback: because the UI talks to an embedded HTTP API, the core can run
   headless with the UI in a regular browser if the webview misbehaves on old macOS.
 - **Private module provenance.** Release workflows fetch immutable
-  `timing-core v0.8.0` and `rfid-core v0.2.0` tags with one read-only
+  `timing-core v0.8.0` and `rfid-core v0.3.0` tags with one read-only
   `TIMING_MODULES_READ_TOKEN` GitHub Actions secret. It must be a GitLab
   Personal Access Token with access to both private projects: legacy
   `read_repository`, or fine-grained `Code: Download`. Fine-grained
@@ -255,8 +255,9 @@ open only while on.
   `replace` is permitted for either release dependency.
 - **Release identity.** `VERSION`, full Git revision and the source commit
   timestamp are linker-stamped into `/api/version`; diagnostics also expose the
-  timing-core and event-export/sync/change-feed contract versions. A `v*` tag
-  must equal `VERSION`. The workflow signs and strictly verifies the macOS app,
+  timing-core, rfid-core and event-export/sync/change-feed/reader-transport
+  contract versions. A `v*` tag must equal `VERSION`. The workflow signs and
+  strictly verifies the macOS app,
   records whether the signature is ad-hoc or Developer ID, packages source-
   addressed macOS/Windows filenames and publishes a verified `SHA256SUMS`.
   Developer ID secrets are optional for direct competition use; notarization
