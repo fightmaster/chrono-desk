@@ -38,8 +38,8 @@ func TestFrontendReleaseDependenciesMeetSecurityBaseline(t *testing.T) {
 
 func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 	version := strings.TrimSpace(readRepositoryFile(t, "VERSION"))
-	if version != "0.4.2" {
-		t.Fatalf("VERSION = %q, want 0.4.2", version)
+	if version != "0.4.3" {
+		t.Fatalf("VERSION = %q, want 0.4.3", version)
 	}
 
 	makefile := readRepositoryFile(t, "Makefile")
@@ -110,6 +110,56 @@ func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 	} {
 		if !strings.Contains(preflight, required) {
 			t.Fatalf("private module preflight missing %q", required)
+		}
+	}
+}
+
+func TestNativeBundleVersionMatchesApplicationVersion(t *testing.T) {
+	var config struct {
+		Info struct {
+			ProductVersion string `json:"productVersion"`
+		} `json:"info"`
+	}
+	if err := json.Unmarshal([]byte(readRepositoryFile(t, "wails.json")), &config); err != nil {
+		t.Fatalf("decode wails.json: %v", err)
+	}
+	want := strings.TrimSpace(readRepositoryFile(t, "VERSION"))
+	if config.Info.ProductVersion != want {
+		t.Fatalf("native bundle version = %q, want VERSION %q", config.Info.ProductVersion, want)
+	}
+	for _, name := range []string{"build/darwin/Info.plist", "build/darwin/Info.dev.plist"} {
+		plist := readRepositoryFile(t, name)
+		if strings.Count(plist, "{{.Info.ProductVersion}}") != 2 {
+			t.Errorf("%s must stamp both bundle version fields from Wails productVersion", name)
+		}
+	}
+	var windows struct {
+		Fixed map[string]string            `json:"fixed"`
+		Info  map[string]map[string]string `json:"info"`
+	}
+	if err := json.Unmarshal([]byte(readRepositoryFile(t, "build/windows/info.json")), &windows); err != nil {
+		t.Fatalf("decode Windows version template: %v", err)
+	}
+	for name, value := range map[string]string{
+		"fixed file version":     windows.Fixed["file_version"],
+		"fixed product version":  windows.Fixed["product_version"],
+		"string file version":    windows.Info["0000"]["FileVersion"],
+		"string product version": windows.Info["0000"]["ProductVersion"],
+	} {
+		if value != "{{.Info.ProductVersion}}" {
+			t.Errorf("Windows %s = %q, want Wails productVersion template", name, value)
+		}
+	}
+	workflow := readRepositoryFile(t, ".github/workflows/build.yml")
+	for _, required := range []string{
+		"Print :CFBundleShortVersionString",
+		"Print :CFBundleVersion",
+		".VersionInfo",
+		".ProductVersion",
+		".FileVersion",
+	} {
+		if !strings.Contains(workflow, required) {
+			t.Errorf("release workflow must verify packaged metadata: missing %q", required)
 		}
 	}
 }

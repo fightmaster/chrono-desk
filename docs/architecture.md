@@ -262,6 +262,12 @@ open only while on.
   addressed macOS/Windows filenames and publishes a verified `SHA256SUMS`.
   Developer ID secrets are optional for direct competition use; notarization
   and public trusted distribution remain a separate external credential step.
+  For CHR-REL-002, v0.4.3 also fixes native package identity: keep
+  `wails.json` `info.productVersion` equal to `VERSION` when releasing.
+  A Go regression test enforces this relationship; native CI checks both macOS
+  bundle version keys and both Windows executable version fields before
+  packaging. Without the explicit Wails setting, packages incorrectly retain
+  the framework default `1.0.0` even when `/api/version` is correct.
 
 ## Testing strategy
 

@@ -126,6 +126,13 @@ jobs:
           go version build/bin/chrono-desk.app/Contents/MacOS/chrono-desk
           go version build/bin/chrono-desk.app/Contents/MacOS/chrono-desk | grep -q go1.24 || exit 1
 
+      - name: Verify macOS bundle version
+        run: |
+          EXPECTED_VERSION="$(tr -d '[:space:]' < VERSION)"
+          PLIST=build/bin/chrono-desk.app/Contents/Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" = "$EXPECTED_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")" = "$EXPECTED_VERSION"
+
       - name: Import optional Developer ID certificate
         if: env.DEVELOPER_ID_APPLICATION != ''
         run: |
@@ -211,6 +218,17 @@ jobs:
           VPKG=gitlab.com/fightmaster1/chrono-desk/internal/version
           LDFLAGS="-X $VPKG.Semver=$(cat VERSION) -X $VPKG.Build=$(git rev-list --count HEAD) -X $VPKG.Commit=$(git rev-parse HEAD) -X $VPKG.Date=$(git show -s --format=%cI HEAD)"
           wails build -platform windows/amd64 -clean -ldflags "$LDFLAGS"
+
+      - name: Verify Windows executable version
+        shell: pwsh
+        run: |
+          $expected = (Get-Content VERSION -Raw).Trim()
+          $metadata = (Get-Item build/bin/chrono-desk.exe).VersionInfo
+          foreach ($actual in @($metadata.ProductVersion, $metadata.FileVersion)) {
+            if ($actual -ne $expected -and $actual -ne "$expected.0") {
+              throw "Executable version '$actual' does not match VERSION '$expected'"
+            }
+          }
 
       - name: Name versioned Windows artifact
         shell: bash
