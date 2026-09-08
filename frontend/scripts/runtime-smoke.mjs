@@ -1,11 +1,12 @@
 import {spawn, spawnSync} from 'node:child_process'
-import {createReadStream, existsSync, statSync} from 'node:fs'
+import {createReadStream, existsSync, readFileSync, statSync} from 'node:fs'
 import {createServer} from 'node:http'
 import {dirname, extname, join, normalize, resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const distDir = resolve(scriptDir, '..', 'dist')
+const protocolSmoke = process.argv.includes('--protocol')
 
 if (!existsSync(join(distDir, 'index.html'))) {
   throw new Error('frontend/dist is missing; run npm run build first')
@@ -50,6 +51,11 @@ const server = createServer((request, response) => {
   }
 
   response.writeHead(200, {'Content-Type': contentTypes[extname(filePath)] ?? 'application/octet-stream'})
+  if (protocolSmoke && relativePath === 'index.html') {
+    const harness = readFileSync(join(scriptDir, 'protocol-browser-smoke.js'), 'utf8')
+    response.end(readFileSync(filePath, 'utf8').replace('<head>', `<head><script>${harness}</script>`))
+    return
+  }
   createReadStream(filePath).pipe(response)
 })
 
@@ -69,7 +75,7 @@ const browserArgs = [
   '--no-sandbox',
   '--disable-gpu',
   '--enable-logging=stderr',
-  '--virtual-time-budget=3000',
+  `--virtual-time-budget=${protocolSmoke ? 15000 : 3000}`,
   '--dump-dom',
   `http://127.0.0.1:${address.port}`
 ]
@@ -102,4 +108,9 @@ if (/Uncaught (Error|TypeError|SyntaxError)/.test(browserLog)) {
   throw new Error(`Uncaught frontend exception\n${browserLog}`)
 }
 
-console.log('Chrono Desk frontend runtime smoke passed')
+if (protocolSmoke && !documentHtml.includes('data-protocol-smoke="passed"')) {
+  const detail = documentHtml.match(/<pre>([\s\S]*?)<\/pre>/)?.[1] ?? 'Completion marker missing'
+  throw new Error(`Protocol interaction smoke failed\n${detail}\n${browserLog}`)
+}
+
+console.log(`Chrono Desk ${protocolSmoke ? 'protocol interaction' : 'frontend runtime'} smoke passed`)

@@ -35,7 +35,22 @@ not required, output parity is.
 - Times present → `cleanTimeMs = finish_time - start_time`;
   `status='ok'`, `rank_primary = -cleanTimeMs` (negated: smaller time wins under DESC),
   `rank_secondary = rank_tertiary = null`, `payload = {cleanTimeMs}`.
-- Neither → no row (member absent from protocol).
+- Neither → no ranked row. The desktop-only unfinished appendix described below
+  does not change this materialization rule.
+
+## Judge-local unfinished appendix (CHR-RESULT-001)
+
+After ranking, `BuildProtocol` reuses the already loaded members to populate
+`unfinished_rows`: member status is OK, `FinishTimeMs` is nil, and the member ID
+is absent from ranked `rows`. A valid TimeLimited outcome without a FINISH
+checkpoint therefore remains a regular result. The appendix has no places,
+elapsed/clean times or inferred terminal status, including when stale clean-time
+text exists on the member. Its stable order is the existing member-query order.
+
+Only the desktop's full protocol renders this group; awards, XLSX and the
+PII-trimmed LAN projection continue to consume `rows` alone. No extra SQL,
+saved status, timing-core rule, observation or sync contract is introduced.
+See [unfinished-protocol.md](unfinished-protocol.md) for local acceptance.
 
 ## TimeLimited
 

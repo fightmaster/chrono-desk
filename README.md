@@ -61,6 +61,14 @@ Remaining for v0.1: the run5 `event:export` command on the site.
 
 ## LAN results broadcast
 
+The desktop's **Полный протокол** also has a judge-local **Без финиша** appendix
+(CHR-RESULT-001): entrants with no finish and no explicit DNS/DNF/DSQ who are
+not already classified by the race format. Search, gender/category filters and
+participant details work there; no place or time is assigned. The label
+**Финишная отметка пока не получена** does not assert that the person started or
+is still on course. Winners, Excel and the LAN broadcast remain unchanged.
+See [unfinished protocol semantics and acceptance](docs/unfinished-protocol.md).
+
 At a venue with no internet the only copy of the live results is on the desk. People who
 sign certificates, engrave medal times or run social media can read them from their own
 phones: in **Настройки события → «Трансляция результатов по сети»** the operator turns the
@@ -97,7 +105,7 @@ make build            # production binary for the current OS
 make test             # full test suite
 make race             # race-detector pass
 make check            # required gate: gofmt, test, race, vet, staticcheck
-make quality          # clean-checkout gate: npm ci/audit/build, then make check
+make quality          # npm ci/audit/tests/build, browser smokes, then make check
 make audit            # vulnerability report (known Go 1.24 findings; see architecture)
 ```
 

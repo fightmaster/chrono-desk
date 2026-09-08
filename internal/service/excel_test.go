@@ -40,6 +40,7 @@ func TestBuildProtocolXLSX(t *testing.T) {
 			StartTimeMs: &start, FinishTimeMs: &secondFinish, CleanTime: &clean},
 		{ID: "m3", EventID: "ev1", RaceID: "r1", Number: ptr(103), FirstName: "Анна", LastName: "Иванова",
 			Gender: sptr("female"), Status: domain.StatusDNS},
+		{ID: "m4", EventID: "ev1", RaceID: "r1", Number: ptr(104), LastName: "БезФиниша"},
 	}
 	for _, m := range members {
 		if err := store.UpsertMember(ctx, m); err != nil {
@@ -91,6 +92,9 @@ func TestBuildProtocolXLSX(t *testing.T) {
 	// DNS: no place, label, empty time.
 	if cell("A4") != "" || cell("L4") != "Не стартовал" || cell("M4") != "" {
 		t.Errorf("dns row = %q %q %q", cell("A4"), cell("L4"), cell("M4"))
+	}
+	if cell("E5") != "" {
+		t.Fatalf("judge-local unfinished participant leaked into XLSX: %q", cell("E5"))
 	}
 }
 

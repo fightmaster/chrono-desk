@@ -10,7 +10,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "smoke": "node scripts/runtime-smoke.mjs"
+    "test": "node --test src/lib/*.test.mjs",
+    "smoke": "node scripts/runtime-smoke.mjs",
+    "smoke:protocol": "node scripts/runtime-smoke.mjs --protocol"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

@@ -3,6 +3,7 @@
   import {call, fmtTime, inputToMs, msToInput} from './api.js'
   import CheckpointEditor from './CheckpointEditor.svelte'
   import AddMemberForm from './AddMemberForm.svelte'
+  import {filterProtocolRows, protocolCategoryOptions, protocolName as name} from './protocol-filters.js'
 
   export let eventId
   export let races = []
@@ -25,6 +26,7 @@
   const genderMarks = {male: 'М', female: 'Ж'}
 
   $: rows = protocol ? protocol.rows : []
+  $: unfinishedRows = protocol?.unfinished_rows ?? []
   // TimeLimited races report which checkpoint each member last reached in-window
   // — restore that protocol column when the data is present.
   $: showCheckpoint = (protocol && protocol.format === 'TimeLimited') || rows.some(r => r.last_checkpoint_name)
@@ -65,33 +67,14 @@
       [name, list.sort((a, b) => a.category_place - b.category_place)])
   })()
 
-  $: categoryOptions = (() => {
-    const byKey = new Map()
-    for (const r of rows) {
-      const key = categoryKey(r)
-      if (!key) continue
-      if (!byKey.has(key)) byKey.set(key, r.category_name || key)
-    }
-    return [...byKey.entries()]
-      .map(([value, label]) => ({value, label}))
-      .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
-  })()
+  $: categoryOptions = protocolCategoryOptions([...rows, ...unfinishedRows])
   $: if (protocolCategory !== 'all' && !categoryOptions.some(c => c.value === protocolCategory)) {
     protocolCategory = 'all'
   }
-  $: filteredRows = rows.filter(matchesProtocol)
+  $: filteredRows = filterProtocolRows(rows, protocolQuery, protocolGender, protocolCategory)
+  $: filteredUnfinishedRows = filterProtocolRows(unfinishedRows, protocolQuery, protocolGender, protocolCategory)
 
-  function name(r) { return `${r.last_name ?? ''} ${r.first_name ?? ''}`.trim() }
-  function categoryKey(r) { return r.category_id || r.category_name || '' }
   function genderMark(r) { return r.gender ? (genderMarks[r.gender] || r.gender) : '' }
-  function matchesProtocol(r) {
-    if (protocolGender !== 'all' && r.gender !== protocolGender) return false
-    if (protocolCategory !== 'all' && categoryKey(r) !== protocolCategory) return false
-    if (!protocolQuery.trim()) return true
-    const q = protocolQuery.trim().toLowerCase()
-    return name(r).toLowerCase().includes(q) ||
-      (r.number != null && String(r.number).includes(q))
-  }
 
   async function exportExcel() {
     exportOpen = false
@@ -301,6 +284,35 @@
         {/if}
       </div>
 
+      {#if unfinishedRows.length}
+        <section class="unfinished" aria-labelledby="unfinished-heading">
+          <h3 id="unfinished-heading">Без финиша · {filteredUnfinishedRows.length}</h3>
+          <p class="faint hint">Финишная отметка пока не получена</p>
+          <div class="table" class:cp={showCheckpoint}>
+            <div class="thead">
+              <span>Абс</span><span>М/Ж</span><span>Гр.</span><span>Номер</span>
+              <span>Участник</span><span>Группа</span><span>Пол</span><span>Время</span>
+              {#if showCheckpoint}<span>Чекпоинт</span>{/if}
+              <span>Статус</span>
+            </div>
+            {#each filteredUnfinishedRows as r (r.member_id)}
+              <button class="trow" on:click={() => dispatch('openMember', r.member_id)}>
+                <span></span><span></span><span></span>
+                <span class="mono num">{r.number ?? ''}</span>
+                <span class="pname">{name(r)}</span>
+                <span class="dim sm">{r.category_name ?? ''}</span>
+                <span class="mono faint">{genderMark(r)}</span>
+                <span></span>
+                {#if showCheckpoint}<span></span>{/if}
+                <span></span>
+              </button>
+            {:else}
+              <div class="empty-row">Никого не нашлось</div>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
     {:else if tab === 'dset'}
       <div class="dset">
         <div class="card">
@@ -419,6 +431,8 @@
   .g-row .ptime { font-size: 13.5px; }
 
   /* protocol */
+  .unfinished { margin-top: 24px; }
+  .unfinished h3 { font-size: 17px; margin: 0 0 8px; }
   .hint { font-size: 12.5px; margin: 0 0 10px; }
   .proto-tools {
     display: grid;

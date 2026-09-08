@@ -83,6 +83,24 @@ func TestProtocolTrimsPII(t *testing.T) {
 	}
 }
 
+func TestPublicProtocolDoesNotExposeJudgeUnfinishedAppendix(t *testing.T) {
+	full := service.ProtocolResponse{
+		Rows:           []service.ProtocolRow{{MemberID: "ranked", LastName: "Result"}},
+		UnfinishedRows: []service.ProtocolRow{{MemberID: "unfinished", LastName: "JudgeOnly"}},
+	}
+	public := toPublicProtocol(full)
+	if len(public.Rows) != 1 || public.Rows[0].LastName != "Result" {
+		t.Fatalf("public ranking changed: %+v", public.Rows)
+	}
+	data, err := json.Marshal(public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte("unfinished")) || bytes.Contains(data, []byte("JudgeOnly")) {
+		t.Fatalf("judge-local data leaked to public broadcast: %s", data)
+	}
+}
+
 // /api/races reflects whether anything is being broadcast.
 func TestRacesPublishedFlag(t *testing.T) {
 	s := newServer(t)

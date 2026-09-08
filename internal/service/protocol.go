@@ -48,13 +48,15 @@ type ProtocolCounts struct {
 	DSQ      int `json:"dsq"`
 }
 
-// ProtocolResponse bundles the race header with its ranked rows.
+// ProtocolResponse bundles ranked results and a separate judge-local appendix.
 type ProtocolResponse struct {
 	RaceID   string         `json:"race_id"`
 	RaceName string         `json:"race_name"`
 	Format   string         `json:"format"`
 	Counts   ProtocolCounts `json:"counts"`
 	Rows     []ProtocolRow  `json:"rows"`
+	// UnfinishedRows never participates in ranking, XLSX or public broadcast.
+	UnfinishedRows []ProtocolRow `json:"unfinished_rows"`
 }
 
 // BuildProtocol loads the race, ranks its members in memory and renders the
@@ -104,12 +106,14 @@ func BuildProtocol(ctx context.Context, store ProtocolStore, raceID string) (Pro
 	counts.Started = counts.Total - counts.DNS
 
 	resp := ProtocolResponse{
-		RaceID:   race.ID,
-		RaceName: race.Name,
-		Format:   string(race.Format),
-		Counts:   counts,
-		Rows:     make([]ProtocolRow, 0, len(ranked)),
+		RaceID:         race.ID,
+		RaceName:       race.Name,
+		Format:         string(race.Format),
+		Counts:         counts,
+		Rows:           make([]ProtocolRow, 0, len(ranked)),
+		UnfinishedRows: make([]ProtocolRow, 0),
 	}
+	rankedMemberIDs := make(map[string]struct{}, len(ranked))
 	for _, r := range ranked {
 		row := ProtocolRow{
 			MemberID:      r.Member.ID,
@@ -151,6 +155,30 @@ func BuildProtocol(ctx context.Context, store ProtocolStore, raceID string) (Pro
 			resp.Counts.Finished++
 		}
 		resp.Rows = append(resp.Rows, row)
+		rankedMemberIDs[row.MemberID] = struct{}{}
+	}
+	// The full start list is already loaded. Missing a finish is not proof of
+	// starting or still being on course, and is never an inferred DNS/DNF.
+	for _, m := range members {
+		if m.Status != domain.StatusOK || m.FinishTimeMs != nil {
+			continue
+		}
+		if _, ranked := rankedMemberIDs[m.ID]; ranked {
+			// A valid TimeLimited result need not have a FINISH checkpoint.
+			continue
+		}
+		row := ProtocolRow{
+			MemberID: m.ID, Number: m.Number, FirstName: m.FirstName, LastName: m.LastName,
+			Gender: m.Gender, DOB: m.DOB, Team: m.Team, City: m.City,
+			CategoryID: m.CategoryID, Status: "ok",
+		}
+		if m.CategoryID != nil {
+			if cat, ok := categories[*m.CategoryID]; ok {
+				name := cat.Name
+				row.CategoryName = &name
+			}
+		}
+		resp.UnfinishedRows = append(resp.UnfinishedRows, row)
 	}
 	return resp, nil
 }

@@ -27,10 +27,11 @@ frontend:
 	cd frontend && npm install && npm run build
 
 frontend-ci:
-	cd frontend && npm ci && npm audit --audit-level=high && npm run build
+	cd frontend && npm ci && npm audit --audit-level=high && npm test && npm run build
 
 frontend-runtime-smoke:
 	cd frontend && npm run smoke
+	cd frontend && npm run smoke:protocol
 
 ci-scripts:
 	bash scripts/ci/configure-private-timing-modules.test.sh
