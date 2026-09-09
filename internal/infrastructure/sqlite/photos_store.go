@@ -90,26 +90,44 @@ func (s *Store) DeletePhotoSource(ctx context.Context, eventID, baseURL string) 
 
 // UpsertPhoto stores/refreshes a pulled photo idempotently by id.
 func (s *Store) UpsertPhoto(ctx context.Context, eventID string, p Photo, fetchedAt int64) error {
-	frames := string(p.Frames)
-	if frames == "" {
-		frames = "[]"
-	}
-	// time_ms and frames_json are FROZEN at first ingest: re-polling recomputes the
-	// clock skew (which jitters with network latency on a slow LAN), and rewriting
-	// the time would make a finish photo drift out from under a capture/manual
-	// finish created from its earlier value. Only the mutable display fields update.
-	_, err := s.db.ExecContext(ctx, `
+	return s.WithinTx(ctx, func(tx *Store) error {
+		var storedEvent string
+		var storedTime int64
+		var storedFrames string
+		err := tx.db.QueryRowContext(ctx,
+			`SELECT event_id, time_ms, frames_json FROM photos WHERE id = ?`, p.ID).
+			Scan(&storedEvent, &storedTime, &storedFrames)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("read photo series %s: %w", p.ID, err)
+		}
+		var offsetDelta int64
+		if err == nil {
+			if storedEvent != eventID {
+				return fmt.Errorf("photo %s belongs to another event", p.ID)
+			}
+			// Keep the original calibration even if the latest LAN offset jitters.
+			// Incoming track/frame times share the same newly measured offset.
+			offsetDelta = storedTime - p.TimeMs
+		}
+		frames, err := mergePhotoFrames(json.RawMessage(storedFrames), p.Frames, offsetDelta)
+		if err != nil {
+			return fmt.Errorf("merge photo series %s: %w", p.ID, err)
+		}
+		// Read/merge/write must be one transaction: overlapping full/manual polls
+		// must not lose each other's newly discovered frames. Track time stays frozen.
+		_, err = tx.db.ExecContext(ctx, `
 		INSERT INTO photos (id, event_id, source_id, camera_label, time_ms, bib, bib_source, best_photo_url, frames_json, fetched_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			camera_label=excluded.camera_label, bib=excluded.bib,
 			bib_source=excluded.bib_source, best_photo_url=excluded.best_photo_url,
-			fetched_at=excluded.fetched_at`,
-		p.ID, eventID, p.SourceID, p.CameraLabel, p.TimeMs, p.Bib, p.BibSource, p.BestPhotoURL, frames, fetchedAt)
-	if err != nil {
-		return fmt.Errorf("upsert photo %s: %w", p.ID, err)
-	}
-	return nil
+			frames_json=excluded.frames_json, fetched_at=excluded.fetched_at`,
+			p.ID, eventID, p.SourceID, p.CameraLabel, p.TimeMs, p.Bib, p.BibSource, p.BestPhotoURL, string(frames), fetchedAt)
+		if err != nil {
+			return fmt.Errorf("upsert photo %s: %w", p.ID, err)
+		}
+		return nil
+	})
 }
 
 // GetPhotosInRange returns photos whose time falls within [startMs, endMs],
