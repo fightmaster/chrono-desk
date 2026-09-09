@@ -38,8 +38,8 @@ func TestFrontendReleaseDependenciesMeetSecurityBaseline(t *testing.T) {
 
 func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 	version := strings.TrimSpace(readRepositoryFile(t, "VERSION"))
-	if version != "0.4.3" {
-		t.Fatalf("VERSION = %q, want 0.4.3", version)
+	if version != "0.4.4" {
+		t.Fatalf("VERSION = %q, want 0.4.4", version)
 	}
 
 	makefile := readRepositoryFile(t, "Makefile")

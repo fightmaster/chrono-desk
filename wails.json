@@ -3,7 +3,7 @@
   "name": "chrono-desk",
   "outputfilename": "chrono-desk",
   "info": {
-    "productVersion": "0.4.3"
+    "productVersion": "0.4.4"
   },
   "frontend:install": "npm install",
   "frontend:build": "npm run build",

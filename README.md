@@ -86,6 +86,14 @@ read-only LAN server and is never included in its QR codes.
 
 ## Development
 
+Photo-series completion (CHR-CAM-004, v0.4.4): a Chrono Cam track may arrive
+before its burst is finished. Subsequent polls now append missing frames in one
+transaction without shifting the stored track/frame times or removing frames
+absent from a shorter response. Periodic full refresh also repairs older partial
+albums while the phone still serves the original event. No phone update or
+database migration is required. See [release notes](docs/releases/0.4.4.md) for
+verification and rollback boundaries.
+
 Always build through `make` — it pins `GOTOOLCHAIN=go1.24.13` (see docs/architecture.md)
 and passes the `webkit2_41` build tag for Ubuntu 24.04. Frontend tooling requires
 Node `^20.19.0 || >=22.12.0`; the release workflow uses Node 22 and local release
