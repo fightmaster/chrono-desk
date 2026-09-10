@@ -212,6 +212,7 @@ func edgeChainWait(t *testing.T, label string, check func() bool) {
 type edgeChainSource struct {
 	profile, binary, dir, admin, reader, config string
 	csvPath, eventID                            string
+	process                                     *exec.Cmd
 	stopProcess                                 func(*testing.T)
 }
 
@@ -291,6 +292,7 @@ func (s *edgeChainSource) start(t *testing.T) {
 		_ = output.Close()
 		t.Fatal(err)
 	}
+	s.process = cmd
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	var once sync.Once

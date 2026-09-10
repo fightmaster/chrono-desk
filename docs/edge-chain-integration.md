@@ -155,6 +155,55 @@ This closes the local source/Hub/Desk event-switch scenario, not central MySQL
 event-switch acceptance, Desk HTTP administration, reader/phone hardware,
 power-loss durability, mixed native historical aliases or load testing.
 
+## Optional source load and resource measurement
+
+The additional `edgeload` tag enables `TestEdgeSourceSustainedLoadAndBacklog`.
+It reuses the actual sidecar executable/configuration/startup helpers but replaces
+both receivers with **synthetic in-memory peers using the shared core listener**.
+No Docker, Hub, central database or Desk projection is involved in this test:
+
+```sh
+export EDGE_SIDECAR_BINARY=/absolute/private/artifacts/sidecar
+go test -tags 'edgeintegration edgeload' ./internal/service \
+  -run '^TestEdgeSourceSustainedLoadAndBacklog$' -count=1 -v -timeout=7m
+```
+
+Each Feibot/plate profile receives 15,000 unique synthetic observations over
+60 seconds at a scheduled 250/s (25 every 100 ms). Feibot appends and rotates
+5,000-row CSV files, using the shipped batch-size default of 500. Plate sends
+time-only JSON on one real TCP connection after the existing local date form.
+One peer refuses publication during the second half; the other must keep up.
+After all facts have been committed and the healthy peer ACKed, the executable
+is stopped/restarted on the same database and the second peer recovers without
+new reads, Start or clock confirmation. Every peer packet digest must equal the
+source's stored envelope, original source rows must remain unchanged, and the
+healthy peer must not receive its already ACKed history again.
+
+The gate fails if producing the stream takes more than 65 seconds, falls over
+two seconds behind schedule, or the healthy peer falls over ten seconds behind
+the offered stream. These are coarse **local smoke limits**, not accepted
+appliance latency/resource budgets. Read-only `/proc` sampling records only the
+sidecar process's peak RSS, threads and file descriptors; file sizes track its
+database/WAL/SHM and process logs. OS process accounting supplies CPU time across
+both executions. Test-runner/receiver resources are excluded. The gate reports
+these measurements without pretending they prove a long-term retention bound.
+
+This test adds no production instrumentation or runtime overhead. It is a short
+host-side throughput/recovery measurement, not a Raspberry Pi benchmark, vendor
+CSV flush/UART assessment, disk-full/power-cut test or actual receiver load test.
+Use the original receiver tests separately for actual Hub/Desk correctness.
+The race detector covers the test process only unless the supplied sidecar was
+built with it; race-instrumented results are not comparable throughput evidence.
+
+The first measured source checkpoint uses sidecar `3c0696e`. Feibot passes this
+short gate after independent worker scheduling and single-connection SQLite
+queueing; plate still fails the live rate/capture deadline. Do not weaken the
+threshold or label the combined test green: the plate callback currently commits
+each frame separately, and at the input deadline only 7,338 of 15,000 offered
+frames were committed. The failing fixture is stopped after its deadline, so this
+is not evidence of a production loss incident or a completed plate replay.
+Keep the failing load gate separate from passing ordinary unit/race suites.
+
 ## Optional central MySQL / RUN5 gate
 
 The additional `edgecentralintegration` tag enables
