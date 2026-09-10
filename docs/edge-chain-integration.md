@@ -427,3 +427,39 @@ token refusal, then downloads admin export and API feed/export. Their original
 source metadata is compared with the Desk journal and imported without an
 outbound echo. This is HTTP/schema acceptance, not a browser rendering, TLS,
 physical-device, two-event backlog-switch or standalone release gate.
+
+### Central two-event backlog recovery
+
+`TestEdgeChainCentralEventSwitchPreservesHeldBacklog` reuses the existing
+Feibot/plate receiver-switch scenario, with optional central observers:
+
+```sh
+go test -tags 'edgeintegration edgecentralintegration' ./internal/service \
+  -run '^TestEdgeChainCentralEventSwitchPreservesHeldBacklog$' -count=1 -v
+go test -race -tags 'edgeintegration edgecentralintegration' ./internal/service \
+  -run '^TestEdgeChainCentralEventSwitchPreservesHeldBacklog$' -count=1 -v
+```
+
+Unlike the single-receiver fixtures, this scenario creates one labelled Docker
+`--internal` bridge and two Hub/Redis namespaces. Each actual consumer uses its
+receiver's Redis and the same disposable MySQL schema. The new receiver resolves
+MySQL only from the old fixture container's inspected private IP. PHP still
+shares that old namespace and its guarded `127.0.0.1` connection. No host port
+is published, image pulled, production credential used or public endpoint called.
+Cleanup removes the owned containers and then the internal network. Two actual
+Hub processes cannot share one namespace: their fixed HTTP/pprof ports collide.
+The test does not modify production listeners to accommodate its topology.
+
+The guarded PHP `switch-setup` creates event 200 with the same board, EPCs and
+bib numbers as event 100, an independently authorized session, and a mutable
+native board mapping pointing to 200. Event-scoped snapshots include actual
+raw rows, passes, member outcomes, finished members, feed and export. The test
+checks old-state stability while new capture progresses, retained old work
+across source restart, actual wrong-event receiver rejection, and unchanged
+source history after explicit recovery. Old facts must remain in event 100
+despite the native board mapping; event 200's facts and results must stay
+unchanged. Both exports import into Desk with preserved metadata and neither
+outbox populated. Original receiver assertions/deadlines remain active.
+
+This is synthetic software acceptance with real application processes and SQL,
+not a maximum-load, physical plate or published-release gate.

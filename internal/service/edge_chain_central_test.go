@@ -85,22 +85,28 @@ type edgeChainCentral struct {
 	hub     *edgeChainHub
 	phpID   string
 	mysqlID string
+	eventID string
+	dbHost  string
 }
 
 type edgeChainCentralSnapshot struct {
-	MySQLVersion   string           `json:"mysql_version"`
-	PHPVersion     string           `json:"php_version"`
-	Migrations     int              `json:"migrations"`
-	Rows           []map[string]any `json:"rows"`
-	Results        int              `json:"results"`
-	MemberResults  int              `json:"member_results"`
-	Finished       int              `json:"finished"`
-	Actions        []string         `json:"actions"`
-	BindingEnabled bool             `json:"binding_enabled"`
-	SourceBindings []map[string]any `json:"source_bindings"`
-	SourceActions  []map[string]any `json:"source_actions"`
-	Export         json.RawMessage  `json:"export"`
-	Feed           struct {
+	MySQLVersion     string           `json:"mysql_version"`
+	PHPVersion       string           `json:"php_version"`
+	Migrations       int              `json:"migrations"`
+	Rows             []map[string]any `json:"rows"`
+	Results          int              `json:"results"`
+	MemberResults    int              `json:"member_results"`
+	Finished         int              `json:"finished"`
+	ResultRows       []map[string]any `json:"result_rows"`
+	MemberResultRows []map[string]any `json:"member_result_rows"`
+	FinishedRows     []map[string]any `json:"finished_rows"`
+	BoardEvents      []map[string]any `json:"board_events"`
+	Actions          []string         `json:"actions"`
+	BindingEnabled   bool             `json:"binding_enabled"`
+	SourceBindings   []map[string]any `json:"source_bindings"`
+	SourceActions    []map[string]any `json:"source_actions"`
+	Export           json.RawMessage  `json:"export"`
+	Feed             struct {
 		Items []struct {
 			Type        string         `json:"type"`
 			Observation map[string]any `json:"observation"`
@@ -116,7 +122,7 @@ func newEdgeChainCentral(t *testing.T, hub *edgeChainHub, board, session string)
 			t.Fatalf("%s must be an already installed immutable image ID", key)
 		}
 	}
-	binary := edgeChainBinary(t, "EDGE_SYNC_BINARY")
+	edgeChainBinary(t, "EDGE_SYNC_BINARY")
 	root := os.Getenv("EDGE_RUN5_ROOT")
 	if !filepath.IsAbs(root) {
 		t.Fatal("EDGE_RUN5_ROOT must be an absolute RUN5 source checkout with installed vendor")
@@ -126,7 +132,7 @@ func newEdgeChainCentral(t *testing.T, hub *edgeChainHub, board, session string)
 			t.Fatalf("missing RUN5 fixture dependency: %s", path)
 		}
 	}
-	c := &edgeChainCentral{hub: hub}
+	c := &edgeChainCentral{hub: hub, eventID: "100", dbHost: "127.0.0.1"}
 	// Containers join the network-none Hub namespace: loopback only, no host
 	// ports, bind mounts, image pulls or route to a production database.
 	create := func(name, image string, command []string, args ...string) string {
@@ -180,8 +186,16 @@ func newEdgeChainCentral(t *testing.T, hub *edgeChainHub, board, session string)
 	hub.docker(t, "cp", filepath.Join(root, "tests/Support/edge-chain.php"), c.phpID+":/fixture/tests/Support/edge-chain.php")
 	setup := c.snapshot(t, "setup", board, session)
 	t.Logf("RUN5 schema/grant ready: MySQL=%s PHP=%s migrations=%d", setup.MySQLVersion, setup.PHPVersion, setup.Migrations)
+	c.startConsumer(t)
+	return c
+}
+
+func (c *edgeChainCentral) startConsumer(t *testing.T) {
+	t.Helper()
+	hub := c.hub
+	binary := edgeChainBinary(t, "EDGE_SYNC_BINARY")
 	hub.docker(t, "cp", binary, hub.id+":/tmp/rfid-sync")
-	hub.docker(t, "exec", "-d", "--env", "DB_HOST=127.0.0.1", "--env", "DB_DATABASE=synthetic_edge_chain", "--env", "DB_USERNAME=edge_fixture", "--env", "DB_PASSWORD=synthetic-password",
+	hub.docker(t, "exec", "-d", "--env", "DB_HOST="+c.dbHost, "--env", "DB_DATABASE=synthetic_edge_chain", "--env", "DB_USERNAME=edge_fixture", "--env", "DB_PASSWORD=synthetic-password",
 		"--env", "REDIS_ADDR=127.0.0.1:6379", "--env", "REDIS_STREAM=synthetic-edge-chain", "--env", "REDIS_GROUP=synthetic-central", "--env", "REDIS_CONSUMER=fixture",
 		"--env", "REDIS_BLOCK=1s", "--env", "REDIS_CLAIM_IDLE=1s", "--env", "WORKERS=1", "--env", "METRICS_LOG_INTERVAL=0s",
 		hub.id, "/bin/sh", "-c", "exec /tmp/rfid-sync > /tmp/sync.log 2>&1")
@@ -191,11 +205,13 @@ func newEdgeChainCentral(t *testing.T, hub *edgeChainHub, board, session string)
 			t.Logf("central consumer: %s", out)
 		}
 	})
-	return c
 }
 
 func (c *edgeChainCentral) snapshot(t *testing.T, action string, args ...string) edgeChainCentralSnapshot {
 	t.Helper()
+	if action == "snapshot" && c.eventID == "200" {
+		action, args = "snapshot-event", []string{"200"}
+	}
 	output := c.hub.docker(t, append([]string{"exec", c.phpID, "php", "tests/Support/edge-chain.php", action}, args...)...)
 	var snapshot edgeChainCentralSnapshot
 	decoder := json.NewDecoder(strings.NewReader(output))
@@ -230,7 +246,7 @@ func (c *edgeChainCentral) waitRows(t *testing.T, want int) {
 
 func (c *edgeChainCentral) assertMetadata(t *testing.T, store *sqlite.Store, snapshot edgeChainCentralSnapshot, want int) {
 	t.Helper()
-	journal, err := store.EdgeJournal(t.Context(), "100", 0, 10)
+	journal, err := store.EdgeJournal(t.Context(), c.eventID, 0, 10)
 	if err != nil || len(journal) != want || len(snapshot.Rows) != want || len(snapshot.Feed.Items) != want || snapshot.Feed.HasMore {
 		t.Fatalf("central/Desk/feed counts differ: %d %d %d %v", len(journal), len(snapshot.Rows), len(snapshot.Feed.Items), err)
 	}
@@ -293,7 +309,7 @@ func (c *edgeChainCentral) assertMetadata(t *testing.T, store *sqlite.Store, sna
 	if err != nil {
 		t.Fatal(err)
 	}
-	imported, err := catalog.OpenOrCreate("100")
+	imported, err := catalog.OpenOrCreate(c.eventID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,11 +321,11 @@ func (c *edgeChainCentral) assertMetadata(t *testing.T, store *sqlite.Store, sna
 	if err := imported.DB().QueryRow(`SELECT (SELECT COUNT(*) FROM rfid_logs), (SELECT COUNT(*) FROM observation_outbox), (SELECT COUNT(*) FROM edge_observation_outbox)`).Scan(&raw, &native, &owned); err != nil || raw != want || native != 0 || owned != 0 {
 		t.Fatalf("import echo: raw=%d native=%d edge=%d %v", raw, native, owned, err)
 	}
-	originalLogs, err := store.ListRfidLogs(t.Context(), "100")
+	originalLogs, err := store.ListRfidLogs(t.Context(), c.eventID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	importedLogs, err := imported.ListRfidLogs(t.Context(), "100")
+	importedLogs, err := imported.ListRfidLogs(t.Context(), c.eventID)
 	if err != nil || !reflect.DeepEqual(originalLogs, importedLogs) {
 		t.Fatalf("PHP export/Desk import changed original stored observations: %v", err)
 	}

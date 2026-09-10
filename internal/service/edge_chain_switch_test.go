@@ -27,192 +27,228 @@ import (
 func TestEdgeChainEventSwitchPreservesHeldBacklog(t *testing.T) {
 	for _, profile := range []string{"feibot", "plate"} {
 		t.Run(profile, func(t *testing.T) {
-			board, oldSession := "Feibot:U659", "100"
-			if profile == "plate" {
-				board, oldSession = "plate-test", "plate-one"
-			}
-			oldHub := newEdgeChainHub(t, board, oldSession)
-			catalog, err := sqlite.NewEventCatalog(t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
-			oldStore := edgeSwitchStore(t, catalog, "100", board, oldSession)
-			live := NewLiveManager(log.New(io.Discard, "", 0))
-			t.Cleanup(live.StopAll)
-			port := edgeTestPort(t)
-			startDesk := func(store *sqlite.Store, eventID string) {
-				t.Helper()
-				if err := live.StartEdge(store, eventID, port); err != nil {
-					t.Fatal(err)
-				}
-			}
-			startDesk(oldStore, "100")
-			source := newEdgeChainSource(t, profile, oldHub.endpoint, "127.0.0.1:"+port)
-			source.start(t)
-			if profile == "plate" {
-				source.confirmClock(t)
-			}
-			source.read(t, 1)
-			source.waitACKs(t, 1, 1)
-			assertEdgeChainRows(t, oldStore, 1)
-			acknowledged := edgeSwitchDeliveries(t, source)
-
-			// Both receivers go away before the second observation. Preserve the
-			// actual source wire and pending state before any event settings change.
-			live.StopEdge("100")
-			oldHub.docker(t, "pause", oldHub.id)
-			source.read(t, 2)
-			source.waitRetry(t, "hub")
-			source.waitRetry(t, "chrono")
-			oldRows := edgeSwitchRows(t, source)
-			if len(oldRows) != 2 {
-				t.Fatalf("old source rows=%d", len(oldRows))
-			}
-
-			newSession := "200"
-			if profile == "plate" {
-				source.switchAction(t, "/actions", url.Values{"action": {"pause"}})
-				// The local form allocates the session; never fabricate one in DB.
-				source.plateSwitchSettings(t, "200", oldHub.endpoint, "127.0.0.1:"+port)
-				newSession = source.switchStatus(t).Settings.Source.SessionID
-				if newSession == "" || newSession == oldSession {
-					t.Fatal("new plate binding did not receive a new session")
-				}
-			}
-			newHub := newEdgeChainHubForEvent(t, 200, board, newSession)
-			if profile == "plate" {
-				source.plateSwitchSettings(t, "200", newHub.endpoint, "127.0.0.1:"+port)
-			} else {
-				source.selectFeibotFixture(t, "200", newHub.endpoint)
-			}
-			newStore := edgeSwitchStore(t, catalog, "200", board, newSession)
-			// Also stop before the later-created store's cleanup on failures.
-			t.Cleanup(live.StopAll)
-			startDesk(newStore, "200") // the very same network address now owns event 200
-			if profile == "plate" {
-				source.confirmClock(t)
-			}
-			source.read(t, 3)
-			if profile == "feibot" {
-				edgeChainWait(t, "fresh CSV activates event 200", func() bool { return source.switchStatus(t).Event.FeibotEventID == "200" })
-			}
-			source.waitACKs(t, 1, 1) // status is scoped to the selected event
-			source.assertHeld(t, 2)
-			assertEdgeChainRows(t, oldStore, 1)
-			assertEdgeChainRows(t, newStore, 1)
-			allRows := edgeSwitchRows(t, source)
-			if len(allRows) != 3 {
-				t.Fatalf("source rows after switch=%d", len(allRows))
-			}
-			for id, row := range oldRows {
-				if allRows[id] != row {
-					t.Fatalf("switch rewrote old observation %s", id)
-				}
-			}
-			publications := len(newHub.entries(t))
-
-			// Restore the old receiver, but keep the application's selection on
-			// event 200. Neither restart nor receiver availability releases history.
-			oldHub.docker(t, "unpause", oldHub.id)
-			source.stop(t)
-			source.start(t)
-			source.waitACKs(t, 1, 1)
-			source.assertHeld(t, 2)
-			if !reflect.DeepEqual(allRows, edgeSwitchRows(t, source)) {
-				t.Fatal("restart rewrote or dropped source observations")
-			}
-			if len(newHub.entries(t)) != publications {
-				t.Fatal("restart repeated already ACKed new-event packets")
-			}
-			t.Log("event 200 progressed while event 100 backlog remained unchanged and held across restart")
-
-			// Deliberately restore history while both target addresses still
-			// accept event 200. Actual Hub and Desk must reject, not reassign it.
-			beforeWrongTarget := edgeSwitchDeliveries(t, source)
-			if profile == "plate" {
-				source.switchAction(t, "/actions", url.Values{"action": {"pause"}})
-				source.switchAction(t, "/actions", url.Values{"action": {"select_session"}, "session_id": {oldSession}})
-			} else {
-				source.selectFeibotFixture(t, "100", newHub.endpoint)
-				// Maintenance Start is the existing explicit recovery operation;
-				// there is no fabricated CSV activity or console command.
-				source.switchAction(t, "/api/start", url.Values{})
-			}
-			edgeChainWait(t, "both wrong-event receivers actually attempted", func() bool {
-				now := edgeSwitchDeliveries(t, source)
-				attempted := 0
-				for key, before := range beforeWrongTarget {
-					if before.State != "acknowledged" && now[key].Attempts > before.Attempts && now[key].Ack == "" {
-						attempted++
-					}
-				}
-				return attempted == 2
-			})
-			assertEdgeChainRows(t, newStore, 1)
-			if len(newHub.entries(t)) != publications {
-				t.Fatal("Hub admitted an old packet under the new-event listener")
-			}
-			if logs := newHub.docker(t, "logs", "--tail", "40", newHub.id); !strings.Contains(logs, "edge board/event/session is not provisioned") {
-				t.Fatal("Hub did not observe an actual binding rejection")
-			}
-			if live.Status("200").Edge.Errors == 0 {
-				t.Fatal("Desk did not observe the wrong-event rejection")
-			}
-
-			// Correct the receiving configuration, not stored observations. Old
-			// timestamps already exist: no new reading/date confirmation is needed.
-			live.StopEdge("200")
-			startDesk(oldStore, "100")
-			if profile == "plate" {
-				source.plateSwitchSettings(t, "100", oldHub.endpoint, "127.0.0.1:"+port)
-			} else {
-				source.switchAction(t, "/api/config", url.Values{"destination_event_id": {"100"}, "timezone": {"UTC"}, "wire_protocol": {edge.Protocol}, "enabled_hub": {"on"}, "enabled_chrono": {"on"}, "endpoint_hub": {"tcp://" + oldHub.endpoint}})
-			}
-			// Receiver correction does not reset persisted retry deadlines. The
-			// real sender may wait up to 60s (backoff+jitter), plus a 30s circuit
-			// interval. Allow that recovery and scheduling/ACK margin, not an
-			// arbitrary 30s deadline shorter than a legitimate fifth retry.
-			source.waitACKsWithin(t, 2, 2, 2*time.Minute)
-			source.assertHeld(t, 0)
-			assertEdgeChainRows(t, oldStore, 2)
-			assertEdgeChainRows(t, newStore, 1)
-			if !reflect.DeepEqual(allRows, edgeSwitchRows(t, source)) {
-				t.Fatal("recovery changed immutable source rows")
-			}
-			finalDeliveries := edgeSwitchDeliveries(t, source)
-			for key, before := range acknowledged {
-				if finalDeliveries[key] != before {
-					t.Fatalf("already ACKed delivery changed: %s", key)
-				}
-			}
-			for key, d := range finalDeliveries {
-				if d.State != "acknowledged" || d.Ack == "" {
-					t.Fatalf("delivery did not recover: %s %+v", key, d)
-				}
-			}
-			for _, pair := range []struct {
-				hub   *edgeChainHub
-				store *sqlite.Store
-				event string
-			}{{oldHub, oldStore, "100"}, {newHub, newStore, "200"}} {
-				journal, err := pair.store.EdgeJournal(t.Context(), pair.event, 0, 10)
-				if err != nil {
-					t.Fatal(err)
-				}
-				for _, item := range journal {
-					if string(item.Payload) != allRows[item.ObservationID].Payload {
-						t.Fatal("Desk rewrote the restored source payload")
-					}
-				}
-				for _, entry := range pair.hub.entries(t) {
-					p, err := edge.Decode([]byte(allRows[entry["id"]].Payload))
-					if err != nil || fmt.Sprint(p.ExternalEventID) != pair.event || entry["external_event_id"] != pair.event || entry["source_session_id"] != p.SourceSessionID || entry["origin_instance_id"] != p.OriginInstanceID || entry["clock_evidence_id"] != p.ClockEvidenceID {
-						t.Fatalf("Hub binding/origin/clock changed: %v %v", entry, err)
-					}
-				}
-			}
-			t.Log("wrong-event targets rejected history; explicit recovery drained only original event/session without rewriting or rereading")
+			runEdgeChainEventSwitch(t, profile, edgeChainSwitchObserver{})
 		})
+	}
+}
+
+// Optional central observers add actual MySQL checks to the same receiver
+// scenario without replacing its source/UI/restart/wrong-target assertions.
+type edgeChainSwitchObserver struct {
+	oldHub func(*testing.T, string, string) *edgeChainHub
+	setup  func(*testing.T, *edgeChainHub, string, string)
+	newHub func(*testing.T, *edgeChainHub, string, string) *edgeChainHub
+	check  func(*testing.T, string, *sqlite.Store, *sqlite.Store)
+}
+
+func runEdgeChainEventSwitch(t *testing.T, profile string, observer edgeChainSwitchObserver) {
+	t.Helper()
+	board, oldSession := "Feibot:U659", "100"
+	if profile == "plate" {
+		board, oldSession = "plate-test", "plate-one"
+	}
+	var oldHub *edgeChainHub
+	if observer.oldHub != nil {
+		oldHub = observer.oldHub(t, board, oldSession)
+	} else {
+		oldHub = newEdgeChainHub(t, board, oldSession)
+	}
+	catalog, err := sqlite.NewEventCatalog(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStore := edgeSwitchStore(t, catalog, "100", board, oldSession)
+	live := NewLiveManager(log.New(io.Discard, "", 0))
+	t.Cleanup(live.StopAll)
+	port := edgeTestPort(t)
+	startDesk := func(store *sqlite.Store, eventID string) {
+		t.Helper()
+		if err := live.StartEdge(store, eventID, port); err != nil {
+			t.Fatal(err)
+		}
+	}
+	startDesk(oldStore, "100")
+	source := newEdgeChainSource(t, profile, oldHub.endpoint, "127.0.0.1:"+port)
+	source.start(t)
+	if profile == "plate" {
+		source.confirmClock(t)
+	}
+	source.read(t, 1)
+	source.waitACKs(t, 1, 1)
+	assertEdgeChainRows(t, oldStore, 1)
+	acknowledged := edgeSwitchDeliveries(t, source)
+	if observer.setup != nil {
+		observer.setup(t, oldHub, board, oldSession)
+	}
+
+	// Both receivers go away before the second observation. Preserve the
+	// actual source wire and pending state before any event settings change.
+	live.StopEdge("100")
+	oldHub.docker(t, "pause", oldHub.id)
+	source.read(t, 2)
+	source.waitRetry(t, "hub")
+	source.waitRetry(t, "chrono")
+	oldRows := edgeSwitchRows(t, source)
+	if len(oldRows) != 2 {
+		t.Fatalf("old source rows=%d", len(oldRows))
+	}
+
+	newSession := "200"
+	if profile == "plate" {
+		source.switchAction(t, "/actions", url.Values{"action": {"pause"}})
+		// The local form allocates the session; never fabricate one in DB.
+		source.plateSwitchSettings(t, "200", oldHub.endpoint, "127.0.0.1:"+port)
+		newSession = source.switchStatus(t).Settings.Source.SessionID
+		if newSession == "" || newSession == oldSession {
+			t.Fatal("new plate binding did not receive a new session")
+		}
+	}
+	var newHub *edgeChainHub
+	if observer.newHub != nil {
+		newHub = observer.newHub(t, oldHub, board, newSession)
+	} else {
+		newHub = newEdgeChainHubForEvent(t, 200, board, newSession)
+	}
+	if profile == "plate" {
+		source.plateSwitchSettings(t, "200", newHub.endpoint, "127.0.0.1:"+port)
+	} else {
+		source.selectFeibotFixture(t, "200", newHub.endpoint)
+	}
+	newStore := edgeSwitchStore(t, catalog, "200", board, newSession)
+	// Also stop before the later-created store's cleanup on failures.
+	t.Cleanup(live.StopAll)
+	startDesk(newStore, "200") // the very same network address now owns event 200
+	if profile == "plate" {
+		source.confirmClock(t)
+	}
+	source.read(t, 3)
+	if profile == "feibot" {
+		edgeChainWait(t, "fresh CSV activates event 200", func() bool { return source.switchStatus(t).Event.FeibotEventID == "200" })
+	}
+	source.waitACKs(t, 1, 1) // status is scoped to the selected event
+	source.assertHeld(t, 2)
+	assertEdgeChainRows(t, oldStore, 1)
+	assertEdgeChainRows(t, newStore, 1)
+	allRows := edgeSwitchRows(t, source)
+	if len(allRows) != 3 {
+		t.Fatalf("source rows after switch=%d", len(allRows))
+	}
+	for id, row := range oldRows {
+		if allRows[id] != row {
+			t.Fatalf("switch rewrote old observation %s", id)
+		}
+	}
+	publications := len(newHub.entries(t))
+	if observer.check != nil {
+		observer.check(t, "selected", oldStore, newStore)
+	}
+
+	// Restore the old receiver, but keep the application's selection on
+	// event 200. Neither restart nor receiver availability releases history.
+	oldHub.docker(t, "unpause", oldHub.id)
+	source.stop(t)
+	source.start(t)
+	source.waitACKs(t, 1, 1)
+	source.assertHeld(t, 2)
+	if !reflect.DeepEqual(allRows, edgeSwitchRows(t, source)) {
+		t.Fatal("restart rewrote or dropped source observations")
+	}
+	if len(newHub.entries(t)) != publications {
+		t.Fatal("restart repeated already ACKed new-event packets")
+	}
+	t.Log("event 200 progressed while event 100 backlog remained unchanged and held across restart")
+	if observer.check != nil {
+		observer.check(t, "restarted", oldStore, newStore)
+	}
+
+	// Deliberately restore history while both target addresses still
+	// accept event 200. Actual Hub and Desk must reject, not reassign it.
+	beforeWrongTarget := edgeSwitchDeliveries(t, source)
+	if profile == "plate" {
+		source.switchAction(t, "/actions", url.Values{"action": {"pause"}})
+		source.switchAction(t, "/actions", url.Values{"action": {"select_session"}, "session_id": {oldSession}})
+	} else {
+		source.selectFeibotFixture(t, "100", newHub.endpoint)
+		// Maintenance Start is the existing explicit recovery operation;
+		// there is no fabricated CSV activity or console command.
+		source.switchAction(t, "/api/start", url.Values{})
+	}
+	edgeChainWait(t, "both wrong-event receivers actually attempted", func() bool {
+		now := edgeSwitchDeliveries(t, source)
+		attempted := 0
+		for key, before := range beforeWrongTarget {
+			if before.State != "acknowledged" && now[key].Attempts > before.Attempts && now[key].Ack == "" {
+				attempted++
+			}
+		}
+		return attempted == 2
+	})
+	assertEdgeChainRows(t, newStore, 1)
+	if len(newHub.entries(t)) != publications {
+		t.Fatal("Hub admitted an old packet under the new-event listener")
+	}
+	if logs := newHub.docker(t, "logs", "--tail", "40", newHub.id); !strings.Contains(logs, "edge board/event/session is not provisioned") {
+		t.Fatal("Hub did not observe an actual binding rejection")
+	}
+	if live.Status("200").Edge.Errors == 0 {
+		t.Fatal("Desk did not observe the wrong-event rejection")
+	}
+
+	// Correct the receiving configuration, not stored observations. Old
+	// timestamps already exist: no new reading/date confirmation is needed.
+	live.StopEdge("200")
+	startDesk(oldStore, "100")
+	if profile == "plate" {
+		source.plateSwitchSettings(t, "100", oldHub.endpoint, "127.0.0.1:"+port)
+	} else {
+		source.switchAction(t, "/api/config", url.Values{"destination_event_id": {"100"}, "timezone": {"UTC"}, "wire_protocol": {edge.Protocol}, "enabled_hub": {"on"}, "enabled_chrono": {"on"}, "endpoint_hub": {"tcp://" + oldHub.endpoint}})
+	}
+	// Receiver correction does not reset persisted retry deadlines. The
+	// real sender may wait up to 60s (backoff+jitter), plus a 30s circuit
+	// interval. Allow that recovery and scheduling/ACK margin, not an
+	// arbitrary 30s deadline shorter than a legitimate fifth retry.
+	source.waitACKsWithin(t, 2, 2, 2*time.Minute)
+	source.assertHeld(t, 0)
+	assertEdgeChainRows(t, oldStore, 2)
+	assertEdgeChainRows(t, newStore, 1)
+	if !reflect.DeepEqual(allRows, edgeSwitchRows(t, source)) {
+		t.Fatal("recovery changed immutable source rows")
+	}
+	finalDeliveries := edgeSwitchDeliveries(t, source)
+	for key, before := range acknowledged {
+		if finalDeliveries[key] != before {
+			t.Fatalf("already ACKed delivery changed: %s", key)
+		}
+	}
+	for key, d := range finalDeliveries {
+		if d.State != "acknowledged" || d.Ack == "" {
+			t.Fatalf("delivery did not recover: %s %+v", key, d)
+		}
+	}
+	for _, pair := range []struct {
+		hub   *edgeChainHub
+		store *sqlite.Store
+		event string
+	}{{oldHub, oldStore, "100"}, {newHub, newStore, "200"}} {
+		journal, err := pair.store.EdgeJournal(t.Context(), pair.event, 0, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range journal {
+			if string(item.Payload) != allRows[item.ObservationID].Payload {
+				t.Fatal("Desk rewrote the restored source payload")
+			}
+		}
+		for _, entry := range pair.hub.entries(t) {
+			p, err := edge.Decode([]byte(allRows[entry["id"]].Payload))
+			if err != nil || fmt.Sprint(p.ExternalEventID) != pair.event || entry["external_event_id"] != pair.event || entry["source_session_id"] != p.SourceSessionID || entry["origin_instance_id"] != p.OriginInstanceID || entry["clock_evidence_id"] != p.ClockEvidenceID {
+				t.Fatalf("Hub binding/origin/clock changed: %v %v", entry, err)
+			}
+		}
+	}
+	t.Log("wrong-event targets rejected history; explicit recovery drained only original event/session without rewriting or rereading")
+	if observer.check != nil {
+		observer.check(t, "recovered", oldStore, newStore)
 	}
 }
 

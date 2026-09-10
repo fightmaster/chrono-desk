@@ -43,6 +43,12 @@ func newEdgeChainHub(t *testing.T, board, session string) *edgeChainHub {
 }
 
 func newEdgeChainHubForEvent(t *testing.T, eventID int64, board, session string) *edgeChainHub {
+	return newEdgeChainHubOnNetwork(t, eventID, board, session, "none")
+}
+
+// The two-event central test uses one private internal Docker network, without
+// host port publication. Ordinary single-receiver fixtures keep network=none.
+func newEdgeChainHubOnNetwork(t *testing.T, eventID int64, board, session, network string) *edgeChainHub {
 	t.Helper()
 	binary := edgeChainBinary(t, "EDGE_HUB_BINARY")
 	image := os.Getenv("EDGE_REDIS_IMAGE")
@@ -57,7 +63,7 @@ func newEdgeChainHubForEvent(t *testing.T, eventID int64, board, session string)
 		"name": "edge-chain", "adapter": "edge_observation_v1", "host": "0.0.0.0", "port": "44004", "ack_mode": "id", "max_connections": 8,
 		"edge_bindings": []map[string]any{{"board": board, "event_id": eventID, "source_session_id": session}},
 	}})
-	h.id = h.docker(t, "create", "--pull", "never", "--name", name, "--label", "task=CHR-SIDE-002", "--network", "none",
+	h.id = h.docker(t, "create", "--pull", "never", "--name", name, "--label", "task=CHR-SIDE-002", "--network", network,
 		"--user", strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()),
 		"--memory", "192m", "--cpus", "1", "--pids-limit", "64",
 		"--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/data:rw,noexec,nosuid,size=32m",
