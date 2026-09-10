@@ -39,6 +39,11 @@ func (h *edgeChainHub) docker(t *testing.T, args ...string) string {
 
 func newEdgeChainHub(t *testing.T, board, session string) *edgeChainHub {
 	t.Helper()
+	return newEdgeChainHubForEvent(t, 100, board, session)
+}
+
+func newEdgeChainHubForEvent(t *testing.T, eventID int64, board, session string) *edgeChainHub {
+	t.Helper()
 	binary := edgeChainBinary(t, "EDGE_HUB_BINARY")
 	image := os.Getenv("EDGE_REDIS_IMAGE")
 	if !regexp.MustCompile(`^sha256:[0-9a-f]{64}$`).MatchString(image) {
@@ -50,7 +55,7 @@ func newEdgeChainHub(t *testing.T, board, session string) *edgeChainHub {
 	name := "chr-side-002-chain-" + strings.ToLower(rand.Text())
 	listeners, _ := json.Marshal([]map[string]any{{
 		"name": "edge-chain", "adapter": "edge_observation_v1", "host": "0.0.0.0", "port": "44004", "ack_mode": "id", "max_connections": 8,
-		"edge_bindings": []map[string]any{{"board": board, "event_id": 100, "source_session_id": session}},
+		"edge_bindings": []map[string]any{{"board": board, "event_id": eventID, "source_session_id": session}},
 	}})
 	h.id = h.docker(t, "create", "--pull", "never", "--name", name, "--label", "task=CHR-SIDE-002", "--network", "none",
 		"--user", strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()),

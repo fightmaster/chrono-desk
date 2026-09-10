@@ -211,6 +211,7 @@ func edgeChainWait(t *testing.T, label string, check func() bool) {
 
 type edgeChainSource struct {
 	profile, binary, dir, admin, reader, config string
+	csvPath, eventID                            string
 	stopProcess                                 func(*testing.T)
 }
 
@@ -218,6 +219,7 @@ func newEdgeChainSource(t *testing.T, profile, hub, desk string) *edgeChainSourc
 	t.Helper()
 	s := &edgeChainSource{profile: profile, binary: edgeChainBinary(t, "EDGE_SIDECAR_BINARY"), dir: t.TempDir(), admin: "127.0.0.1:" + edgeTestPort(t), reader: "127.0.0.1:" + edgeTestPort(t)}
 	s.config = filepath.Join(s.dir, "config")
+	s.csvPath, s.eventID = filepath.Join(s.dir, "csv"), "100"
 	db := filepath.Join(s.dir, "sidecar.db")
 	var data []byte
 	if profile == "plate" {
@@ -451,7 +453,7 @@ func (s *edgeChainSource) read(t *testing.T, n int) {
 	// Each new file exercises Feibot's multi-file event capture, not a direct
 	// injection of a normalized observation into the sidecar database.
 	data := fmt.Sprintf("E200%04d:%s,port=1,rssi=28\n", n, now.Format("2006-01-02_15:04:05.000"))
-	if err := os.WriteFile(filepath.Join(s.dir, "csv", fmt.Sprintf("U659_%d_00100.csv", n)), []byte(data), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(s.csvPath, fmt.Sprintf("U659_%d_%05s.csv", n, s.eventID)), []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
