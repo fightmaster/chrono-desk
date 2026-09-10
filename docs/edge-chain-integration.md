@@ -198,11 +198,20 @@ built with it; race-instrumented results are not comparable throughput evidence.
 The first measured source checkpoint uses sidecar `3c0696e`. Feibot passes this
 short gate after independent worker scheduling and single-connection SQLite
 queueing; plate still fails the live rate/capture deadline. Do not weaken the
-threshold or label the combined test green: the plate callback currently commits
+threshold or label that combined test green: the plate callback at that checkpoint commits
 each frame separately, and at the input deadline only 7,338 of 15,000 offered
 frames were committed. The failing fixture is stopped after its deadline, so this
 is not evidence of a production loss incident or a completed plate replay.
 Keep the failing load gate separate from passing ordinary unit/race suites.
+
+The later core `cc8efd6`/sidecar `b032615` checkpoint passes this same unchanged
+gate for both profiles (167.644 s combined). Bounded raw capture and ACK commits
+retain WAL/FULL durability and per-frame clock evidence. Maximum healthy
+backlog/rate is 1.1 s Feibot and 0.4 s plate, with all 15,000 facts preserved and
+both queues recovered without new input. Source RSS is 25.35/24.20 MiB. See
+chrono-docs `reports/edge-source-batching-and-startup-2026-09-10.md` for exact
+artifacts, intermediate failures and limits. This is not actual receiver-chain
+revalidation on the new binaries, maximum throughput or Raspberry Pi acceptance.
 
 ## Optional central MySQL / RUN5 gate
 
