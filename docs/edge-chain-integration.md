@@ -143,6 +143,13 @@ assertions. It never inserts or updates source rows directly. All settings
 changes go through the application's normal local commands or the synthetic
 Feibot configuration reload boundary. Production services/binaries are unchanged.
 
+The source helper waits for the actual plate TCP socket before sending its first
+byte, using the existing bounded receiver-readiness helper. The local form saves
+desired intake state; it does not promise that asynchronous socket binding has
+already completed. A refused connection may retry during this readiness window;
+partial/failed writes are never hidden by replay. The source-load timer still
+starts only after preparation, so its offered rate and lag limits are unchanged.
+
 Operationally, "automatic resend" applies to the selected session. Switching
 events holds old queues; it does not discard them or reinterpret their event.
 Restore receivers for the original event, select that historical session and
@@ -212,6 +219,54 @@ both queues recovered without new input. Source RSS is 25.35/24.20 MiB. See
 chrono-docs `reports/edge-source-batching-and-startup-2026-09-10.md` for exact
 artifacts, intermediate failures and limits. This is not actual receiver-chain
 revalidation on the new binaries, maximum throughput or Raspberry Pi acceptance.
+
+## Optional real plate browser workflow
+
+`TestPlateLocalBrowserWorkflow` uses `edgeintegration edgebrowser`, the same
+actual sidecar subprocess fixture and an installed Node 22+ / Chromium binary.
+It needs no Docker and installs no browser or npm package:
+
+```sh
+export EDGE_NODE_BINARY=/absolute/node22/bin/node
+export EDGE_BROWSER_BINARY=/absolute/chromium/chrome
+export EDGE_BROWSER_ARTIFACTS=/existing/private/output-directory
+go test -tags 'edgeintegration edgebrowser' ./internal/service \
+  -run '^TestPlateLocalBrowserWorkflow$' -count=1 -v -timeout=3m
+```
+
+The script controls Chromium through its local debugging socket; the actual
+embedded HTML/JS and sidecar HTTP handlers are used, without a frontend API mock
+or injected replacement page. It verifies no-access refusal and the shared
+Basic key path, then uses a synthetic header key for page actions. It exercises
+360/390/768-pixel layouts, the visible startup guide, settings save, stale revision
+and missing-CSRF refusal, the phone-time touch button, date confirmation and
+intake enable/disable. After a process restart it checks saved settings, reviews
+an intentionally 12-hour-old time-only capture using preview then explicit
+single-record confirmation, and compares unchanged raw bytes, clock samples and
+previously accepted observations. A second restart must preserve input pause,
+both independent retry queues and exported facts. No new read is needed to
+inspect or recover state.
+
+Both destination addresses are reserved rejecting local listeners: this tests
+visible retry persistence, not recipient ACKs or hardware. The original receiver
+chain remains its separate gate. No host/reader clock or NTP command is submitted.
+Browser request interception allows only this fixture's exact loopback origin
+and allowlists the harmless application actions; hardware and external requests
+fail the test. DNS/proxy flags also restrict browser background networking.
+The runtime may inspect its normal local OS clock service, but the test never
+changes it or assumes it supplied date evidence.
+
+Screenshots and saved **synthetic** settings are retained in a newly created
+directory only when `EDGE_BROWSER_ARTIFACTS` is explicitly set; otherwise testing
+cleanup removes them. Browser profiles, subprocesses, temporary databases and
+reserved listeners are always closed. This is browser emulation, not an iPhone,
+Android handset, native WebKit, physical reboot or installed-device acceptance.
+Use both full Chromium and headless shell explicitly when recording evidence.
+The Desk frontend smoke is independent and uses a synthetic API, not the plate
+process. It now waits for explicit UI completion over inherited Chromium debug
+pipes and closes its own browser, instead of relying on `--dump-dom` process
+termination. Both full Chrome and headless shell must still pass that separate
+gate; a passing plate workflow alone does not prove the Desk UI.
 
 ## Optional central MySQL / RUN5 gate
 

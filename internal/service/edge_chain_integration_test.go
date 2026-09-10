@@ -371,6 +371,14 @@ func (s *edgeChainSource) status() (edgeChainSourceStatus, error) {
 
 func (s *edgeChainSource) waitACKs(t *testing.T, hub, desk int) {
 	t.Helper()
+	defer func() {
+		if t.Failed() {
+			// This fixture owns only synthetic state. Preserve retry/control
+			// evidence before cleanup instead of inferring a cause from timeout.
+			data, code, err := s.request(http.MethodGet, "/api/status", nil)
+			t.Logf("source state at ACK timeout: status=%d err=%v body=%s", code, err, data)
+		}
+	}()
 	var last edgeChainSourceStatus
 	edgeChainWait(t, fmt.Sprintf("sidecar ACKs hub=%d desk=%d", hub, desk), func() bool {
 		var err error
@@ -441,10 +449,7 @@ func (s *edgeChainSource) read(t *testing.T, n int) {
 	t.Helper()
 	now := time.Now().UTC()
 	if s.profile == "plate" {
-		conn, err := net.DialTimeout("tcp", s.reader, time.Second)
-		if err != nil {
-			t.Fatal(err)
-		}
+		conn := s.connectReader(t)
 		defer conn.Close()
 		_ = conn.SetWriteDeadline(time.Now().Add(time.Second))
 		if _, err := fmt.Fprintf(conn, "{\"RTC\":%q,\"EPC\":\"E200%04d\",\"ANT\":1}\n", now.Format("15:04:05.000"), n); err != nil {
@@ -458,6 +463,18 @@ func (s *edgeChainSource) read(t *testing.T, n int) {
 	if err := os.WriteFile(filepath.Join(s.csvPath, fmt.Sprintf("U659_%d_%05s.csv", n, s.eventID)), []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func (s *edgeChainSource) connectReader(t *testing.T) net.Conn {
+	t.Helper()
+	host, port, err := net.SplitHostPort(s.reader)
+	if err != nil || host != "127.0.0.1" {
+		t.Fatal("reader fixture must use loopback")
+	}
+	// Saving the desired input mode is not a synchronous TCP-bind contract.
+	// Reuse the same bounded readiness wait as the Desk receiver fixtures.
+	// Only connection establishment retries; a write failure remains fatal.
+	return edgeDial(t, port)
 }
 
 func edgeChainBinary(t *testing.T, key string) string {

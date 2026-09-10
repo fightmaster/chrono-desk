@@ -244,11 +244,7 @@ func newEdgeLoadInput(t *testing.T, source *edgeChainSource) *edgeLoadInput {
 	t.Helper()
 	w := &edgeLoadInput{source: source}
 	if source.profile == "plate" {
-		var err error
-		w.conn, err = net.DialTimeout("tcp", source.reader, time.Second)
-		if err != nil {
-			t.Fatal(err)
-		}
+		w.conn = source.connectReader(t)
 	}
 	t.Cleanup(func() { w.close(t) })
 	return w

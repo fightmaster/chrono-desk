@@ -178,9 +178,15 @@ Go receiver tests or a hardware/handset run.
 
 `CHRONO_DESK_BROWSER` may select an installed Chromium headless-shell binary.
 The harness blocks external DNS/proxy traffic while exempting loopback; it never
-forwards requests to the Internet. Here headless shell passes both smokes; the
-installed full Chrome times out, so no full-Chrome/native-WebKit acceptance is
-claimed. Vulnerability scans were not freshly accepted: public govulncheck egress
+forwards requests to the Internet. The harness waits for the rendered shell and
+explicit action completion through inherited Chromium debug pipes, then closes
+its own process. It no longer depends on full Chrome exiting `--dump-dom` after
+asynchronous work; exception and missing/incomplete-mount failures remain fatal.
+The opt-in harness regression gate is
+`node --test scripts/runtime-smoke.test.mjs` from `frontend/`, using the same
+`CHRONO_DESK_BROWSER`. It uses synthetic HTML to test success/failure handling,
+not as a substitute for the two built-product smokes. Neither Chromium engine
+proves native WebKit acceptance. Vulnerability scans were not freshly accepted: public govulncheck egress
 was denied, and npm dependencies were installed from the offline cache without
 audit. These limitations are not a green `make quality` or a release waiver.
 

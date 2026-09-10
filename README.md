@@ -159,6 +159,10 @@ the built bundle in headless Chromium, and only then runs backend tests, race
 detection, formatting, vet and staticcheck before either release artifact.
 The runtime smoke checks the rendered application shell and uncaught browser
 errors; a successful Vite compilation alone is not release evidence.
+It waits for explicit UI completion through private inherited Chromium debug
+pipes, rather than relying on `--dump-dom` to exit. The optional harness failure
+regressions run with `node --test scripts/runtime-smoke.test.mjs` in `frontend/`
+and the same `CHRONO_DESK_BROWSER`; they do not replace the built-product smoke.
 The version API exposes `member_time_version=member-time-v2-start-provenance`;
 manual and unclassified starts remain protected while machine-owned starts
 trace their race default or immutable observation.

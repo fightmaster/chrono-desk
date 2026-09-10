@@ -90,40 +90,104 @@ const browserArgs = [
   '--proxy-bypass-list=127.0.0.1;localhost',
   '--no-first-run',
   '--user-data-dir=' + profile,
-  '--virtual-time-budget=' + (edgeFixture ? 10000 : 3000),
-  '--dump-dom',
-  `http://127.0.0.1:${address.port}`
+  '--remote-debugging-pipe',
+  'about:blank'
 ]
 
-const child = spawn(browser, browserArgs, {stdio: ['ignore', 'pipe', 'pipe']})
-const watchdog = setTimeout(() => child.kill('SIGKILL'), 20000)
+// Inspect completion explicitly. Full Chrome need not terminate a --dump-dom
+// process when the SPA has completed its asynchronous HTTP/UI actions.
+// The inherited pipes need no WebSocket dependency or listening debug port.
+const child = spawn(browser, browserArgs, {stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe']})
 let documentHtml = ''
 let browserLog = ''
-
-child.stdout.setEncoding('utf8')
-child.stderr.setEncoding('utf8')
-child.stdout.on('data', chunk => { documentHtml += chunk })
-child.stderr.on('data', chunk => { browserLog += chunk })
-
-const exitCode = await new Promise((resolveExit, rejectExit) => {
-  child.once('error', rejectExit)
-  child.once('close', resolveExit)
+let closed = false, nextID = 0, session, input = ''
+const pending = new Map(), exceptions = []
+const delay = ms => new Promise(resolveDelay => setTimeout(resolveDelay, ms))
+const failPending = error => {
+  for (const call of pending.values()) { clearTimeout(call.timer); call.reject(error) }
+  pending.clear()
+}
+const exited = new Promise(resolveExit => {
+  child.once('close', (code, signal) => {
+    closed = true
+    failPending(new Error(`Chromium closed before command completion: ${code}/${signal}`))
+    resolveExit()
+  })
 })
-clearTimeout(watchdog)
+child.once('error', failPending)
+child.stdio[3].on('error', failPending)
+child.stdio[4].on('error', failPending)
+child.stderr.setEncoding('utf8')
+child.stderr.on('data', chunk => { browserLog = (browserLog + chunk).slice(-16000) })
+child.stdio[4].setEncoding('utf8')
+child.stdio[4].on('data', chunk => {
+  input += chunk
+  for (let end; (end = input.indexOf('\0')) !== -1;) {
+    const frame = input.slice(0, end)
+    input = input.slice(end + 1)
+    if (!frame) continue
+    let message
+    try { message = JSON.parse(frame) } catch (error) { failPending(error); continue }
+    if (message.method === 'Runtime.exceptionThrown') {
+      exceptions.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text)
+    }
+    const call = pending.get(message.id)
+    if (!call) continue
+    pending.delete(message.id); clearTimeout(call.timer)
+    if (message.error) call.reject(new Error(message.error.message)); else call.resolve(message.result)
+  }
+})
+const send = (method, params = {}, targetSession = session) => new Promise((resolveCall, rejectCall) => {
+  if (closed) { rejectCall(new Error('Chromium already closed')); return }
+  const id = ++nextID
+  const timer = setTimeout(() => {
+    pending.delete(id); rejectCall(new Error(`Chromium command timeout: ${method}`))
+  }, 5000)
+  pending.set(id, {resolve: resolveCall, reject: rejectCall, timer})
+  child.stdio[3].write(JSON.stringify({id, method, params, ...(targetSession ? {sessionId: targetSession} : {})}) + '\0')
+})
+const evaluate = async expression => {
+  const result = await send('Runtime.evaluate', {expression, returnByValue: true})
+  if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text)
+  return result.result.value
+}
 
-await new Promise(resolveClose => server.close(resolveClose))
-rmSync(profile, {recursive: true, force: true})
-
-if (exitCode !== 0) {
-  throw new Error(`Chromium exited with ${exitCode}\n${browserLog}`)
+try {
+  const {targetId} = await send('Target.createTarget', {url: 'about:blank'})
+  session = (await send('Target.attachToTarget', {targetId, flatten: true})).sessionId
+  await send('Page.enable')
+  await send('Runtime.enable')
+  await send('Page.navigate', {url: `http://127.0.0.1:${address.port}`})
+  const deadline = Date.now() + 15000
+  while (Date.now() < deadline) {
+    const state = await evaluate(`({ready: !!document.querySelector('[data-chrono-desk-ready="true"]'), edge: document.body?.dataset.edgeSmoke, error: document.body?.dataset.edgeSmokeError})`)
+    if (exceptions.length || state.edge === 'failed') throw new Error(state.error || exceptions.join('\n'))
+    if (state.ready && (!edgeFixture || state.edge === 'passed')) {
+      documentHtml = await evaluate('document.documentElement.outerHTML')
+      break
+    }
+    await delay(50)
+  }
+  if (!documentHtml) throw new Error('Timed out waiting for the rendered shell/UI actions')
+} catch (error) {
+  throw new Error(`${error.message}\n${browserLog}\nRequests: ${JSON.stringify(requests)}`)
+} finally {
+  // Join only this smoke's browser before removing its private profile.
+  if (!closed) child.kill('SIGTERM')
+  const killTimer = setTimeout(() => { if (!closed) child.kill('SIGKILL') }, 2000)
+  await exited
+  clearTimeout(killTimer)
+  server.closeAllConnections()
+  await new Promise(resolveClose => server.close(resolveClose))
+  rmSync(profile, {recursive: true, force: true})
 }
 
 if (!documentHtml.includes('data-chrono-desk-ready="true"')) {
   throw new Error(`Chrono Desk shell did not mount\n${browserLog}\nRequests: ${JSON.stringify(requests)}\n${documentHtml.slice(-8000)}`)
 }
 
-if (/Uncaught (Error|TypeError|SyntaxError)/.test(browserLog)) {
-  throw new Error(`Uncaught frontend exception\n${browserLog}`)
+if (exceptions.length || /Uncaught (Error|TypeError|SyntaxError)/.test(browserLog)) {
+  throw new Error(`Uncaught frontend exception\n${exceptions.join('\n')}\n${browserLog}`)
 }
 
 if (edgeFixture) edgeFixture.verify(documentHtml)
