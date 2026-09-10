@@ -389,3 +389,41 @@ assertions compare six raw/projection/feed/export records to Desk's original
 source journal. Native v3 still has no ownership of imported edge data. This
 gate covers source grant/revoke transactions, not HTTP/admin CSRF, general
 member progression or the separately tracked event epoch mechanism.
+
+### Real HTTP administration and downloads
+
+`TestEdgeChainCentralHTTPSourceAdministration` additionally requires the RUN5
+checkout's built `public/build/manifest.json` and assets:
+
+```sh
+go test -tags 'edgeintegration edgecentralintegration' ./internal/service \
+  -run '^TestEdgeChainCentralHTTPSourceAdministration$' -count=1 -v -timeout=5m
+go test -race -tags 'edgeintegration edgecentralintegration' ./internal/service \
+  -run '^TestEdgeChainCentralHTTPSourceAdministration$' -count=1 -v -timeout=5m
+```
+
+The guarded fixture seeds two synthetic existing-site users and a second event.
+It does not install an authentication bypass or test route. A PHP built-in HTTP
+server runs the tracked `public/index.php` and normal middleware, with file
+sessions inside the disposable container. `cli-server` requests exercise CSRF;
+they are not Laravel's usual in-process console/testing requests. The real login
+form and cookies establish each browser session. Separate explicit site
+activation/login is required for the cross-site test user.
+
+The existing network-none Hub namespace also contains the HTTP server. Each
+finite request is serialized through a bounded `docker exec -i ... nc` exchange
+and parsed as an actual HTTP response. Laravel generates every status, header,
+cookie and body; the bridge supplies none of them. Finite stdin is important:
+the persistent RFID tunnel cannot delimit a close-framed HTTP response. No host
+port, DNS/public connection, production credential or extra application service
+is needed. Production HTTP/reader behavior and timeouts are unchanged.
+
+The scenario verifies guest and missing-permission refusal, missing/wrong/stale
+CSRF rejection, exact board matching, cross-event/cross-site/public-host refusal,
+escaped and authenticated audit, idempotent form retry, and HTTP revoke/resume
+controlling actual Go admission and retained Redis work. It generates the real
+event API token through the existing admin form, checks missing/wrong/other-event
+token refusal, then downloads admin export and API feed/export. Their original
+source metadata is compared with the Desk journal and imported without an
+outbound echo. This is HTTP/schema acceptance, not a browser rendering, TLS,
+physical-device, two-event backlog-switch or standalone release gate.

@@ -97,6 +97,8 @@ type edgeChainCentralSnapshot struct {
 	Finished       int              `json:"finished"`
 	Actions        []string         `json:"actions"`
 	BindingEnabled bool             `json:"binding_enabled"`
+	SourceBindings []map[string]any `json:"source_bindings"`
+	SourceActions  []map[string]any `json:"source_actions"`
 	Export         json.RawMessage  `json:"export"`
 	Feed           struct {
 		Items []struct {
@@ -163,7 +165,7 @@ func newEdgeChainCentral(t *testing.T, hub *edgeChainHub, board, session string)
 	// The helper is copied explicitly to support review before its commit.
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	defer cancel()
-	archive := exec.CommandContext(ctx, "git", "-C", root, "archive", "HEAD", "app", "bootstrap", "config", "database", "lang", "resources", "routes", "artisan", "composer.json", "composer.lock")
+	archive := exec.CommandContext(ctx, "git", "-C", root, "archive", "HEAD", "app", "bootstrap", "config", "database", "lang", "resources", "routes", "public/index.php", "artisan", "composer.json", "composer.lock")
 	data, err := archive.Output()
 	if err != nil {
 		t.Fatalf("archive RUN5 tracked source: %v", err)
