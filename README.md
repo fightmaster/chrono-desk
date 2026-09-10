@@ -94,6 +94,9 @@ v3/site pull; enabled queues resume at app startup. This is unpublished and
 **not yet accepted end to end with production Hub/central storage**;
 it is not a complete new sidecar/Desk release. See the [receiver guide](docs/edge-receiver.md)
 for operator controls, persistence, tests and dependency/release boundaries.
+The opt-in [local receiver-chain gate](docs/edge-chain-integration.md) connects
+both actual sidecar profiles, Hub/Redis and Desk's SQLite/relay services; it is
+separate from central MySQL/site, field and standalone-release acceptance.
 
 Photo-series completion (CHR-CAM-004, v0.4.4): a Chrono Cam track may arrive
 before its burst is finished. Subsequent polls now append missing frames in one

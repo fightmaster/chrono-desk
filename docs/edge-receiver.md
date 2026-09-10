@@ -155,6 +155,13 @@ unchanged event-export, native reader and v3 synchronization versions.
 
 ## Verification and release boundary
 
+The opt-in Linux [receiver-chain suite](edge-chain-integration.md) now exercises
+both actual sidecar profiles against Hub main/Redis and Desk's real listener,
+SQLite/projection and relay. It covers independent outages and unchanged-payload
+backlog delivery after a sidecar process restart. The Hub connection uses a
+transparent Docker byte tunnel, not synthetic ACKs. This is not central MySQL/
+RUN5 feed, field, UI-rendering or throughput acceptance.
+
 Use pinned Go 1.24.13 for Desk. Development currently requires a `go.work` with
 this repository and the unpublished core feature tree (`f29ef24` or its reviewed
 successor). The unchanged `go.mod` still points to released core v0.3.0, which
