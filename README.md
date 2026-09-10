@@ -2,9 +2,15 @@
 
 Offline-first desktop companion for the run5 race-timing platform. When there is no
 internet at a competition site, chrono-desk acts as a local "server analogue": it imports
-an event exported from the run5 site, ingests RFID logs (from a flash drive in v1, over
-TCP from Feibot readers later), recalculates results offline, shows live standings and
+an event exported from the run5 site, ingests RFID logs from files and live
+Feibot TCP, recalculates results offline, shows live standings and
 top-3, and exports printable protocols to Excel.
+
+The unpublished 0.5.0 candidate (CHR-SIDE-002) adds the owned edge-v1 receiver,
+source-preserving relay and local controls. Its native bundle version matches
+`VERSION`; it is not a reissued 0.4.4 build. Native Feibot input and existing
+site schema versions stay supported. See [edge receiver](docs/edge-receiver.md)
+for the required core publication and receiver-first rollout boundaries.
 
 The site stays the source of truth. Synchronization is bidirectional: the desktop pulls
 the current event export and pushes local edits/manual finishes plus only the raw
