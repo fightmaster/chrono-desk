@@ -37,6 +37,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/events/{id}/live/edge/start", s.handleEdgeStart)
 	mux.HandleFunc("POST /api/events/{id}/live/edge/stop", s.handleEdgeStop)
 	mux.HandleFunc("GET /api/events/{id}/live/edge/journal", s.handleEdgeJournal)
+	mux.HandleFunc("GET /api/events/{id}/live/edge/relay", s.handleEdgeRelayStatus)
+	mux.HandleFunc("PUT /api/events/{id}/live/edge/relay", s.handleEdgeRelayConfigure)
 	mux.HandleFunc("GET /api/events/{id}/live/feed", s.handleLiveFeed)
 	mux.HandleFunc("POST /api/events/{id}/members/{memberID}/manual-finish", s.handleManualFinish)
 	mux.HandleFunc("GET /api/events/{id}/manual-results", s.handleListManualResults)

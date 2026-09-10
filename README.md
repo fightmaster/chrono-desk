@@ -88,7 +88,10 @@ read-only LAN server and is never included in its QR codes.
 
 CHR-SIDE-002 feature work adds an opt-in owned edge-v1 receiver next to native
 Feibot, with explicit event/session provisioning and a durable source-preserving
-relay journal. This is unpublished and **not yet connected to central relay**;
+relay journal and automatic forwarding to an explicitly configured Hub edge
+input. The relay preserves the original packet and is independent of native
+v3/site pull; enabled queues resume at app startup. This is unpublished and
+**not yet accepted end to end with production Hub/central storage**;
 it is not a complete new sidecar/Desk release. See the [receiver guide](docs/edge-receiver.md)
 for operator controls, persistence, tests and dependency/release boundaries.
 

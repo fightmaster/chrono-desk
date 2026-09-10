@@ -160,8 +160,13 @@ It validates explicit event/board/source-session provisioning. New local edge
 raw input, its full source envelope in `edge_observation_outbox` and initial
 shared-engine projection commit atomically before ACK. Existing rows keep their
 judge flags and origin; imports never acquire relay ownership. This separate
-journal must not enter the existing Desk-owned v3 batch. Central relay support
-is still pending, not implicitly provided by the native synchronization path.
+journal must not enter the existing Desk-owned v3 batch. `EdgeRelayManager`
+forwards its immutable packets through the shared `tcp.LineClient` to an explicit
+Hub edge input. Saved per-event settings resume independently of input/site pull;
+audited revisions and per-row leases fence stale configuration and ACKs. Missing
+ACKs remain pending with persisted bounded retry. No new database, producer
+identity, account system or Internet device-command path is introduced. The relay
+is locally implemented, not yet cross-process/field accepted with central storage.
 Native Feibot input remains independent and unchanged by default. See the
 [receiver guide](edge-receiver.md) for limits and compatibility boundaries.
 

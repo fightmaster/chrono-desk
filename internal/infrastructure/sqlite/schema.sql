@@ -157,10 +157,23 @@ CREATE TABLE IF NOT EXISTS edge_observation_outbox (
     state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'sent', 'acked', 'rejected')),
     created_at INTEGER NOT NULL,
     acked_at INTEGER,
-    rejection TEXT
+    rejection TEXT,
+    relay_endpoint TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at INTEGER,
+    lease_token TEXT,
+    lease_until INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_edge_outbox_event_state
     ON edge_observation_outbox(event_id, state, sequence);
+
+CREATE TABLE IF NOT EXISTS edge_relay_config (
+    event_id TEXT PRIMARY KEY REFERENCES events(id),
+    endpoint TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    revision INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS results (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

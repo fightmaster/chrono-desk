@@ -21,6 +21,11 @@ import (
 func edgeLiveFixture(t *testing.T) (*sqlite.Store, ingest.Event) {
 	t.Helper()
 	store := newTestStore(t)
+	return store, seedEdgeLiveFixture(t, store)
+}
+
+func seedEdgeLiveFixture(t *testing.T, store *sqlite.Store) ingest.Event {
+	t.Helper()
 	ctx := context.Background()
 	instant := time.Date(2026, 9, 10, 8, 20, 0, 0, time.UTC)
 	start := instant.Add(-20 * time.Minute).UnixMilli()
@@ -42,7 +47,7 @@ func edgeLiveFixture(t *testing.T) (*sqlite.Store, ingest.Event) {
 		Board: "Feibot:U659", EPC: "E280AABB", Time: instant.UnixMilli(), RTC: instant.Format(time.RFC3339Nano), Ant: 1, RSSI: -50,
 		ObservationVersion: 1, CaptureSourceID: "edge:U659:session-one", OriginSystem: "feibot-sidecar", OriginInstanceID: "sidecar-one", OriginSequence: 42}
 	event.ID = ingest.RFIDReadID(event.Board, event.EPC, event.Time, event.Ant)
-	return store, event
+	return event
 }
 
 type edgeAckConn struct {

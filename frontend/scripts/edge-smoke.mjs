@@ -3,7 +3,8 @@
 export function edgeSmokeFixture() {
   let running = false
   let bindings = [{board: 'Feibot:U659', source_session_id: 'initial-session'}]
-  const calls = {save: 0, start: 0, stop: 0}
+  const calls = {save: 0, start: 0, stop: 0, relay: 0}
+  let relay = {endpoint: '', enabled: false, revision: 0}
   const status = () => ({running: false, port: '', any_running: running, ips: ['127.0.0.1'], readers: [], edge: {running, port: '5085'}})
   return {
     async handle(request, response, path) {
@@ -25,6 +26,19 @@ export function edgeSmokeFixture() {
         }
         value = {bindings, relay_pending: 0}
       }
+      if (path.endsWith('/edge/relay')) {
+        if (request.method === 'PUT') {
+          let body = ''
+          for await (const chunk of request) body += chunk
+          const requested = JSON.parse(body)
+          if (requested.revision !== relay.revision || (requested.endpoint !== relay.endpoint && !requested.confirm_pending)) {
+            response.writeHead(409); response.end('{}'); return true
+          }
+          relay = {endpoint: requested.endpoint, enabled: requested.enabled, revision: relay.revision + 1}
+          calls.relay++
+        }
+        value = {config: relay, running: relay.enabled, progress: {pending: 3, acked: 0, attempts: 1, last_error: 'Проверочная ошибка связи'}, last_error: ''}
+      }
       if (path.endsWith('/edge/start')) { running = true; calls.start++; value = status() }
       if (path.endsWith('/edge/stop')) { running = false; calls.stop++; value = status() }
       response.writeHead(200, {'Content-Type': 'application/json'})
@@ -32,7 +46,7 @@ export function edgeSmokeFixture() {
       return true
     },
     verify(html) {
-      if (!html.includes('data-edge-smoke="passed"') || calls.save !== 1 || calls.start !== 1 || calls.stop !== 1 || bindings[0]?.source_session_id !== 'changed-session') {
+      if (!html.includes('data-edge-smoke="passed"') || calls.save !== 1 || calls.start !== 1 || calls.stop !== 1 || calls.relay !== 2 || relay.enabled || relay.endpoint !== '127.0.0.1:4004' || bindings[0]?.source_session_id !== 'changed-session') {
         throw new Error(`Edge UI did not complete save/start/stop: ${JSON.stringify(calls)}\n${html.slice(-4000)}`)
       }
     }
@@ -71,6 +85,22 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (!document.querySelector('details.edge fieldset').disabled) throw new Error('Active bindings remained editable');
     button('Остановить edge-вход').click();
     await wait(() => button('Запустить edge-вход') && !button('Запустить edge-вход').disabled);
+    const relaySection = await wait(() => document.querySelector('section[aria-label="Досылка sidecar в Hub"]'));
+    const relayAddress = await wait(() => {
+      const element = relaySection.querySelector('input[type="text"], input.input');
+      return element && !element.matches(':disabled') && element;
+    });
+    relayAddress.value = '127.0.0.1:4004'; relayAddress.dispatchEvent(new Event('input', {bubbles:true}));
+    relaySection.querySelector('input[type="checkbox"]').click();
+    await wait(() => button('Сохранить досылку').disabled);
+    (await wait(() => relaySection.querySelectorAll('input[type="checkbox"]')[1])).click();
+    await wait(() => !button('Сохранить досылку').matches(':disabled'));
+    button('Сохранить досылку').click();
+    await wait(() => relaySection.textContent.includes('Отправитель: включён') && !button('Сохранить досылку').matches(':disabled'));
+    relaySection.querySelector('input[type="checkbox"]').click();
+    button('Сохранить досылку').click();
+    await wait(() => relaySection.textContent.includes('Отправитель: остановлен') && !button('Сохранить досылку').matches(':disabled'));
+    if (!relaySection.textContent.includes('ожидают: 3')) throw new Error('Pause hid pending queue');
     document.body.dataset.edgeSmoke = 'passed';
   } catch (error) {
     document.body.dataset.edgeSmoke = 'failed'; document.body.dataset.edgeSmokeError = String(error);

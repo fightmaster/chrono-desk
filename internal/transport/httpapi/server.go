@@ -22,6 +22,7 @@ type Server struct {
 	events     *service.EventService
 	live       *service.LiveManager
 	syncPull   *service.SyncPullManager
+	edgeRelay  *service.EdgeRelayManager
 	photos     *service.PhotoManager
 	photoCache *service.PhotoCache
 	public     *publicweb.Server
@@ -59,6 +60,7 @@ func New(
 		logger:     logger,
 	}
 	s.syncPull = service.NewSyncPullManager(events, logger, 5*time.Second)
+	s.edgeRelay = service.NewEdgeRelayManager(events, logger, time.Second)
 
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
@@ -76,12 +78,16 @@ func (s *Server) BaseURL() string {
 
 // Start serves until Shutdown; it returns http.ErrServerClosed on clean stop.
 func (s *Server) Start() error {
+	if err := s.edgeRelay.ResumeConfigured(context.Background()); err != nil {
+		s.logger.Printf("resume edge relay queues: %v", err)
+	}
 	return s.httpServer.Serve(s.listener)
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.syncPull.StopAll()
 	s.live.StopAll()
+	s.edgeRelay.StopAll()
 	s.photos.StopAll()
 	return s.httpServer.Shutdown(ctx)
 }

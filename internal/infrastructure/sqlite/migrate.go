@@ -19,6 +19,9 @@ func migrate(db *sql.DB) error {
 	if err := addRfidObservationOrigin(db); err != nil {
 		return err
 	}
+	if err := addEdgeRelayDelivery(db); err != nil {
+		return err
+	}
 	if err := addObservationOutboxBatchID(db); err != nil {
 		return err
 	}
@@ -32,6 +35,26 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	return nil
+}
+
+func addEdgeRelayDelivery(db *sql.DB) error {
+	for _, column := range []struct{ name, typeSQL string }{
+		{"relay_endpoint", "TEXT"}, {"attempts", "INTEGER NOT NULL DEFAULT 0"},
+		{"next_attempt_at", "INTEGER NOT NULL DEFAULT 0"}, {"last_attempt_at", "INTEGER"},
+		{"lease_token", "TEXT"}, {"lease_until", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('edge_observation_outbox') WHERE name=?`, column.name).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			if _, err := db.Exec(`ALTER TABLE edge_observation_outbox ADD COLUMN ` + column.name + ` ` + column.typeSQL); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_edge_outbox_due ON edge_observation_outbox(event_id,state,next_attempt_at,sequence)`)
+	return err
 }
 
 func addProjectionRevisionFence(db *sql.DB) error {

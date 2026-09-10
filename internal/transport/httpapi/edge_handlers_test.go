@@ -44,10 +44,28 @@ func TestEdgeControlAPIRequiresAuthAndExplicitProvisioning(t *testing.T) {
 		}
 		return resp.StatusCode, data
 	}
-	for _, path := range []string{"/config", "/journal"} {
+	for _, path := range []string{"/config", "/journal", "/relay"} {
 		if code, _ := request("GET", path, "", false); code != 401 {
 			t.Fatalf("unprotected %s: %d", path, code)
 		}
+	}
+	if code, _ := request("PUT", "/relay", `{}`, false); code != 401 {
+		t.Fatal("unprotected relay configuration")
+	}
+	if code, _ := request("PUT", "/relay", `{"enabled":true}`, true); code < 400 {
+		t.Fatal("implicit relay settings accepted")
+	}
+	if code, _ := request("PUT", "/relay", `{"endpoint":"127.0.0.1:0","enabled":true,"revision":0}`, true); code < 400 {
+		t.Fatal("invalid relay target accepted")
+	}
+	if code, body := request("PUT", "/relay", `{"endpoint":"127.0.0.1:4004","enabled":true,"revision":0}`, true); code != 200 {
+		t.Fatalf("configure empty relay queue %d %s", code, body)
+	}
+	if code, _ := request("PUT", "/relay", `{"endpoint":"127.0.0.1:4004","enabled":false,"revision":0}`, true); code < 400 {
+		t.Fatal("stale relay revision accepted")
+	}
+	if code, body := request("PUT", "/relay", `{"endpoint":"127.0.0.1:4004","enabled":false,"revision":1}`, true); code != 200 || !strings.Contains(string(body), `"running":false`) {
+		t.Fatalf("pause relay %d %s", code, body)
 	}
 	if code, _ := request("POST", "/start", `{}`, true); code < 400 {
 		t.Fatal("started without binding")

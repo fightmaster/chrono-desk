@@ -84,12 +84,53 @@ unchanged; event/observation time and judge-state changes retain their current
 fences. Readback through recount queries preserves metadata without making it
 part of the checkpoint-selection algorithm.
 
-**Relay to the site is not yet connected in this implementation checkpoint.**
-The edge queue remains pending and the UI says so. It must not be smuggled into
-the current Desk-owned v3 batch, which cannot preserve this source envelope.
-Downstream relay/capability support, Hub and central metadata/binding preservation
-remain part of the central CHR-SIDE-002 task; they are not deferred to Internet
-device management. Do not deploy this receiver slice as a completed new release.
+## Source-preserving relay to Hub
+
+The local relay now sends only `edge_observation_outbox`, never a raw-table
+snapshot or a native Desk-owned v3 batch. It uses the shared `tcp.LineClient` to
+send the persisted normalized packet unchanged and requires its exact scoped
+edge ACK. The destination is an explicitly configured Hub edge TCP input, not
+an inferred site URL or native Feibot port. Hub and central source grants must
+allow the packet's original event/board/session. A Hub ACK means durable Hub
+queue acceptance, not a completed central database write or published result.
+
+In the edge section, **Досылка исходных пакетов в Hub** exposes the address,
+automatic-forwarding switch, pending/ACK/attempt counts and last error. Save
+explicitly; setting an address alone does not enable forwarding. Reassigning a
+pending queue to an address (including its first address) requires the displayed
+confirmation. It changes only the delivery target, never event/session/source
+or clock metadata. There is no default endpoint and no additional account system.
+
+Settings changes use a revision and the existing local audit. The manager joins
+its in-flight sender before applying a change; a stale/failed command restores
+the previously enabled sender instead of silently stopping it. A per-row random
+claim token and config revision also fence another app instance's stale ACK.
+Cross-process already-in-flight network delivery cannot be recalled; retries
+remain idempotent at the original event/session/observation identity.
+
+An enabled queue automatically resumes when Desk starts, without opening LIVE,
+starting the input listener, making new reads or configuring site pull. Paused
+settings remain paused. Application shutdown cancels and joins senders without
+disabling their saved settings. Up to 16 enabled event senders are allowed;
+excess restored configurations are reported and remain saved/pending, not dropped.
+Each sender has one in-flight frame, a 2-second exchange deadline, a 1-second
+idle poll and persisted exponential retry with jitter capped at 30 seconds.
+Errors do not expire a packet or block independent events. A 30-second storage
+lease permits bounded recovery after a crash; graceful cancellation attempts a
+bounded 2-second ACK/retry-state cleanup. Already ACKed rows are not replayed.
+Per-packet failures update bounded local diagnostics rather than emit raw payloads
+or an unbounded per-retry log stream.
+
+Migration adds `edge_relay_config` and delivery-attempt/lease fields to the
+existing edge journal. It does not create a target, enable delivery, alter raw
+observations, create another database or remove pending packets. ACK persistence
+never modifies raw/projection state. Imported observations never acquire a relay
+entry. Local judge commands still travel through their existing separate sync
+path; they are not encoded as edits to the original edge packet.
+
+This relay is implemented locally, not a field-accepted release. Actual Hub/
+central mixed-schema and cross-process outage/event-switch/resource acceptance
+remain CHR-SIDE-002 gates, not Internet device-management scope.
 
 ## Local control API
 
@@ -103,6 +144,8 @@ localhost bearer token.
 | `POST /start` | Optional `{"port":"5085"}`; numeric event, nonempty bindings and unoccupied port required |
 | `POST /stop` | Stop/join edge only; leave the event's site pull running if native ingest remains active |
 | `GET /journal?after=0` | Read-only envelope export, at most 500 rows, `next_after` and `may_have_more` |
+| `GET /relay` | Saved relay config, worker state and durable queue/attempt counters |
+| `PUT /relay` | Explicit `endpoint`, `enabled`, expected `revision`; optional `confirm_pending` for a changed target with pending packets |
 
 `GET /api/events/{id}/live/status` retains native fields and adds `edge` and
 `any_running`. The header uses the combined state; the edge input adds no extra
@@ -122,7 +165,8 @@ Checks: `go test ./...`, `go test -race ./...`, `go vet ./...`,
 `staticcheck ./...`, `go build ./...`, frontend production build, `npm run smoke`
 and `npm run smoke:edge`. The edge browser test drives the built Svelte screen
 against an authenticated synthetic localhost API, verifies unsaved-binding and
-active-edit guards and exact save/start/stop requests. It does not replace real
+active-edit guards and exact save/start/stop requests. It also checks relay
+enable/pause, pending-target confirmation and retained queue visibility. It does not replace real
 Go receiver tests or a hardware/handset run.
 
 `CHRONO_DESK_BROWSER` may select an installed Chromium headless-shell binary.

@@ -1,6 +1,7 @@
 <script>
   import {createEventDispatcher, onMount} from 'svelte'
   import {call} from './api.js'
+  import EdgeRelay from './EdgeRelay.svelte'
 
   export let eventId
   export let status = {}
@@ -64,8 +65,9 @@
     <button class="btn primary" disabled={busy || !loaded || bindingsDirty || bindings.length === 0} on:click={() => act('start')}>Запустить edge-вход</button>
   {/if}
   <p>Принято сообщений: {status.received || 0} · новых: {status.inserted || 0} · повторов: {status.duplicates || 0} · ошибок сохранения: {status.errors || 0}.</p>
-  <p>В отдельном журнале пересылки: {pending}. Пересылка edge-записей на сайт ещё не подключена в этой проверочной ветке; записи сохраняются, но не преобразуются в прежний формат Desk.</p>
+  <p>В отдельном журнале ожидают пересылки: {pending}. Исходные пакеты сохраняют своё происхождение и не преобразуются в прежний формат Desk.</p>
   <button class="btn" disabled={busy} on:click={() => load().catch(e => error = e.message)}>Обновить настройки и очередь</button>
+  <EdgeRelay {eventId} />
 </details>
 
 <style>
