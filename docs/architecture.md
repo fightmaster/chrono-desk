@@ -271,12 +271,14 @@ open only while on.
 - Resilience fallback: because the UI talks to an embedded HTTP API, the core can run
   headless with the UI in a regular browser if the webview misbehaves on old macOS.
 - **Private module provenance.** Release workflows fetch immutable
-  `timing-core v0.8.0` and `rfid-core v0.3.0` tags with one read-only
+  `timing-core v0.8.0` and `rfid-core v0.4.0` tags with one read-only
   `TIMING_MODULES_READ_TOKEN` GitHub Actions secret. It must be a GitLab
   Personal Access Token with access to both private projects: legacy
   `read_repository`, or fine-grained `Code: Download`. Fine-grained
   `Code: Read` does not authorize Git-over-HTTPS. A project Deploy Token cannot
-  span the independent repositories.
+  span the independent repositories. The edge branch currently pins the
+  unpublished v0.4.0 source candidate; its exact tag must be published before
+  remote release jobs. Local file-proxy verification is not tag publication.
   A missing/invalid secret fails in a dedicated preflight, and no local
   `replace` is permitted for either release dependency.
 - **Release identity.** `VERSION`, full Git revision and the source commit
