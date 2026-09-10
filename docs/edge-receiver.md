@@ -78,6 +78,24 @@ not rewritten to fit another source. One historical physical alias is resolved,
 while multiple candidates reject the whole page. Site disable state is applied
 to that existing row. Neither import path creates a relay/native outbox entry.
 
+The historical-ID rule works in both arrival orders. A native site row without
+edge metadata can follow an already received edge observation under a different
+old plate ID. The import retains the local ID, raw facts and original relay
+envelope; site disable/enable state applies to that same row. A duplicate feed
+item requests no timing work, while a state change targets its existing member.
+This matters even after a clean legacy-writer cutover: queue migration imports
+only pending rows, not every already-delivered historical observation.
+
+Physical alias matching is scoped to event, exact board, time, antenna, number
+and case-insensitive EPC. It applies only when incoming or stored edge metadata
+participates. Native-only different-ID history keeps its previous behavior.
+Any stored edge marker triggers validation, including partial/future metadata;
+such a row cannot be silently treated as native. The indexed lookup returns at
+most two candidates, prioritizing edge presence so additional native aliases
+cannot conceal ambiguity. This does not repair existing ambiguous history or
+change native v3 push identity rules. Feed cursor advancement remains part of
+projection evidence, even when a duplicate requires no projection work.
+
 Clock/session metadata is not an input to timing calculations. Adding only this
 metadata leaves both existing exact projection evidence and revision counters
 unchanged; event/observation time and judge-state changes retain their current
@@ -167,6 +185,12 @@ this repository and the unpublished core feature tree (`f29ef24` or its reviewed
 successor). The unchanged `go.mod` still points to released core v0.3.0, which
 does not contain the new API; an immutable new module pin and `GOWORK=off` build
 are required before a release. Development constants are not release provenance.
+
+Regression coverage includes `TestHistoricalNativeImport*` (both storage import
+paths, metadata/identity boundaries and rollback) and
+`TestEdgeLiveThenHistoricalPlateSiteImportKeepsOneFact` (actual core/Desk
+acceptance followed by synthetic HTTP feed or parsed export JSON, including
+disable/re-enable and unchanged source relay ownership).
 
 Checks: `go test ./...`, `go test -race ./...`, `go vet ./...`,
 `staticcheck ./...`, `go build ./...`, frontend production build, `npm run smoke`

@@ -23,7 +23,7 @@ func (s *Store) importObservation(ctx context.Context, incoming domain.RfidLog, 
 		return ObservationFeedMutation{}, err
 	}
 	existing, found, err := s.findRfidLog(ctx, incoming.ID)
-	if err == nil && !found && incoming.EdgeMetadata != nil {
+	if err == nil && !found {
 		existing, found, err = s.findPhysicalRfidLog(ctx, incoming)
 	}
 	if err != nil {
@@ -106,23 +106,38 @@ func samePhysicalObservation(a, b domain.RfidLog) bool {
 }
 
 func (s *Store) findPhysicalRfidLog(ctx context.Context, log domain.RfidLog) (domain.RfidLog, bool, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM rfid_logs WHERE event_id=? AND board=? AND time_ms=? AND ant=? AND epc=? COLLATE NOCASE AND number=? LIMIT 2`, log.EventID, log.Board, log.TimeMs, log.Ant, log.EPC, log.Number)
+	// Native site history can arrive after its edge counterpart under an old
+	// plate ID. Alias in either order only when an edge row participates; do not
+	// change native-only identity rules. Any edge marker counts, so incomplete
+	// or future metadata is validated below rather than downgraded to native.
+	// Edge-first ordering prevents LIMIT 2 from hiding an edge among native
+	// aliases. The existing physical index bounds the candidate lookup.
+	rows, err := s.db.QueryContext(ctx, `SELECT id,
+		(edge_version IS NOT NULL OR source_session_id IS NOT NULL OR identity_profile IS NOT NULL OR clock_evidence_id IS NOT NULL OR clock_quality IS NOT NULL) AS has_edge
+		FROM rfid_logs WHERE event_id=? AND board=? AND time_ms=? AND ant=? AND epc=? COLLATE NOCASE AND number=?
+		ORDER BY has_edge DESC, id LIMIT 2`, log.EventID, log.Board, log.TimeMs, log.Ant, log.EPC, log.Number)
 	if err != nil {
 		return domain.RfidLog{}, false, err
 	}
 	var ids []string
+	var edgeFound bool
 	for rows.Next() {
 		var id string
-		if err := rows.Scan(&id); err != nil {
+		var hasEdge bool
+		if err := rows.Scan(&id, &hasEdge); err != nil {
 			_ = rows.Close()
 			return domain.RfidLog{}, false, err
 		}
 		ids = append(ids, id)
+		edgeFound = edgeFound || hasEdge
 	}
 	err = rows.Err()
 	_ = rows.Close()
 	if err != nil {
 		return domain.RfidLog{}, false, err
+	}
+	if log.EdgeMetadata == nil && !edgeFound {
+		return domain.RfidLog{}, false, nil
 	}
 	if len(ids) > 1 {
 		return domain.RfidLog{}, false, errors.New("ambiguous legacy physical observation")
