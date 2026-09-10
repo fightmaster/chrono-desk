@@ -104,9 +104,9 @@ tag, binaries and immutable Redis image. No PHP/MySQL prerequisites are needed:
 
 ```sh
 go test -tags edgeintegration ./internal/service \
-  -run '^TestEdgeChainEventSwitchPreservesHeldBacklog$' -count=1 -v -timeout=4m
+  -run '^TestEdgeChainEventSwitchPreservesHeldBacklog$' -count=1 -v -timeout=6m
 go test -race -tags edgeintegration ./internal/service \
-  -run '^TestEdgeChainEventSwitchPreservesHeldBacklog$' -count=1 -v -timeout=4m
+  -run '^TestEdgeChainEventSwitchPreservesHeldBacklog$' -count=1 -v -timeout=6m
 ```
 
 Each Feibot/plate subtest creates two separately provisioned, isolated Hub/Redis
@@ -137,6 +137,18 @@ event ownership has changed.
    fields. Previously ACKed delivery timestamps and attempt counters must not
    change. End with two event-100 facts/results and one event-200 fact/result,
    no native outbox entries, and every source delivery ACKed.
+
+Only the final historical recovery permits up to two minutes: the real
+Feibot sender retains exponential row backoff (under 60 seconds with jitter)
+and may add a 30-second circuit interval before a due probe. A sidecar runtime
+regression records a real fifth-failure delay of 32.730208257 seconds, preserves
+it across same-configuration runtime restart and endpoint correction, and proves
+unchanged source/earlier ACK state when the row becomes due. The former blanket
+30-second wait was shorter than valid retry policy. Normal setup/live checks
+keep 30 seconds; the source-load rate/backlog/drain thresholds are unchanged.
+This is a bounded recovery test budget, not a new field-latency SLO or a change
+to production retry rules. Old timeout logs lacked the deadline snapshot, so
+the exact cause of that historical run cannot be reconstructed from this proof.
 
 The test reads sidecar SQLite using `mode=ro` and `query_only` solely for
 assertions. It never inserts or updates source rows directly. All settings

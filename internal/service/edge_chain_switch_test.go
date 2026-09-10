@@ -168,7 +168,11 @@ func TestEdgeChainEventSwitchPreservesHeldBacklog(t *testing.T) {
 			} else {
 				source.switchAction(t, "/api/config", url.Values{"destination_event_id": {"100"}, "timezone": {"UTC"}, "wire_protocol": {edge.Protocol}, "enabled_hub": {"on"}, "enabled_chrono": {"on"}, "endpoint_hub": {"tcp://" + oldHub.endpoint}})
 			}
-			source.waitACKs(t, 2, 2)
+			// Receiver correction does not reset persisted retry deadlines. The
+			// real sender may wait up to 60s (backoff+jitter), plus a 30s circuit
+			// interval. Allow that recovery and scheduling/ACK margin, not an
+			// arbitrary 30s deadline shorter than a legitimate fifth retry.
+			source.waitACKsWithin(t, 2, 2, 2*time.Minute)
 			source.assertHeld(t, 0)
 			assertEdgeChainRows(t, oldStore, 2)
 			assertEdgeChainRows(t, newStore, 1)

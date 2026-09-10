@@ -199,7 +199,12 @@ func assertEdgeChainRows(t *testing.T, store *sqlite.Store, want int) {
 
 func edgeChainWait(t *testing.T, label string, check func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	edgeChainWaitWithin(t, label, 30*time.Second, check)
+}
+
+func edgeChainWaitWithin(t *testing.T, label string, budget time.Duration, check func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(budget)
 	for time.Now().Before(deadline) {
 		if check() {
 			return
@@ -371,6 +376,11 @@ func (s *edgeChainSource) status() (edgeChainSourceStatus, error) {
 
 func (s *edgeChainSource) waitACKs(t *testing.T, hub, desk int) {
 	t.Helper()
+	s.waitACKsWithin(t, hub, desk, 30*time.Second)
+}
+
+func (s *edgeChainSource) waitACKsWithin(t *testing.T, hub, desk int, budget time.Duration) {
+	t.Helper()
 	defer func() {
 		if t.Failed() {
 			// This fixture owns only synthetic state. Preserve retry/control
@@ -380,7 +390,7 @@ func (s *edgeChainSource) waitACKs(t *testing.T, hub, desk int) {
 		}
 	}()
 	var last edgeChainSourceStatus
-	edgeChainWait(t, fmt.Sprintf("sidecar ACKs hub=%d desk=%d", hub, desk), func() bool {
+	edgeChainWaitWithin(t, fmt.Sprintf("sidecar ACKs hub=%d desk=%d", hub, desk), budget, func() bool {
 		var err error
 		last, err = s.status()
 		if err != nil || len(last.Destinations) != 2 {
