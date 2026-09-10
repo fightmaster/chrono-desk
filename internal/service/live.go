@@ -6,10 +6,12 @@ import (
 	"log"
 	"net"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"gitlab.com/fightmaster1/rfid-core/edge"
 	"gitlab.com/fightmaster1/rfid-core/ingest"
 	"gitlab.com/fightmaster1/rfid-core/tcp"
 	"gitlab.com/fightmaster1/rfid-core/telemetry"
@@ -19,10 +21,8 @@ import (
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
 )
 
-// Live TCP ingest: the desktop acts as a Feibot "server" on the venue LAN
-// (the reader supports two upload targets — the site stays primary, this app
-// is the second). Reads land in the event database and run through the same
-// derivation engine immediately, so the finish judge sees results live.
+// Native Feibot and owned edge transports use separate opt-in listeners on the
+// venue LAN. Both reuse core framing; source provenance differs by protocol.
 
 // LiveStats are monotonic counters for the status panel.
 type LiveStats struct {
@@ -47,6 +47,8 @@ type ReaderStatus struct {
 
 // LiveStatus is the JSON snapshot for the UI.
 type LiveStatus struct {
+	AnyRunning bool           `json:"any_running"`
+	Edge       EdgeLiveStatus `json:"edge"`
 	Running    bool           `json:"running"`
 	Port       string         `json:"port"`
 	IPs        []string       `json:"ips"`
@@ -64,37 +66,72 @@ type liveSession struct {
 	cancel  context.CancelFunc
 	stats   *LiveStats
 	metrics *telemetry.Registry
+	done    chan struct{}
 
 	mu       sync.Mutex
 	lastErr  string
 	finished bool
 }
 
-// LiveManager runs at most one listener per event.
+// LiveManager runs at most one listener per event and transport profile.
 type LiveManager struct {
 	logger *log.Logger
 
-	mu       sync.Mutex
-	sessions map[string]*liveSession
+	mu           sync.Mutex
+	sessions     map[string]*liveSession
+	edgeSessions map[string]*liveSession
+	closed       bool
 }
 
 func NewLiveManager(logger *log.Logger) *LiveManager {
-	return &LiveManager{logger: logger, sessions: map[string]*liveSession{}}
+	return &LiveManager{logger: logger, sessions: map[string]*liveSession{}, edgeSessions: map[string]*liveSession{}}
 }
 
 // Start launches a Feibot TCP listener for the event on 0.0.0.0:port.
 func (m *LiveManager) Start(store *sqlite.Store, eventID, port string) error {
+	return m.startListener(store, eventID, port, false)
+}
+
+func (m *LiveManager) startListener(store *sqlite.Store, eventID, port string, edgeMode bool) error {
 	if port == "" {
 		port = "5084"
+		if edgeMode {
+			port = "5085"
+		}
 	}
+	number, err := strconv.Atoi(port)
+	if err != nil || number < 1 || number > 65535 {
+		return fmt.Errorf("некорректный TCP-порт")
+	}
+	port = strconv.Itoa(number)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if s, ok := m.sessions[eventID]; ok && !s.isFinished() {
+	if m.closed {
+		return fmt.Errorf("приёмники приложения уже остановлены")
+	}
+	selected := m.sessions
+	if edgeMode {
+		selected = m.edgeSessions
+		id, err := strconv.ParseInt(eventID, 10, 64)
+		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != eventID {
+			return fmt.Errorf("edge требует числовой идентификатор события RUN5/Chrono")
+		}
+		bindings, err := store.EdgeBindings(context.Background(), eventID)
+		if err != nil {
+			return err
+		}
+		if len(bindings) == 0 {
+			return fmt.Errorf("сначала задайте board и сессию sidecar для события")
+		}
+	}
+	if s, ok := selected[eventID]; ok && !s.isFinished() {
 		return fmt.Errorf("приём для события уже запущен на порту %s", s.port)
 	}
-	for id, s := range m.sessions {
-		if !s.isFinished() && s.port == port {
-			return fmt.Errorf("порт %s уже занят событием %s", port, id)
+	for _, sessions := range []map[string]*liveSession{m.sessions, m.edgeSessions} {
+		for id, s := range sessions {
+			if !s.isFinished() && s.port == port {
+				return fmt.Errorf("порт %s уже занят событием %s", port, id)
+			}
 		}
 	}
 
@@ -103,28 +140,33 @@ func (m *LiveManager) Start(store *sqlite.Store, eventID, port string) error {
 		port: port, cancel: cancel,
 		stats:   &LiveStats{},
 		metrics: telemetry.NewRegistry(),
+		done:    make(chan struct{}),
 	}
-	m.sessions[eventID] = session
+	selected[eventID] = session
 
-	publisher := &livePublisher{
+	var publisher ingest.Publisher = &livePublisher{
 		store:   store,
 		proc:    processor.New(sqlite.NewProcessorRepo(store), m.logger, false),
 		eventID: eventID,
 		stats:   session.stats,
 	}
+	cfg := tcp.ListenerConfig{Name: "chrono-desk:" + eventID, Host: "", Port: port, Adapter: tcp.FeibotAdapter{}, AckMode: tcp.AckModeOK, MaxInFlight: 64, Metrics: session.metrics}
+	if edgeMode {
+		cfg.Name = "chrono-desk-edge:" + eventID
+		cfg.Adapter = tcp.EdgeAdapter{}
+		cfg.AckMode = tcp.AckModeID
+		cfg.MaxLineLenBytes = edge.MaxFrameBytes
+		cfg.MaxConnections = 16
+		cfg.ReadTimeout = 30 * time.Second
+		cfg.WriteTimeout = 5 * time.Second
+		publisher = &edgePublisher{store: store, eventID: eventID, stats: session.stats, logger: m.logger, onError: session.recordError}
+	}
 	pipeline := ingest.NewPipeline(publisher, 1, 256, 0)
 
 	go func() {
-		defer pipeline.Close()
-		err := tcp.ServeListener(ctx, tcp.ListenerConfig{
-			Name:        "chrono-desk:" + eventID,
-			Host:        "", // all interfaces — the reader connects over the LAN
-			Port:        port,
-			Adapter:     tcp.FeibotAdapter{},
-			AckMode:     tcp.AckModeOK,
-			MaxInFlight: 64,
-			Metrics:     session.metrics, // Feibot heartbeats → reader monitoring
-		}, pipeline)
+		defer close(session.done)
+		err := tcp.ServeListener(ctx, cfg, pipeline)
+		pipeline.Close()
 		session.finish(err)
 		if err != nil {
 			m.logger.Printf("live listener %s stopped: %v", eventID, err)
@@ -135,22 +177,24 @@ func (m *LiveManager) Start(store *sqlite.Store, eventID, port string) error {
 
 func (m *LiveManager) Stop(eventID string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if s, ok := m.sessions[eventID]; ok {
-		s.cancel()
-	}
+	sessions := []*liveSession{m.sessions[eventID], m.edgeSessions[eventID]}
+	m.mu.Unlock()
+	stopLiveSessions(sessions)
 }
 
 func (m *LiveManager) Status(eventID string) LiveStatus {
 	m.mu.Lock()
 	s, ok := m.sessions[eventID]
+	edgeSession := m.edgeSessions[eventID]
 	m.mu.Unlock()
 
-	status := LiveStatus{IPs: lanIPs()}
+	status := LiveStatus{IPs: lanIPs(), Edge: edgeSessionStatus(edgeSession)}
+	status.AnyRunning = status.Edge.Running
 	if !ok {
 		return status
 	}
 	status.Running = !s.isFinished()
+	status.AnyRunning = status.AnyRunning || status.Running
 	status.Port = s.port
 	status.Received = s.stats.Received.Load()
 	status.Inserted = s.stats.Inserted.Load()
@@ -180,11 +224,31 @@ func (m *LiveManager) Status(eventID string) LiveStatus {
 // StopAll shuts every listener down (app exit).
 func (m *LiveManager) StopAll() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, s := range m.sessions {
-		s.cancel()
+	m.closed = true
+	var sessions []*liveSession
+	for _, group := range []map[string]*liveSession{m.sessions, m.edgeSessions} {
+		for _, s := range group {
+			sessions = append(sessions, s)
+		}
+	}
+	m.mu.Unlock()
+	stopLiveSessions(sessions)
+}
+
+func stopLiveSessions(sessions []*liveSession) {
+	for _, s := range sessions {
+		if s != nil && s.cancel != nil {
+			s.cancel()
+		}
+	}
+	for _, s := range sessions {
+		if s != nil && s.done != nil {
+			<-s.done
+		}
 	}
 }
+
+func (s *liveSession) recordError(err error) { s.mu.Lock(); s.lastErr = err.Error(); s.mu.Unlock() }
 
 func (s *liveSession) finish(err error) {
 	s.mu.Lock()

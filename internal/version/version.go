@@ -5,6 +5,7 @@ package version
 
 import (
 	"gitlab.com/fightmaster1/rfid-core"
+	"gitlab.com/fightmaster1/rfid-core/edge"
 	timing "gitlab.com/fightmaster1/timing-core"
 )
 
@@ -30,6 +31,7 @@ type Info struct {
 	TimingCoreVersion      string `json:"timing_core_version"`
 	RFIDCoreVersion        string `json:"rfid_core_version"`
 	ReaderTransportVersion int    `json:"reader_transport_version"`
+	EdgeObservationVersion int    `json:"edge_observation_version"`
 	MatcherVersion         string `json:"matcher_version"`
 	MemberTimeVersion      string `json:"member_time_version"`
 	OutcomeVersion         string `json:"outcome_version"`
@@ -48,6 +50,7 @@ func Get() Info {
 		TimingCoreVersion:        timing.ModuleVersion,
 		RFIDCoreVersion:          rfidcore.Version,
 		ReaderTransportVersion:   rfidcore.ReaderTransportVersion,
+		EdgeObservationVersion:   edge.Version,
 		MatcherVersion:           timing.MatcherVersion,
 		MemberTimeVersion:        timing.MemberTimeVersion,
 		OutcomeVersion:           timing.ResultOutcomeVersion,

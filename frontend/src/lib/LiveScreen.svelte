@@ -2,6 +2,7 @@
   import {createEventDispatcher, onMount, onDestroy} from 'svelte'
   import {call, fmtTime, cleanToMs, timeStrToMs, memberMatches, imgURL} from './api.js'
   import PhotoLightbox from './PhotoLightbox.svelte'
+  import EdgeReceiver from './EdgeReceiver.svelte'
 
   export let eventId
   export let members = []
@@ -253,7 +254,7 @@
       <span class="stats mono dim">прочтений {status.received ?? 0} · новых {status.inserted ?? 0} · дублей {status.duplicates ?? 0} · ошибок {status.errors ?? 0}{#if status.last_read_ms} · последнее {fmtTime(status.last_read_ms)}{/if}</span>
       {#if !status.running}<input class="input mono port" bind:value={port}/>{/if}
       {#if status.running}
-        <button class="btn" on:click={stop}>Остановить</button>
+        <button class="btn" on:click={stop}>Остановить все входы</button>
       {:else}
         <button class="btn primary" on:click={start}>Запустить приём</button>
       {/if}
@@ -262,12 +263,15 @@
 
   {#if error}<p class="error">{error}</p>{/if}
 
+  <EdgeReceiver {eventId} status={status.edge || {}} ips={status.ips || []}
+                on:status={e => { status = e.detail; dispatch('status', status) }} />
+
   <div class="statusbar">
     <span class="dot" class:pulsing={status.running}></span>
     <span class="dim">
       {status.running ? `Приём на порту ${status.port}` : 'Ожидание heartbeat от считывателей…'}
       {#if status.ips?.length}
-        · Feibot (второй сервер): <b class="mono full">{status.ips[0]}:{status.port || port}</b>
+        · Нативный Feibot: <b class="mono full">{status.ips[0]}:{status.port || port}</b>
         {#if status.ips.length > 1}<span class="faint">(или {status.ips.slice(1).join(', ')})</span>{/if}
       {/if}
     </span>

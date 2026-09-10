@@ -31,6 +31,7 @@ frontend-ci:
 
 frontend-runtime-smoke:
 	cd frontend && npm run smoke
+	cd frontend && npm run smoke:edge
 
 ci-scripts:
 	bash scripts/ci/configure-private-timing-modules.test.sh

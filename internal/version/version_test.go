@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"gitlab.com/fightmaster1/rfid-core"
+	"gitlab.com/fightmaster1/rfid-core/edge"
 	timing "gitlab.com/fightmaster1/timing-core"
 )
 
@@ -24,6 +25,9 @@ func TestGetReflectsVars(t *testing.T) {
 	}
 	if got.RFIDCoreVersion != rfidcore.Version || got.ReaderTransportVersion != rfidcore.ReaderTransportVersion {
 		t.Fatalf("Get() reader core identity = %+v", got)
+	}
+	if got.EdgeObservationVersion != edge.Version {
+		t.Fatalf("Get() edge contract identity = %+v", got)
 	}
 	t.Logf("version=%s build=%s commit=%s date=%q", got.Version, got.Build, got.Commit, got.Date)
 }

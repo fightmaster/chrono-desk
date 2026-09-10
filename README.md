@@ -86,6 +86,12 @@ read-only LAN server and is never included in its QR codes.
 
 ## Development
 
+CHR-SIDE-002 feature work adds an opt-in owned edge-v1 receiver next to native
+Feibot, with explicit event/session provisioning and a durable source-preserving
+relay journal. This is unpublished and **not yet connected to central relay**;
+it is not a complete new sidecar/Desk release. See the [receiver guide](docs/edge-receiver.md)
+for operator controls, persistence, tests and dependency/release boundaries.
+
 Photo-series completion (CHR-CAM-004, v0.4.4): a Chrono Cam track may arrive
 before its burst is finished. Subsequent polls now append missing frames in one
 transaction without shifting the stored track/frame times or removing frames

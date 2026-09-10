@@ -30,8 +30,9 @@
     dispatch('select', m.id)
   }
 
-  $: liveSub = liveStatus.running
-    ? `приём · порт ${liveStatus.port || ''}`.trim()
+  $: receiving = liveStatus.any_running ?? liveStatus.running
+  $: liveSub = receiving
+    ? `приём · ${[liveStatus.running && liveStatus.port, liveStatus.edge?.running && liveStatus.edge.port].filter(Boolean).join(', ')}`.trim()
     : 'приём остановлен'
 </script>
 
@@ -72,7 +73,7 @@
   <button class="theme" on:click={toggleTheme}>{$theme === 'night' ? '☀ День' : '☾ Ночь'}</button>
 
   <button class="live" class:on={view === 'live'} on:click={() => dispatch('navigate', 'live')}>
-    <span class="dot" class:pulsing={liveStatus.running}></span>
+    <span class="dot" class:pulsing={receiving}></span>
     <span class="livetext">
       <span class="lbl">LIVE</span>
       <span class="sub">{liveSub}</span>

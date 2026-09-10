@@ -153,6 +153,18 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
    client. A server without v3 capability fails closed; deployed v1/v2 clients
    remain server-compatible during rollout.
 
+## Unpublished edge receiver (CHR-SIDE-002)
+
+An opt-in second live profile reuses `rfid-core/edge` and its shared TCP listener.
+It validates explicit event/board/source-session provisioning. New local edge
+raw input, its full source envelope in `edge_observation_outbox` and initial
+shared-engine projection commit atomically before ACK. Existing rows keep their
+judge flags and origin; imports never acquire relay ownership. This separate
+journal must not enter the existing Desk-owned v3 batch. Central relay support
+is still pending, not implicitly provided by the native synchronization path.
+Native Feibot input remains independent and unchanged by default. See the
+[receiver guide](edge-receiver.md) for limits and compatibility boundaries.
+
 ## Data flow (v1)
 
 ```

@@ -132,6 +132,30 @@ CREATE TABLE IF NOT EXISTS observation_outbox (
 CREATE INDEX IF NOT EXISTS idx_observation_outbox_state_sequence
     ON observation_outbox(state, origin_sequence);
 
+-- Explicit local provisioning; never inferred from the event currently open.
+CREATE TABLE IF NOT EXISTS edge_bindings (
+    event_id TEXT NOT NULL REFERENCES events(id),
+    board TEXT NOT NULL,
+    source_session_id TEXT NOT NULL,
+    PRIMARY KEY (event_id, board)
+);
+
+-- Locally received edge observations retain producer identity in their original
+-- owned-wire envelope. They must not enter the legacy desk-owned v3 batch.
+-- Imported or already-known observations do not acquire a relay journal row.
+CREATE TABLE IF NOT EXISTS edge_observation_outbox (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    observation_id TEXT NOT NULL UNIQUE REFERENCES rfid_logs(id),
+    event_id TEXT NOT NULL REFERENCES events(id),
+    payload_json TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'sent', 'acked', 'rejected')),
+    created_at INTEGER NOT NULL,
+    acked_at INTEGER,
+    rejection TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_edge_outbox_event_state
+    ON edge_observation_outbox(event_id, state, sequence);
+
 CREATE TABLE IF NOT EXISTS results (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id      TEXT NOT NULL REFERENCES events(id),
