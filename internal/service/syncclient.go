@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 )
 
 // Outbound client for the run5 sync API. This is the app's only outbound HTTP
@@ -27,6 +29,7 @@ type SyncCapabilities struct {
 }
 
 type ChangeFeedObservation struct {
+	*domain.EdgeMetadata
 	ID                 string  `json:"id"`
 	EventID            string  `json:"event_id"`
 	ObservationVersion int     `json:"observation_version"`

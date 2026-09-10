@@ -183,16 +183,6 @@ func upsertMember(ctx context.Context, ex execer, m domain.Member) error {
 	return nil
 }
 
-// rfidLogUpsertSQL is the event-import variant: unlike InsertRfidLogs it also
-// refreshes disabled_at on existing rows, so a re-export that disables a log
-// (run5 ADR-0007) takes effect on the next recount.
-const rfidLogUpsertSQL = `
-	INSERT INTO rfid_logs (
-		id, event_id, status, number, time_ms, ant, epc, rssi, board, disabled_at,
-		observation_version, capture_source_id, origin_system, origin_instance_id, origin_sequence)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(id) DO UPDATE SET disabled_at=excluded.disabled_at`
-
 // UpsertRfidLogs upserts logs in their own transaction (standalone callers).
 func (s *Store) UpsertRfidLogs(ctx context.Context, logs []domain.RfidLog) error {
 	tx, err := s.root.BeginTx(ctx, nil)
@@ -210,17 +200,15 @@ func (s *Store) UpsertRfidLogs(ctx context.Context, logs []domain.RfidLog) error
 // upsertRfidLogs upserts every log on ex (a tx), using a prepared statement so
 // a full event's worth of logs (thousands) stays fast.
 func upsertRfidLogs(ctx context.Context, tx *sql.Tx, logs []domain.RfidLog) error {
-	stmt, err := tx.PrepareContext(ctx, rfidLogUpsertSQL)
+	stmt, err := tx.PrepareContext(ctx, insertImportedRfidSQL)
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
 	}
 	defer stmt.Close()
 
+	txStore := &Store{db: tx, tx: tx}
 	for _, l := range logs {
-		if _, err := stmt.ExecContext(ctx,
-			l.ID, l.EventID, l.Status, l.Number, l.TimeMs, l.Ant, l.EPC, l.RSSI, l.Board, l.DisabledAt,
-			nullablePositiveInt(l.ObservationVersion), nullableString(l.CaptureSourceID), nullableString(l.OriginSystem),
-			nullableString(l.OriginInstanceID), nullablePositiveInt64(l.OriginSequence)); err != nil {
+		if _, err := txStore.importObservation(ctx, l, stmt); err != nil {
 			return fmt.Errorf("upsert rfid_log %s: %w", l.ID, err)
 		}
 	}

@@ -165,6 +165,15 @@ is still pending, not implicitly provided by the native synchronization path.
 Native Feibot input remains independent and unchanged by default. See the
 [receiver guide](edge-receiver.md) for limits and compatibility boundaries.
 
+Export v3 and change-feed v1 now retain origin and optional edge metadata in
+nullable raw columns. A small domain mapping validates stored edge facts through
+the pure shared-core contract; it does not reconstruct outbound source payloads.
+Snapshot and feed share one transactional import rule, preserving first-writer
+ownership, historical physical aliases and explicit site disable state. Invalid
+or partial envelopes abort before cursor acceptance. Imported observations never
+enter either outgoing journal. The five edge-only metadata fields are not
+projection inputs, so the existing evidence/revision contract is unchanged.
+
 ## Data flow (v1)
 
 ```

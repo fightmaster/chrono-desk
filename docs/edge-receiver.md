@@ -67,6 +67,23 @@ clock evidence/quality. Native locally created rows continue to use the existing
 `observation_outbox` and v3 synchronization. Site imports and an already-known
 row never acquire a new edge relay entry.
 
+The raw table also keeps five nullable edge metadata columns. Event export
+imports and change-feed pulls preserve them alongside origin v1. Any edge
+marker, including explicit null/zero, is validated through shared core; invalid
+input cannot be treated as legacy or advance the feed cursor. Both paths use
+one transactional import helper, validate immutable conflicts and preserve the
+local first writer on physically equivalent native/edge delivery. Only a
+compatible missing envelope is enriched; existing facts/IDs/clock decisions are
+not rewritten to fit another source. One historical physical alias is resolved,
+while multiple candidates reject the whole page. Site disable state is applied
+to that existing row. Neither import path creates a relay/native outbox entry.
+
+Clock/session metadata is not an input to timing calculations. Adding only this
+metadata leaves both existing exact projection evidence and revision counters
+unchanged; event/observation time and judge-state changes retain their current
+fences. Readback through recount queries preserves metadata without making it
+part of the checkpoint-selection algorithm.
+
 **Relay to the site is not yet connected in this implementation checkpoint.**
 The edge queue remains pending and the UI says so. It must not be smuggled into
 the current Desk-owned v3 batch, which cannot preserve this source envelope.

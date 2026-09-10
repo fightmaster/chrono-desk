@@ -1,7 +1,7 @@
 # Event export format (run5 → chrono-desk)
 
-Contract for the run5 artisan command `event:export {event_id}` (to be implemented on the
-site) and the chrono-desk importer. One JSON document per event.
+Contract for the run5 artisan command `event:export {event_id}` and the
+chrono-desk importer. One JSON document per event.
 
 Re-import is an upsert by `id` (all ids are strings); importing the same export twice is
 a no-op, importing a newer export overwrites site-owned data and triggers a recount.
@@ -109,14 +109,39 @@ Optional (for on-site registration fixes): `phone`, `sosPhone`, `email`,
   `disabled_at != null`; a re-import that disables a previously active log must cause
   its derived result to disappear on the next recount.
 
+Additive source metadata (CHR-SIDE-002, coordinated with RUN5 `e78c766`):
+
+- Optional origin v1: `observation_version`, `capture_source_id`, `origin_system`,
+  `origin_instance_id`, `origin_sequence`. The importer retains supplied origin;
+  it never substitutes the current Desk installation or creates an outbox entry.
+- Optional owned edge v1: `edge_version`, `source_session_id`, `identity_profile`,
+  `clock_evidence_id`, `clock_quality`. Presence of any edge key (including an
+  explicit zero/null marker) requires a complete valid envelope. Validation is
+  delegated to `rfid-core/edge`; unknown versions, invalid IDs, clock metadata
+  or event mismatches abort the import before writes. A legacy export omits
+  these keys and remains supported unchanged. The export schema stays 3.
+- Raw facts are not replaced on re-import. A valid edge duplicate retains the
+  first writer's source and clock metadata; matching nullable legacy provenance
+  can be enriched only without changing raw facts. A bounded physical lookup
+  resolves one historical alias while retaining its ID/profile, rejecting
+  ambiguity. Site disable state still applies. Snapshot and change-feed paths
+  use the same transactional storage rule; downloaded rows enter neither the
+  Desk-owned outbox nor the edge relay journal.
+
+The golden legacy export remains unchanged. The additional core-owned fixture
+`internal/service/testdata/edge-observation-v1.json` is checksum-checked in tests:
+`952e179f068c3027da3232f46bcd81b525aa3490580e741ed4d93015c670c83d`.
+This is source compatibility, not a published edge release or connected relay.
+
 ## What is intentionally NOT exported
 
 - `results` / `member_results` — derived data; chrono-desk recounts from `rfid_logs`.
   (Exception: golden-test fixtures export reference results separately for comparison.)
 - Users, payments, organizations — out of scope for the offline helper.
 
-## Reverse direction (v0.3, for reference)
+## Reverse direction
 
-Logs collected offline are uploaded to the site in the existing `FeibotCsvImporter`
-format (`EPC:YYYY-MM-DD_HH:MM:SS.mmm,port=X,rssi=Y`), so the site needs no new import
-endpoint. Identical ids guarantee dedup.
+Current native push uses ownership-journal batches in sync schema v3, not a
+full export of the local table or a CSV fallback. The separate owned edge
+source journal is not yet relayed. See [architecture](architecture.md) and
+[edge receiver](edge-receiver.md) for the two ownership paths and release gates.

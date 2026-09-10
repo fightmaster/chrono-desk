@@ -165,21 +165,17 @@ func (s *Store) InsertRfidLogs(ctx context.Context, logs []domain.RfidLog) (inse
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after commit
 
-	stmt, err := tx.PrepareContext(ctx, `
-		INSERT OR IGNORE INTO rfid_logs (
-			id, event_id, status, number, time_ms, ant, epc, rssi, board, disabled_at,
-			observation_version, capture_source_id, origin_system, origin_instance_id, origin_sequence)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO rfid_logs (`+rfidLogColumns+`) VALUES (`+rfidLogPlaceholders+`)`)
 	if err != nil {
 		return 0, fmt.Errorf("prepare: %w", err)
 	}
 	defer stmt.Close()
 
 	for _, l := range logs {
-		res, err := stmt.ExecContext(ctx,
-			l.ID, l.EventID, l.Status, l.Number, l.TimeMs, l.Ant, l.EPC, l.RSSI, l.Board, l.DisabledAt,
-			nullablePositiveInt(l.ObservationVersion), nullableString(l.CaptureSourceID), nullableString(l.OriginSystem),
-			nullableString(l.OriginInstanceID), nullablePositiveInt64(l.OriginSequence))
+		if err := l.ValidateEdgeMetadata(); err != nil {
+			return 0, err
+		}
+		res, err := stmt.ExecContext(ctx, rfidLogValues(l)...)
 		if err != nil {
 			return 0, fmt.Errorf("insert rfid_log %s: %w", l.ID, err)
 		}
@@ -219,6 +215,9 @@ func (s *Store) InsertOwnedRfidLogs(ctx context.Context, logs []domain.RfidLog) 
 	for _, l := range logs {
 		if strings.TrimSpace(l.CaptureSourceID) == "" {
 			return 0, fmt.Errorf("rfid_log %s: capture source id is required", l.ID)
+		}
+		if l.EdgeMetadata != nil {
+			return 0, fmt.Errorf("edge observation cannot enter the Desk-owned outbox")
 		}
 		res, err := insertLog.ExecContext(ctx,
 			l.ID, l.EventID, l.Status, l.Number, l.TimeMs, l.Ant, l.EPC, l.RSSI, l.Board, l.DisabledAt)

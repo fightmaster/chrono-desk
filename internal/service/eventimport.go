@@ -103,16 +103,22 @@ type exportMember struct {
 }
 
 type exportRfidLog struct {
-	ID         string  `json:"id"`
-	EventID    string  `json:"event_id"`
-	Status     int     `json:"status"`
-	Number     int64   `json:"number"`
-	Time       int64   `json:"time"`
-	Ant        int     `json:"ant"`
-	EPC        string  `json:"epc"`
-	RSSI       int     `json:"rssi"`
-	Board      string  `json:"board"`
-	DisabledAt *string `json:"disabled_at"`
+	*domain.EdgeMetadata
+	ObservationVersion int     `json:"observation_version"`
+	CaptureSourceID    string  `json:"capture_source_id"`
+	OriginSystem       string  `json:"origin_system"`
+	OriginInstanceID   string  `json:"origin_instance_id"`
+	OriginSequence     int64   `json:"origin_sequence"`
+	ID                 string  `json:"id"`
+	EventID            string  `json:"event_id"`
+	Status             int     `json:"status"`
+	Number             int64   `json:"number"`
+	Time               int64   `json:"time"`
+	Ant                int     `json:"ant"`
+	EPC                string  `json:"epc"`
+	RSSI               int     `json:"rssi"`
+	Board              string  `json:"board"`
+	DisabledAt         *string `json:"disabled_at"`
 }
 
 // ImportStats reports what an event import touched.
@@ -266,11 +272,21 @@ func buildImportData(export *EventExport) (sqlite.EventImportData, error) {
 		if err != nil {
 			return sqlite.EventImportData{}, fmt.Errorf("rfid_log %s disabled_at: %w", l.ID, err)
 		}
-		d.RfidLogs = append(d.RfidLogs, domain.RfidLog{
+		log := domain.RfidLog{
 			ID: l.ID, EventID: l.EventID, Status: l.Status, Number: l.Number,
 			TimeMs: l.Time, Ant: l.Ant, EPC: l.EPC, RSSI: l.RSSI, Board: l.Board,
-			DisabledAt: disabledAt,
-		})
+			DisabledAt:         disabledAt,
+			ObservationVersion: l.ObservationVersion, CaptureSourceID: l.CaptureSourceID,
+			OriginSystem: l.OriginSystem, OriginInstanceID: l.OriginInstanceID,
+			OriginSequence: l.OriginSequence, EdgeMetadata: l.EdgeMetadata,
+		}
+		if log.EventID != d.Event.ID {
+			return sqlite.EventImportData{}, fmt.Errorf("rfid_log %s belongs to another event", log.ID)
+		}
+		if err := log.ValidateEdgeMetadata(); err != nil {
+			return sqlite.EventImportData{}, err
+		}
+		d.RfidLogs = append(d.RfidLogs, log)
 	}
 
 	// Race↔category pivot. A v2 export carries it explicitly (the site is the

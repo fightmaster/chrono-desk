@@ -322,6 +322,11 @@ func addRfidObservationOrigin(db *sql.DB) error {
 		{"origin_system", "TEXT"},
 		{"origin_instance_id", "TEXT"},
 		{"origin_sequence", "INTEGER"},
+		{"edge_version", "INTEGER"},
+		{"source_session_id", "TEXT"},
+		{"identity_profile", "TEXT"},
+		{"clock_evidence_id", "TEXT"},
+		{"clock_quality", "TEXT"},
 	}
 	for _, column := range columns {
 		var count int

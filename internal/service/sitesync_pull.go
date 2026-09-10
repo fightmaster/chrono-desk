@@ -184,11 +184,16 @@ func feedObservation(input ChangeFeedObservation) (domain.RfidLog, error) {
 		value := parsed.UnixMilli()
 		disabledAt = &value
 	}
-	return domain.RfidLog{
+	log := domain.RfidLog{
 		ID: input.ID, EventID: input.EventID, Status: input.Status, Number: input.Number,
 		TimeMs: input.TimeMs, Ant: input.Ant, EPC: input.EPC, RSSI: input.RSSI, Board: input.Board,
 		DisabledAt: disabledAt, ObservationVersion: input.ObservationVersion,
 		CaptureSourceID: input.CaptureSourceID, OriginSystem: input.OriginSystem,
 		OriginInstanceID: input.OriginInstanceID, OriginSequence: input.OriginSequence,
-	}, nil
+		EdgeMetadata: input.EdgeMetadata,
+	}
+	if err := log.ValidateEdgeMetadata(); err != nil {
+		return domain.RfidLog{}, err
+	}
+	return log, nil
 }

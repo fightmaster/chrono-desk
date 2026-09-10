@@ -117,6 +117,7 @@ type Member struct {
 // RfidLog is a raw reader event. ID is the cross-system idempotency key:
 // md5(board + epc + timeMillis + ant) — see docs/architecture.md, decision 4.
 type RfidLog struct {
+	*EdgeMetadata
 	ID                 string
 	EventID            string
 	Status             int

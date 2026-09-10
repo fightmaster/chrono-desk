@@ -107,11 +107,17 @@ CREATE TABLE IF NOT EXISTS rfid_logs (
     capture_source_id   TEXT,
     origin_system       TEXT,
     origin_instance_id  TEXT,
-    origin_sequence     INTEGER
+    origin_sequence     INTEGER,
+    edge_version        INTEGER,
+    source_session_id   TEXT,
+    identity_profile    TEXT,
+    clock_evidence_id   TEXT,
+    clock_quality       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_rfid_logs_time ON rfid_logs(event_id, time_ms);
 CREATE INDEX IF NOT EXISTS idx_rfid_logs_board ON rfid_logs(board);
+CREATE INDEX IF NOT EXISTS idx_rfid_logs_edge_physical ON rfid_logs(event_id, board, time_ms, ant);
 
 -- Durable ownership boundary for push-own synchronization. A row is created
 -- in the same event transaction as a locally accepted observation. Site

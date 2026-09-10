@@ -111,40 +111,16 @@ func (s *Store) AcceptEdgeObservation(ctx context.Context, eventID string, event
 		return EdgeAcceptance{}, errors.New("edge board no longer has an event checkpoint")
 	}
 	entry := domain.RfidLog{ID: event.ID, EventID: eventID, Status: event.Status, Number: event.Number, TimeMs: event.Time, Ant: event.Ant, EPC: event.EPC, RSSI: event.RSSI, Board: event.Board,
-		ObservationVersion: event.ObservationVersion, CaptureSourceID: event.CaptureSourceID, OriginSystem: event.OriginSystem, OriginInstanceID: event.OriginInstanceID, OriginSequence: int64(event.OriginSequence)}
+		ObservationVersion: event.ObservationVersion, CaptureSourceID: event.CaptureSourceID, OriginSystem: event.OriginSystem, OriginInstanceID: event.OriginInstanceID, OriginSequence: int64(event.OriginSequence),
+		EdgeMetadata: &domain.EdgeMetadata{EdgeVersion: event.EdgeVersion, SourceSessionID: event.SourceSessionID, IdentityProfile: event.IdentityProfile, ClockEvidenceID: event.ClockEvidenceID, ClockQuality: event.ClockQuality}}
 	existing, found, err := s.findRfidLog(ctx, entry.ID)
 	if err != nil {
 		return EdgeAcceptance{}, err
 	}
 	if !found {
-		// Preserve historical plate IDs instead of minting another observation for
-		// the same physical crossing. Multiple existing matches are ambiguous.
-		rows, err := s.db.QueryContext(ctx, `SELECT id FROM rfid_logs WHERE event_id=? AND board=? AND time_ms=? AND ant=? AND epc=? COLLATE NOCASE AND number=? LIMIT 2`, eventID, entry.Board, entry.TimeMs, entry.Ant, entry.EPC, entry.Number)
+		existing, found, err = s.findPhysicalRfidLog(ctx, entry)
 		if err != nil {
 			return EdgeAcceptance{}, err
-		}
-		var ids []string
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				_ = rows.Close()
-				return EdgeAcceptance{}, err
-			}
-			ids = append(ids, id)
-		}
-		err = rows.Err()
-		_ = rows.Close()
-		if err != nil {
-			return EdgeAcceptance{}, err
-		}
-		if len(ids) > 1 {
-			return EdgeAcceptance{}, errors.New("ambiguous legacy physical observation")
-		}
-		if len(ids) == 1 {
-			existing, found, err = s.findRfidLog(ctx, ids[0])
-			if err != nil {
-				return EdgeAcceptance{}, err
-			}
 		}
 	}
 	if found {
@@ -154,8 +130,7 @@ func (s *Store) AcceptEdgeObservation(ctx context.Context, eventID string, event
 		}
 		return EdgeAcceptance{Log: existing}, nil
 	}
-	result, err := s.db.ExecContext(ctx, `INSERT INTO rfid_logs(id,event_id,status,number,time_ms,ant,epc,rssi,board,observation_version,capture_source_id,origin_system,origin_instance_id,origin_sequence) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
-		entry.ID, entry.EventID, entry.Status, entry.Number, entry.TimeMs, entry.Ant, entry.EPC, entry.RSSI, entry.Board, entry.ObservationVersion, entry.CaptureSourceID, entry.OriginSystem, entry.OriginInstanceID, entry.OriginSequence)
+	result, err := s.db.ExecContext(ctx, insertImportedRfidSQL, rfidLogValues(entry)...)
 	if err != nil {
 		return EdgeAcceptance{}, err
 	}
