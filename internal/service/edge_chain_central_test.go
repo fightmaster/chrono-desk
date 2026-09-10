@@ -82,21 +82,23 @@ func assertEdgeChainCentral(t *testing.T, hub *edgeChainHub, source *edgeChainSo
 }
 
 type edgeChainCentral struct {
-	hub   *edgeChainHub
-	phpID string
+	hub     *edgeChainHub
+	phpID   string
+	mysqlID string
 }
 
 type edgeChainCentralSnapshot struct {
-	MySQLVersion  string           `json:"mysql_version"`
-	PHPVersion    string           `json:"php_version"`
-	Migrations    int              `json:"migrations"`
-	Rows          []map[string]any `json:"rows"`
-	Results       int              `json:"results"`
-	MemberResults int              `json:"member_results"`
-	Finished      int              `json:"finished"`
-	Actions       []string         `json:"actions"`
-	Export        json.RawMessage  `json:"export"`
-	Feed          struct {
+	MySQLVersion   string           `json:"mysql_version"`
+	PHPVersion     string           `json:"php_version"`
+	Migrations     int              `json:"migrations"`
+	Rows           []map[string]any `json:"rows"`
+	Results        int              `json:"results"`
+	MemberResults  int              `json:"member_results"`
+	Finished       int              `json:"finished"`
+	Actions        []string         `json:"actions"`
+	BindingEnabled bool             `json:"binding_enabled"`
+	Export         json.RawMessage  `json:"export"`
+	Feed           struct {
 		Items []struct {
 			Type        string         `json:"type"`
 			Observation map[string]any `json:"observation"`
@@ -144,6 +146,7 @@ func newEdgeChainCentral(t *testing.T, hub *edgeChainHub, board, session string)
 	}
 	mysqlID := create("chr-side-002-mysql", os.Getenv("EDGE_MYSQL_IMAGE"), []string{"--log-bin-trust-function-creators=1"}, "--tmpfs", "/var/lib/mysql:rw,nosuid,size=512m",
 		"--env", "MYSQL_INITDB_SKIP_TZINFO=1", "--env", "MYSQL_ROOT_PASSWORD=synthetic-root", "--env", "MYSQL_DATABASE=synthetic_edge_chain", "--env", "MYSQL_USER=edge_fixture", "--env", "MYSQL_PASSWORD=synthetic-password")
+	c.mysqlID = mysqlID
 	hub.docker(t, "start", mysqlID)
 	edgeChainWait(t, "MySQL fixture startup", func() bool {
 		_, err := edgeChainDocker("exec", "--env", "MYSQL_PWD=synthetic-password", mysqlID, "mysql", "--protocol=TCP", "-h127.0.0.1", "-uedge_fixture", "synthetic_edge_chain", "-e", "SELECT 1")

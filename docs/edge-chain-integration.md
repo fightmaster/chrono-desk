@@ -310,7 +310,7 @@ it. The helper refuses non-CLI/non-testing execution, non-loopback MySQL, a
 different database/user, environment files or cached application configuration.
 Never invoke it against a real database or substitute production credentials.
 
-The helper runs all actual Laravel migrations, seeds four synthetic entrants
+The helper runs all actual Laravel migrations, seeds six synthetic entrants
 without model observers, and grants the exact source through RUN5's public
 application contract. The Go consumer must write three distinct raw facts,
 results and member results despite receiving both direct and Desk-relayed copies.
@@ -332,6 +332,60 @@ removes only test-created container IDs and their anonymous volumes.
 
 This extends evidence to actual central schema/admission/projection, serialized
 PHP feed/export and Desk export import. It is **not** an HTTP transport or admin
-permission/CSRF test, a concurrent PHP/Go lock-race test, event-switch acceptance,
+permission/CSRF test, event-switch acceptance,
 or a deployment/handset/performance gate. The external Go executables are not
 race-instrumented merely because the Desk test uses `-race`.
+
+### Cross-language source-admission fence
+
+The same prerequisites also enable `TestEdgeChainCentralPHPGoRevocationFence`:
+
+```sh
+go test -tags 'edgeintegration edgecentralintegration' ./internal/service \
+  -run '^TestEdgeChainCentralPHPGoRevocationFence$' -count=1 -v -timeout=4m
+go test -race -tags 'edgeintegration edgecentralintegration' ./internal/service \
+  -run '^TestEdgeChainCentralPHPGoRevocationFence$' -count=1 -v -timeout=4m
+```
+
+Run the full default race suite separately from the long central scenarios:
+
+```sh
+go test -race ./... -count=1
+go test -race -tags 'edgeintegration edgecentralintegration' ./internal/service \
+  -run '^TestEdgeChainCentral' -count=1 -v
+```
+
+Combining all optional central/receiver scenarios and the default golden
+imports in one package run can exhaust Go's ten-minute package timeout. These
+separate commands retain every selected assertion and all per-scenario
+deadlines; a timed-out combined run is not a passing gate. Source-load and
+browser checks remain separately opt-in as described above.
+
+It starts the actual plate source, Hub/Redis, sync and RUN5/MySQL fixture, then
+checks three interleavings with real application transactions:
+
+1. Go holds its shared source binding lock and waits inside the fourth raw
+   INSERT. PHP revoke must wait for that Go connection. The accepted fact
+   commits before revoke, and both raw data and audit remain correct.
+2. PHP holds its exclusive binding lock while revoke audit is pending. Go
+   must wait for that PHP connection, then reject after its commit. Hub/Desk
+   ACKs do not authorize central acceptance; Redis retains and retries the
+   packet. Explicit re-enable drains it without source resend.
+3. PHP holds the same lock, but the audit INSERT is deliberately rejected.
+   Permission and audit roll back together. The waiting Go process admits
+   its packet under the unchanged grant, preserving original metadata.
+
+Ordering is proved by `performance_schema.data_lock_waits`, mapped to actual
+MySQL connection IDs and the exact synthetic table, not inferred from elapsed
+time. Test-only row barriers/triggers are installed by a guarded fixture action;
+no production query, lock policy, observability loop or application hook is
+changed. The observer uses only the synthetic MySQL container's root identity.
+The barrier and PHP commands have 45-second contexts and close/cancel/join on
+cleanup. Normal source/receiver/retry deadlines are unchanged.
+
+PHP's standalone driver explicitly exits nonzero on uncaught action errors;
+the failure scenario checks both the injected error and exit status. Final
+assertions compare six raw/projection/feed/export records to Desk's original
+source journal. Native v3 still has no ownership of imported edge data. This
+gate covers source grant/revoke transactions, not HTTP/admin CSRF, general
+member progression or the separately tracked event epoch mechanism.
