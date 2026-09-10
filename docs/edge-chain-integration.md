@@ -96,3 +96,59 @@ overlap, disk/power faults, sustained load, a physical reader or phone rendering
 Redis in this fixture has no AOF: its successful XADD tests the Hub ACK boundary,
 not storage durability after container/host power loss. Ordinary and race test
 success do not waive those remaining CHR-SIDE-002 acceptance/release gates.
+
+## Optional central MySQL / RUN5 gate
+
+The additional `edgecentralintegration` tag enables
+`TestEdgeChainCentralAdmission`. It reuses the complete receiver scenario above,
+then starts the actual rfid-sync executable against its saved Redis backlog.
+Two additional disposable containers share Hub's network-none namespace: MySQL
+and a PHP CLI runtime with `pdo_mysql`. No published port or Internet is needed.
+
+Supply the existing variables above plus:
+
+```sh
+export EDGE_SYNC_BINARY=/absolute/private/artifacts/rfid-sync
+export EDGE_MYSQL_IMAGE=sha256:THE_64_HEX_DIGIT_LOCAL_MYSQL_IMAGE_ID
+export EDGE_PHP_IMAGE=sha256:THE_64_HEX_DIGIT_LOCAL_PHP_IMAGE_ID
+export EDGE_RUN5_ROOT=/absolute/run5-feature-checkout
+go test -tags 'edgeintegration edgecentralintegration' ./internal/service \
+  -run '^TestEdgeChainCentralAdmission$' -count=1 -v -timeout=6m
+go test -race -tags 'edgeintegration edgecentralintegration' ./internal/service \
+  -run '^TestEdgeChainCentralAdmission$' -count=1 -v -timeout=6m
+```
+
+The RUN5 checkout must contain `tests/Support/edge-chain.php` and its installed
+vendor tree. The test copies an explicit list of tracked source directories from
+`HEAD`, vendor and that exact test helper through the Docker API. It does not
+copy `.env*`, ignored bootstrap caches, uploads or logs. Uncommitted production
+source is intentionally not tested: commit it before claiming this gate covers
+it. The helper refuses non-CLI/non-testing execution, non-loopback MySQL, a
+different database/user, environment files or cached application configuration.
+Never invoke it against a real database or substitute production credentials.
+
+The helper runs all actual Laravel migrations, seeds four synthetic entrants
+without model observers, and grants the exact source through RUN5's public
+application contract. The Go consumer must write three distinct raw facts,
+results and member results despite receiving both direct and Desk-relayed copies.
+MySQL trigger-generated change-feed rows must also remain unique. Assertions
+compare physical/source/event/clock metadata with Desk's captured original wire,
+the real PHP export and feed serializers. The actual Desk export importer then
+consumes the PHP document without creating either outbound journal.
+
+After PHP revokes the source through the same audited contract, the fourth
+observation may be ACKed by Hub and Desk, but must remain pending in Redis across
+repeated consumer deliveries without changing central facts/results. Explicit
+re-enable must drain it automatically; the audit must be grant/revoke/enable.
+
+MySQL uses a disposable 512 MiB tmpfs, 768 MiB memory cap and one CPU; PHP has
+the same memory/CPU cap. Trigger creation is enabled for the synthetic schema
+user via MySQL's `log_bin_trust_function_creators` fixture setting. These are
+test-server settings, not production configuration recommendations. Cleanup
+removes only test-created container IDs and their anonymous volumes.
+
+This extends evidence to actual central schema/admission/projection, serialized
+PHP feed/export and Desk export import. It is **not** an HTTP transport or admin
+permission/CSRF test, a concurrent PHP/Go lock-race test, event-switch acceptance,
+or a deployment/handset/performance gate. The external Go executables are not
+race-instrumented merely because the Desk test uses `-race`.
