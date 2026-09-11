@@ -39,6 +39,21 @@ This sequential scenario does not prove concurrent revoke/enqueue ordering,
 throughput, hardware behavior or release security.
 The separate receiver tests below remain responsible for observation delivery.
 
+`TestEdgeManagementWebsiteBrowser` additionally requires `edgebrowser`,
+`EDGE_NODE_BINARY` (existing Node22+), and `EDGE_BROWSER_BINARY` (existing Chromium).
+Optionally set `EDGE_BROWSER_ARTIFACTS` to a private existing absolute directory
+to retain synthetic screenshots. Run with `-count=1 -v -timeout=5m`. No npm
+installation is involved. Browser networking is restricted to the fixture origin;
+only the ephemeral fixture certificate's SPKI is trusted. The test exercises real
+login/cookies/CSRF, the mobile admin drawer, registration and one-time key display,
+command forms/queueing and revocation at360/390/768-pixel widths. It supplies
+synthetic device telemetry to the actual API; it does not pretend that a sidecar
+executed this browser-submitted command. The final database must contain one
+revoked synthetic device and one command cancelled before delivery, with no RFID
+observations. Actual execution/retry remains covered by the separate chain above.
+External fonts/analytics are blocked and a deployment-only logo may be absent;
+this is browser emulation, not a physical phone or appliance acceptance.
+
 The Linux-only `edgeintegration` test connects the actual sidecar executable,
 actual Hub executable/Redis and production Desk services over TCP. It has no
 fake ACK or fake receiver. The Desk Wails window is not involved: its actual
