@@ -3,11 +3,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"html"
 	"io"
 	"net"
@@ -20,6 +22,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -63,7 +66,7 @@ func (c *edgeChainCentral) managementSnapshot(t *testing.T) managementFixtureSna
 // Real TLS terminates here; the hidden PHP development server receives the same
 // HTTPS=on server metadata normally supplied by the trusted FPM TLS terminator.
 // It has no host port or external network. No application auth/CSRF is bypassed.
-func (c *edgeChainCentral) managementHTTPS(t *testing.T) *httptest.Server {
+func (c *edgeChainCentral) managementHTTPS(t *testing.T, loss *managementResponseLoss) *httptest.Server {
 	t.Helper()
 	c.hub.docker(t, "cp", filepath.Join(os.Getenv("EDGE_RUN5_ROOT"), "public/build"), c.phpID+":/fixture/public/build")
 	c.hub.docker(t, "cp", filepath.Join(os.Getenv("EDGE_RUN5_ROOT"), "tests/Support/edge-management-router.php"), c.phpID+":/fixture/tests/Support/edge-management-router.php")
@@ -84,6 +87,9 @@ func (c *edgeChainCentral) managementHTTPS(t *testing.T) *httptest.Server {
 	}, ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
 		http.Error(w, "fixture upstream unavailable", http.StatusBadGateway)
 	}}
+	if loss != nil {
+		proxy.ModifyResponse = loss.filter
+	}
 	server := httptest.NewTLSServer(proxy)
 	t.Cleanup(server.Close)
 	t.Cleanup(func() {
@@ -93,6 +99,48 @@ func (c *edgeChainCentral) managementHTTPS(t *testing.T) *httptest.Server {
 		}
 	})
 	return server
+}
+
+// Drop only completed heartbeat replies, after the actual backend transaction.
+// No commands or ACKs are fabricated; the client sees an ordinary gateway failure.
+type managementResponseLoss struct {
+	command atomic.Bool
+	result  atomic.Pointer[string]
+	retried atomic.Bool
+}
+
+func (loss *managementResponseLoss) filter(response *http.Response) error {
+	if response.StatusCode != http.StatusOK || !strings.HasSuffix(response.Request.URL.Path, "/heartbeat") {
+		return nil
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 32769))
+	response.Body.Close()
+	if err != nil || len(body) > 32768 {
+		return errors.New("invalid fixture heartbeat response")
+	}
+	response.Body = io.NopCloser(bytes.NewReader(body))
+	var reply struct {
+		Command      json.RawMessage `json:"command"`
+		Acknowledged []string        `json:"acknowledged_results"`
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		return errors.New("invalid fixture heartbeat JSON")
+	}
+	if len(reply.Command) > 0 && string(reply.Command) != "null" && loss.command.CompareAndSwap(false, true) {
+		return errors.New("synthetic lost command response")
+	}
+	if len(reply.Acknowledged) > 0 {
+		id := reply.Acknowledged[0]
+		if loss.result.CompareAndSwap(nil, &id) {
+			return errors.New("synthetic lost result acknowledgement")
+		}
+		for _, acknowledged := range reply.Acknowledged {
+			if acknowledged == *loss.result.Load() {
+				loss.retried.Store(true)
+			}
+		}
+	}
+	return nil
 }
 
 type managementBrowser struct{ client *http.Client }
@@ -189,7 +237,9 @@ func enrollManagement(t *testing.T, s *edgeChainSource, endpoint, id, key string
 
 func (c *edgeChainCentral) waitManagement(t *testing.T, label string, check func(managementFixtureSnapshot) bool) {
 	t.Helper()
-	edgeChainWaitWithin(t, label, 80*time.Second, func() bool {
+	// Deliberately lost replies require extra real 30-second exchanges. The
+	// production command expiry and client cadence are unchanged.
+	edgeChainWaitWithin(t, label, 150*time.Second, func() bool {
 		if check(c.managementSnapshot(t)) {
 			return true
 		}
@@ -203,7 +253,8 @@ func TestEdgeManagementActualHTTPSMySQLAndSidecar(t *testing.T) {
 	c := newEdgeChainCentral(t, hub, "plate-test", "plate-one")
 	c.snapshot(t, "http-setup")
 	c.snapshot(t, "management-setup")
-	server := c.managementHTTPS(t)
+	loss := &managementResponseLoss{}
+	server := c.managementHTTPS(t, loss)
 	admin := newManagementBrowser(t, server)
 	admin.login(t, "fixture@example.invalid")
 	denied := newManagementBrowser(t, server)
@@ -281,6 +332,16 @@ func TestEdgeManagementActualHTTPSMySQLAndSidecar(t *testing.T) {
 	command("configure_event", url.Values{"payload[event_id]": {"200"}, "payload[session_id]": {"management-session-200"}, "payload[timezone]": {"UTC"}})
 	command("resume_input", nil)
 	final := c.managementSnapshot(t)
+	if !loss.command.Load() || loss.result.Load() == nil || !loss.retried.Load() {
+		t.Fatal("lost command/result replies were not recovered")
+	}
+	for _, before := range initial.Devices {
+		for _, after := range final.Devices {
+			if before.ID == plateID && after.ID == plateID && after.Snapshot["revision"].(float64) != before.Snapshot["revision"].(float64)+4 {
+				t.Fatal("four remote commands did not produce exactly four local revisions")
+			}
+		}
+	}
 	if final.RawCount != initial.RawCount || final.SourceCount != initial.SourceCount || len(final.Commands) != 4 {
 		t.Fatal("management changed observations/admission or command count")
 	}

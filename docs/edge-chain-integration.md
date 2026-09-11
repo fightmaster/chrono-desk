@@ -24,13 +24,19 @@ cookies, login and HTML forms; this is not Chromium or visual phone acceptance.
 It exercises administrator registration, ordinary-user denial, missing CSRF,
 one-time credentials and both actual source profiles' local enrollment/heartbeat.
 Plate receives the four allowed commands through the website and reports durable
-results. Feibot truthfully advertises no mutable-source capabilities. Revocation
+results. The TLS test proxy deliberately suppresses the first command reply and
+the first committed result acknowledgement with a gateway502; the next real
+heartbeats must recover both. The same lost result ID must be acknowledged again,
+each command must have one delivery/result audit and exactly one local revision
+increment. This is application-response loss, not a physical-network packet-loss
+test. The wait budget allows extra30-second exchanges without changing production
+cadence or command expiry. Feibot truthfully advertises no mutable-source capabilities. Revocation
 must reject the actual client without stopping autonomous local raw capture or
 erasing the event/session after restart. Timing rows/source admission must remain
 unchanged; no credentials or raw payload bodies are printed in failure output.
 
 This sequential scenario does not prove concurrent revoke/enqueue ordering,
-deliberate lost HTTP responses, throughput, hardware behavior or release security.
+throughput, hardware behavior or release security.
 The separate receiver tests below remain responsible for observation delivery.
 
 The Linux-only `edgeintegration` test connects the actual sidecar executable,
