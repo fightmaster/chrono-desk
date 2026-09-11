@@ -30,6 +30,7 @@ frontend-ci:
 	cd frontend && npm ci && npm audit --audit-level=high && npm run build
 
 frontend-runtime-smoke:
+	cd frontend && npm run test:smoke
 	cd frontend && npm run smoke
 	cd frontend && npm run smoke:edge
 

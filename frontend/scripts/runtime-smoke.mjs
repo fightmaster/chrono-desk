@@ -137,12 +137,12 @@ child.stdio[4].on('data', chunk => {
     if (message.error) call.reject(new Error(message.error.message)); else call.resolve(message.result)
   }
 })
-const send = (method, params = {}, targetSession = session) => new Promise((resolveCall, rejectCall) => {
+const send = (method, params = {}, targetSession = session, timeoutMs = 5000) => new Promise((resolveCall, rejectCall) => {
   if (closed) { rejectCall(new Error('Chromium already closed')); return }
   const id = ++nextID
   const timer = setTimeout(() => {
-    pending.delete(id); rejectCall(new Error(`Chromium command timeout: ${method}`))
-  }, 5000)
+    pending.delete(id); rejectCall(new Error(`Chromium command timeout: ${method} after ${timeoutMs}ms`))
+  }, timeoutMs)
   pending.set(id, {resolve: resolveCall, reject: rejectCall, timer})
   child.stdio[3].write(JSON.stringify({id, method, params, ...(targetSession ? {sessionId: targetSession} : {})}) + '\0')
 })
@@ -153,7 +153,9 @@ const evaluate = async expression => {
 }
 
 try {
-  const {targetId} = await send('Target.createTarget', {url: 'about:blank'})
+  // The first reply includes cold browser startup on a shared CI runner.
+  // Wait for that reply, not a fixed sleep; later commands retain their 5s cap.
+  const {targetId} = await send('Target.createTarget', {url: 'about:blank'}, undefined, 30000)
   session = (await send('Target.attachToTarget', {targetId, flatten: true})).sessionId
   await send('Page.enable')
   await send('Runtime.enable')

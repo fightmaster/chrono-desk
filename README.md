@@ -170,6 +170,12 @@ the built bundle in headless Chromium, and only then runs backend tests, race
 detection, formatting, vet and staticcheck before either release artifact.
 The runtime smoke checks the rendered application shell and uncaught browser
 errors; a successful Vite compilation alone is not release evidence.
+CHR-SIDE-002: the first Chromium command allows up to 30s for cold startup on
+shared CI runners, without sleeping on fast machines. Subsequent commands keep
+their 5s deadline and rendered UI checks keep their 15s budget. `npm run test:smoke`
+checks delayed/hung startup and failure propagation using a fake CDP peer; CI
+then runs the real browser shell and edge-action smokes. This changes only the
+test harness, not the desktop, sidecar, device clocks or management protocol.
 It waits for explicit UI completion through private inherited Chromium debug
 pipes, rather than relying on `--dump-dom` to exit. The optional harness failure
 regressions run with `node --test scripts/runtime-smoke.test.mjs` in `frontend/`
