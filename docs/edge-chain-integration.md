@@ -243,6 +243,37 @@ power-loss durability, mixed native historical aliases or load testing.
 
 ## Optional source load and resource measurement
 
+`TestEdgeMixedNativeLoadAndSidecarBacklog` additionally requires
+`edgecentralintegration` and `edgeload`, the actual Hub/sidecar binaries and the
+cached Redis image. Run it with `-count=1 -v -timeout=6m`. It compares two sequential
+runs, without management and with the actual client's30-second HTTPS heartbeat.
+The HTTPS responder is local and has no backend database; this measures client
+cost, not website capacity. The second observation destination uses the core
+listener in memory, not a packaged Desk application.
+
+Each run retains15,000 sidecar CSV observations while the Hub path is unavailable;
+the independent healthy destination must ACK all of them. Real Hub listeners use
+separate ports/limits: Feibot250/s, MyRace1/s and edge backlog. Native traffic runs
+for60 seconds; the edge path becomes available at second10. The deliberately
+strict local smoke gate requires all backlog ACKs by second60, unchanged source
+facts and no replay to the healthy destination. A missed drain deadline remains
+a test failure while resource and Redis-count evidence is collected. It is not
+turned into a pass by waiting for a later drain.
+
+Hub and Redis share a network-none,1-CPU/192-MiB Docker fixture. Transparent
+`docker exec`/BusyBox tunnels carry actual protocol bytes and ACKs, adding latency
+absent from a direct appliance connection. Redis persistence is disabled in this
+fixture: entries prove publication, not recovery after power loss. Native ACK
+latency is reported per batch (25 Feibot observations or one MyRace message).
+Sidecar `/proc`/file/process accounting is separate from the fixture's cgroup
+peak memory and total CPU, which include Redis and tunnel processes. Startup and
+preloading are included in total CPU. One paired run cannot establish a causal
+heartbeat overhead percentage or a Raspberry Pi throughput limit.
+
+Current mixed-load evidence and unresolved drain failure are recorded in
+chrono-docs `reports/edge-mixed-load-2026-09-11.md` under CHR-SIDE-002. No production
+instrumentation, transport change or relaxed deadline is introduced by this test.
+
 The additional `edgeload` tag enables `TestEdgeSourceSustainedLoadAndBacklog`.
 It reuses the actual sidecar executable/configuration/startup helpers but replaces
 both receivers with **synthetic in-memory peers using the shared core listener**.

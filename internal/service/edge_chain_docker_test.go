@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -49,6 +50,10 @@ func newEdgeChainHubForEvent(t *testing.T, eventID int64, board, session string)
 // The two-event central test uses one private internal Docker network, without
 // host port publication. Ordinary single-receiver fixtures keep network=none.
 func newEdgeChainHubOnNetwork(t *testing.T, eventID int64, board, session, network string) *edgeChainHub {
+	return newEdgeChainHubTopology(t, eventID, board, session, network, false)
+}
+
+func newEdgeChainHubTopology(t *testing.T, eventID int64, board, session, network string, mixed bool) *edgeChainHub {
 	t.Helper()
 	binary := edgeChainBinary(t, "EDGE_HUB_BINARY")
 	image := os.Getenv("EDGE_REDIS_IMAGE")
@@ -59,10 +64,16 @@ func newEdgeChainHubOnNetwork(t *testing.T, eventID int64, board, session, netwo
 	// Empty CWD, explicit environment and no container network prevent
 	// accidentally discovering a real .env or contacting a real endpoint.
 	name := "chr-side-002-chain-" + strings.ToLower(rand.Text())
-	listeners, _ := json.Marshal([]map[string]any{{
+	topology := []map[string]any{{
 		"name": "edge-chain", "adapter": "edge_observation_v1", "host": "0.0.0.0", "port": "44004", "ack_mode": "id", "max_connections": 8,
 		"edge_bindings": []map[string]any{{"board": board, "event_id": eventID, "source_session_id": session}},
-	}})
+	}}
+	if mixed {
+		topology = append(topology,
+			map[string]any{"name": "myrace-mixed", "adapter": "myrace_nano", "port": "44002", "max_connections": 4, "publish_workers": 1, "publish_queue_size": 32},
+			map[string]any{"name": "feibot-mixed", "adapter": "feibot", "port": "44003", "max_connections": 8, "publish_workers": 8, "publish_queue_size": 2048})
+	}
+	listeners, _ := json.Marshal(topology)
 	h.id = h.docker(t, "create", "--pull", "never", "--name", name, "--label", "task=CHR-SIDE-002", "--network", network,
 		"--user", strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()),
 		"--memory", "192m", "--cpus", "1", "--pids-limit", "64",
@@ -100,7 +111,14 @@ func newEdgeChainHubOnNetwork(t *testing.T, eventID int64, board, session, netwo
 // The real Hub TCP listener still parses, publishes and generates every ACK.
 // No payload or acknowledgement is synthesized by this bridge.
 func (h *edgeChainHub) tunnel(t *testing.T) string {
+	return h.tunnelPort(t, "44004", nil)
+}
+
+func (h *edgeChainHub) tunnelPort(t *testing.T, port string, enabled *atomic.Bool) string {
 	t.Helper()
+	if port != "44002" && port != "44003" && port != "44004" {
+		t.Fatal("unknown task-local Hub port")
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -115,13 +133,17 @@ func (h *edgeChainHub) tunnel(t *testing.T) string {
 			if err != nil {
 				return
 			}
+			if enabled != nil && !enabled.Load() {
+				_ = conn.Close()
+				continue
+			}
 			workers.Add(1)
 			go func() {
 				defer workers.Done()
 				defer conn.Close()
 				stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
 				defer stopClose()
-				cmd := exec.CommandContext(ctx, "docker", "exec", "-i", h.id, "/bin/busybox", "nc", "127.0.0.1", "44004")
+				cmd := exec.CommandContext(ctx, "docker", "exec", "-i", h.id, "/bin/busybox", "nc", "127.0.0.1", port)
 				cmd.Stderr = io.Discard
 				input, err := cmd.StdinPipe()
 				if err != nil {
