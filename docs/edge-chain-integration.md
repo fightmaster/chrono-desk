@@ -3,6 +3,36 @@
 Task: CHR-SIDE-002
 Docs-Impact: CROSS_PROJECT
 
+## Website management integration
+
+`TestEdgeManagementActualHTTPSMySQLAndSidecar` uses the `edgeintegration` and
+`edgecentralintegration` tags and the central fixture prerequisites documented
+below (`EDGE_RUN5_ROOT`, cached PHP/MySQL/Redis image IDs, actual sync/Hub/sidecar
+binaries). Run it with `-count=1 -v -timeout=20m`. It deliberately keeps the real
+30-second heartbeat cadence; command delivery and result reporting are separate
+exchanges, so this is a several-minute acceptance check, not a fast unit test.
+
+The fixture terminates genuine, certificate-validated TLS on localhost and tunnels
+requests to a hidden PHP listener in the network-none container namespace.
+The guarded `tests/Support/edge-management-router.php` supplies trusted HTTPS
+server metadata as an FPM TLS terminator would. It is copied only into the
+synthetic test container; no production middleware or CSRF check is bypassed.
+Environment variable `HTTPS=on` alone does not provide this metadata to PHP's
+development server. Cookie-jar clients use the real Chrono app host, secure
+cookies, login and HTML forms; this is not Chromium or visual phone acceptance.
+
+It exercises administrator registration, ordinary-user denial, missing CSRF,
+one-time credentials and both actual source profiles' local enrollment/heartbeat.
+Plate receives the four allowed commands through the website and reports durable
+results. Feibot truthfully advertises no mutable-source capabilities. Revocation
+must reject the actual client without stopping autonomous local raw capture or
+erasing the event/session after restart. Timing rows/source admission must remain
+unchanged; no credentials or raw payload bodies are printed in failure output.
+
+This sequential scenario does not prove concurrent revoke/enqueue ordering,
+deliberate lost HTTP responses, throughput, hardware behavior or release security.
+The separate receiver tests below remain responsible for observation delivery.
+
 The Linux-only `edgeintegration` test connects the actual sidecar executable,
 actual Hub executable/Redis and production Desk services over TCP. It has no
 fake ACK or fake receiver. The Desk Wails window is not involved: its actual

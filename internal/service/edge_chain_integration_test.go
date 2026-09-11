@@ -219,6 +219,7 @@ type edgeChainSource struct {
 	csvPath, eventID                            string
 	process                                     *exec.Cmd
 	stopProcess                                 func(*testing.T)
+	extraEnv                                    []string // task-local TLS trust for management fixtures
 }
 
 func newEdgeChainSource(t *testing.T, profile, hub, desk string) *edgeChainSource {
@@ -288,6 +289,7 @@ func (s *edgeChainSource) start(t *testing.T) {
 	cmd.Dir = s.dir
 	// Do not inherit credentials, proxies or the host's system D-Bus address.
 	cmd.Env = []string{"PATH=/usr/bin:/bin", "TZ=UTC", "DBUS_SYSTEM_BUS_ADDRESS=unix:path=/nonexistent/edge-chain-test"}
+	cmd.Env = append(cmd.Env, s.extraEnv...)
 	output, err := os.CreateTemp(s.dir, "process-*.log")
 	if err != nil {
 		t.Fatal(err)
