@@ -180,13 +180,13 @@ backlog delivery after a sidecar process restart. The Hub connection uses a
 transparent Docker byte tunnel, not synthetic ACKs. This is not central MySQL/
 RUN5 feed, field, UI-rendering or throughput acceptance.
 
-Use pinned Go 1.24.13 for Desk. The manifest now pins core v0.4.0, exact source
-`7ad0f64e89c4f65e5fe1f336da42224024e78a90`, with module checksum
-`h1:wkYcb99YhaLBj7m3d+yrmB7xLltQJqjt/sn2G45saXk=`. Standalone checks use
-`GOWORK=off` and its Go-format archive from an isolated local file proxy/cache;
-no sibling replacement is required. This candidate has not been published.
-Remote CI requires separately authorized publication of that exact core source
-and checksum. Verify the final artifact's `go version -m`, not just development
+Use pinned Go 1.24.13 for Desk. The manifest now pins published core v0.4.1,
+exact source `4cdf7dd1fc689d854bf3bf498bcc7298022e8afe`, with module checksum
+`h1:S+wdjZvUiK23ZMINngxXleRYLqNNmCK7ESh1hV6En3o=`. Go's direct module download
+verified the published GitLab tag through existing SSH authentication.
+Standalone checks use `GOWORK=off`, without a sibling replacement.
+Application CI and deployment still need verification.
+Verify the final artifact's `go version -m`, not just development
 constants. Native reader transport and owned edge observation stay v1.
 
 Regression coverage includes `TestHistoricalNativeImport*` (both storage import

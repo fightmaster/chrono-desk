@@ -136,10 +136,10 @@ unchanged. `/api/version` and the version tooltip identify the reader module;
 diagnostics expose `reader_transport_version: 1`.
 
 `timing-core` is pinned to `v0.8.0` and canonical GitLab `rfid-core` to
-`v0.4.0`; release builds never use mutable sibling replacements. The core pin
-currently names an unpublished exact-source candidate; local standalone checks
-use its checksummed module archive, not a sibling checkout. Publish that exact
-core before running remote application release jobs; see
+`v0.4.1`; release builds never use mutable sibling replacements. The core pin
+now names a published tag, verified through Go's direct download and checksum,
+not a sibling checkout. The patch includes the existing core CI cache fix;
+reader/edge contracts remain unchanged. See
 [release boundary](docs/edge-receiver.md#verification-and-release-boundary).
 Because both
 GitLab projects are private and currently live as independent projects in the
