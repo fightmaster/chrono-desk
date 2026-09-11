@@ -26,6 +26,15 @@ import (
 // The local HTTPS responder has no database: backend acceptance is separate.
 // The second observation peer is core-backed, not a packaged Desk application.
 func TestEdgeMixedNativeLoadAndSidecarBacklog(t *testing.T) {
+	runEdgeMixedLoad(t, 60)
+}
+
+// This separate observation is not a pass of the original short recovery gate.
+func TestEdgeMixedRecoveryObservation(t *testing.T) {
+	runEdgeMixedLoad(t, 180)
+}
+
+func runEdgeMixedLoad(t *testing.T, seconds int) {
 	for _, managed := range []bool{false, true} {
 		t.Run(fmt.Sprintf("heartbeat_%t", managed), func(t *testing.T) {
 			hub := newEdgeChainHubTopology(t, 100, "Feibot:U659", "100", "none", true)
@@ -95,19 +104,38 @@ func TestEdgeMixedNativeLoadAndSidecarBacklog(t *testing.T) {
 			peer.mu.Unlock()
 			results := make(chan mixedNativeResult, 2)
 			started := time.Now()
-			go runMixedNative(feibotAddress, "feibot", started, results)
-			go runMixedNative(myraceAddress, "myrace", started, results)
-			for tick := 1; tick <= 60; tick++ {
+			var firstACK time.Duration
+			go runMixedNative(feibotAddress, "feibot", started, seconds, results)
+			go runMixedNative(myraceAddress, "myrace", started, seconds, results)
+			for tick := 1; tick <= seconds; tick++ {
 				time.Sleep(max(0, time.Until(started.Add(time.Duration(tick)*time.Second))))
 				if tick == 10 {
 					online.Store(true)
 				}
 				resources.sample(t, source)
+				if tick == 10 || tick%10 == 0 || firstACK == 0 {
+					st, err := source.status()
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, d := range st.Destinations {
+						if d.ID != "hub" {
+							continue
+						}
+						if d.Acknowledged > 0 && firstACK == 0 {
+							firstACK = time.Since(started)
+							t.Logf("first observed committed Hub ACK: %s (one-second sampling)", firstACK)
+						}
+						if tick%10 == 0 {
+							t.Logf("recovery tick=%d ack=%d pending=%d retry=%d circuit=%s open_until=%s last_attempt=%s", tick, d.Acknowledged, d.Pending, d.Retry, d.CircuitState, d.CircuitOpenUntil, d.LastAttempt)
+						}
+					}
+				}
 			}
 			for range 2 {
 				result := <-results
 				t.Logf("native %s: count=%d elapsed=%s max batch ACK=%s max schedule delay=%s", result.profile, result.count, result.elapsed, result.maxACK, result.maxLate)
-				if result.err != nil || result.elapsed > 65*time.Second || result.maxLate > 2*time.Second {
+				if result.err != nil || result.elapsed > time.Duration(seconds+5)*time.Second || result.maxLate > 2*time.Second {
 					t.Fatalf("native stream failed its scheduled rate: %v", result.err)
 				}
 			}
@@ -134,7 +162,7 @@ func TestEdgeMixedNativeLoadAndSidecarBacklog(t *testing.T) {
 				ids[entry["id"]] = true
 				counts[entry["board"]]++
 			}
-			if counts["Feibot:U659"] != backlog || counts["Feibot:U660"] != 15000 || counts["MyRaceNano:446365"] != 60 || len(entries) != backlog+15060 {
+			if counts["Feibot:U659"] != backlog || counts["Feibot:U660"] != seconds*250 || counts["MyRaceNano:446365"] != seconds || len(entries) != backlog+seconds*251 {
 				t.Errorf("mixed persisted stream counts: %v", counts)
 			}
 			peer.mu.Lock()
@@ -155,7 +183,7 @@ func TestEdgeMixedNativeLoadAndSidecarBacklog(t *testing.T) {
 			resources.sample(t, source)
 			hubResources := hub.docker(t, "exec", hub.id, "/bin/sh", "-c", "cat /proc/1/status /sys/fs/cgroup/memory.peak /sys/fs/cgroup/cpu.stat")
 			for _, line := range strings.Split(hubResources, "\n") {
-				if strings.HasPrefix(line, "VmHWM:") || strings.HasPrefix(line, "usage_usec ") || (len(strings.Fields(line)) == 1 && len(line) > 0 && line[0] >= '0' && line[0] <= '9') {
+				if strings.HasPrefix(line, "VmHWM:") || strings.HasPrefix(line, "usage_usec ") || strings.HasPrefix(line, "nr_throttled ") || strings.HasPrefix(line, "throttled_usec ") || (len(strings.Fields(line)) == 1 && len(line) > 0 && line[0] >= '0' && line[0] <= '9') {
 					t.Log("Hub/Redis fixture resource:", line)
 				}
 			}
@@ -176,7 +204,7 @@ type mixedNativeResult struct {
 	err                      error
 }
 
-func runMixedNative(address, profile string, started time.Time, results chan<- mixedNativeResult) {
+func runMixedNative(address, profile string, started time.Time, seconds int, results chan<- mixedNativeResult) {
 	result := mixedNativeResult{profile: profile}
 	defer func() { result.elapsed = time.Since(started); results <- result }()
 	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
@@ -186,9 +214,9 @@ func runMixedNative(address, profile string, started time.Time, results chan<- m
 	}
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
-	batches, batch, period := 600, 25, 100*time.Millisecond
+	batches, batch, period := seconds*10, 25, 100*time.Millisecond
 	if profile == "myrace" {
-		batches, batch, period = 60, 1, time.Second
+		batches, batch, period = seconds, 1, time.Second
 	}
 	for i := 0; i < batches; i++ {
 		due := started.Add(time.Duration(i) * period)

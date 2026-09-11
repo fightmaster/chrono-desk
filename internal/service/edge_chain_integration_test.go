@@ -356,10 +356,13 @@ func (s *edgeChainSource) request(method, path string, form url.Values) ([]byte,
 type edgeChainSourceStatus struct {
 	Revision     int64 `json:"revision"`
 	Destinations []struct {
-		ID           string `json:"id"`
-		Acknowledged int    `json:"acknowledged"`
-		Pending      int    `json:"pending"`
-		Retry        int    `json:"retry"`
+		ID               string `json:"id"`
+		Acknowledged     int    `json:"acknowledged"`
+		Pending          int    `json:"pending"`
+		Retry            int    `json:"retry"`
+		CircuitState     string `json:"circuit_state"`
+		CircuitOpenUntil string `json:"circuit_open_until"`
+		LastAttempt      string `json:"last_attempt"`
 	} `json:"destinations"`
 }
 

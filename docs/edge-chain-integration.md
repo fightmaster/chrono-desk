@@ -274,6 +274,27 @@ Current mixed-load evidence and unresolved drain failure are recorded in
 chrono-docs `reports/edge-mixed-load-2026-09-11.md` under CHR-SIDE-002. No production
 instrumentation, transport change or relaxed deadline is introduced by this test.
 
+`TestEdgeMixedRecoveryObservation` is a **separate**180-second continuous-traffic
+observation using the same helper,15,000-row backlog, ports, retry policy and
+resources. Run it with the same tags/artifacts and `-count=1 -v -timeout=9m`.
+Each mode now offers45,000 native Feibot messages and180 MyRace messages. It must
+finish draining before those native streams stop, retain immutable source rows
+and avoid replaying the healthy destination. Its pass is not a pass of the
+original50-second available-path budget. That budget was a local diagnostic
+threshold, not an owner-approved delivery SLO.
+
+Both scenarios sample the first observed committed Hub ACK (one-second sampling)
+and report queue/circuit/open-until/last-attempt every ten seconds. Observation
+throughput and recovery delay can thus be distinguished without changing device
+logging. The cgroup CPU report includes throttled counters. Resource snapshots
+follow full Redis inspection and can include its temporary buffers/page cache;
+they are not standalone Hub steady-state resource requirements.
+
+An attempted direct fixture with an internal Docker network and host-loopback
+published ports failed setup because this engine supplied no public port mapping.
+No workload ran in that variant, its experimental plumbing was removed, and no
+direct-network throughput result is claimed.
+
 The additional `edgeload` tag enables `TestEdgeSourceSustainedLoadAndBacklog`.
 It reuses the actual sidecar executable/configuration/startup helpers but replaces
 both receivers with **synthetic in-memory peers using the shared core listener**.
