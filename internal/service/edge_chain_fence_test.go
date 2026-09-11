@@ -112,12 +112,13 @@ type edgeFencePHP struct {
 	err    error
 }
 
-func (c *edgeChainCentral) startPHP(t *testing.T, action string) *edgeFencePHP {
+func (c *edgeChainCentral) startPHP(t *testing.T, action string, args ...string) *edgeFencePHP {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	p := &edgeFencePHP{done: make(chan struct{})}
 	go func() {
-		p.output, p.err = exec.CommandContext(ctx, "docker", "exec", c.phpID, "php", "tests/Support/edge-chain.php", action).CombinedOutput()
+		command := append([]string{"exec", c.phpID, "php", "tests/Support/edge-chain.php", action}, args...)
+		p.output, p.err = exec.CommandContext(ctx, "docker", command...).CombinedOutput()
 		close(p.done)
 	}()
 	t.Cleanup(func() { cancel(); <-p.done })
@@ -191,7 +192,7 @@ func (c *edgeChainCentral) holdFence(t *testing.T, gate int) (int64, func()) {
 
 func (c *edgeChainCentral) waitBlockedBy(t *testing.T, blocker int64, table string) int64 {
 	t.Helper()
-	if blocker <= 0 || (table != "edge_chain_test_gates" && table != "rfid_source_sessions") {
+	if blocker <= 0 || (table != "edge_chain_test_gates" && table != "rfid_source_sessions" && table != "edge_devices") {
 		t.Fatal("invalid synthetic wait-edge selector")
 	}
 	var waiting int64

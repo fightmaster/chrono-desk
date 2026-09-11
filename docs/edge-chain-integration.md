@@ -54,6 +54,22 @@ observations. Actual execution/retry remains covered by the separate chain above
 External fonts/analytics are blocked and a deployment-only logo may be absent;
 this is browser emulation, not a physical phone or appliance acceptance.
 
+`TestEdgeManagementMySQLRevocationFence` uses the ordinary central integration
+tags/prerequisites, without a browser. Separate PHP processes invoke the actual
+Devices public service. Test-only audit triggers pause the first transaction
+while it owns the device row; `performance_schema.data_lock_waits` must show the
+second process waiting on that row before release. There is no sleep-based claim
+of concurrency and no alternate implementation of the application transaction.
+The fixture checks revoke-before-enqueue/heartbeat, enqueue/delivery-before-revoke,
+audit-failure rollback followed by enqueue/heartbeat, and two concurrent enqueues.
+Uncommitted snapshots/commands/audits remain invisible; terminal state and counts
+must match the proven order. No timing rows or source grants change. Trigger
+action comparisons use binary ASCII equality so the fixture does not depend on
+MySQL's default collation matching Laravel's schema. The guarded helper allows
+only seven predefined synthetic device IDs and never prints its synthetic key.
+This tests database ordering; the HTTPS/browser and actual-client tests above
+remain responsible for their respective boundaries.
+
 The Linux-only `edgeintegration` test connects the actual sidecar executable,
 actual Hub executable/Redis and production Desk services over TCP. It has no
 fake ACK or fake receiver. The Desk Wails window is not involved: its actual
