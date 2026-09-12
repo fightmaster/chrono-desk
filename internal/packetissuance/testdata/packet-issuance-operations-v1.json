@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "operation": {
+    "schemaVersion": 1,
+    "operationId": "11111111-1111-4111-8111-111111111111",
+    "scopeId": "site:22222222-2222-4222-8222-222222222222:621632",
+    "baselineId": "snapshot:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "originInstanceId": "33333333-3333-4333-8333-333333333333",
+    "originSequence": 1,
+    "createdAtMs": 1789290000123,
+    "claimedActor": "Волонтёр 1",
+    "command": {
+      "type": "issue",
+      "registrationId": "700"
+    },
+    "bases": [
+      {
+        "registrationId": "700",
+        "heads": []
+      }
+    ],
+    "changes": [
+      {
+        "registrationId": "700",
+        "before": {
+          "id": "700",
+          "eventId": "621632",
+          "raceId": "71",
+          "bib": "0017",
+          "epc": "000a",
+          "person": {
+            "id": "user:88",
+            "firstName": "Анна",
+            "lastName": "Тестова",
+            "birthDate": "1990-02-03",
+            "gender": "female",
+            "team": "",
+            "city": "Саратов"
+          },
+          "reserve": false,
+          "issued": false,
+          "status": "registered",
+          "transferredTo": null,
+          "hasTimingEvidence": false
+        },
+        "after": {
+          "id": "700",
+          "eventId": "621632",
+          "raceId": "71",
+          "bib": "0017",
+          "epc": "000a",
+          "person": {
+            "id": "user:88",
+            "firstName": "Анна",
+            "lastName": "Тестова",
+            "birthDate": "1990-02-03",
+            "gender": "female",
+            "team": "",
+            "city": "Саратов"
+          },
+          "reserve": false,
+          "issued": true,
+          "status": "registered",
+          "transferredTo": null,
+          "hasTimingEvidence": false
+        }
+      }
+    ]
+  },
+  "expectedContentHash": "sha256:a96542904964b09e8ec091a0cfc8b5496cd927c64c34ac7f6eff945a1027c773",
+  "receipt": {
+    "schemaVersion": 1,
+    "receipts": [
+      {
+        "operationId": "11111111-1111-4111-8111-111111111111",
+        "contentHash": "sha256:a96542904964b09e8ec091a0cfc8b5496cd927c64c34ac7f6eff945a1027c773",
+        "outcome": "applied",
+        "known": false,
+        "code": null
+      }
+    ]
+  }
+}

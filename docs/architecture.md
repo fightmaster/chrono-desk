@@ -220,6 +220,18 @@ searchable protocol), auto-refreshing; the Призёры tab copies a Telegram-
 winners list for SMM. Operator toggles it per event from the settings screen; the port is
 open only while on.
 
+Packet issuance (CHR-SW-009 local candidate, not released): the independent
+`internal/packetissuance` domain validates the shared operation-v1 envelope and
+canonical hash without HTTP or SQLite dependencies. The event database stores a
+lossless registration projection, immutable operation outcomes and an ordered
+issuance feed in tables separate from both legacy `local_changes` and timing
+outboxes. Projection + operation + feed commit atomically; a retry after a lost
+response returns the existing outcome. The canonical chrono-docs operation
+fixture is pinned byte-for-byte in its package testdata. A dedicated authenticated
+HTTPS LAN adapter and the site relay are still required before advertising this
+capability; neither the localhost control API nor the tokenless read-only results
+server may be reused for tablet writes.
+
 ## Checkpoint semantics (inherited from run5 / rfid-sync)
 
 - Types: 1=START, 2=CHECKPOINT, 3=FINISH. Checkpoints belong to a race, are bound to a

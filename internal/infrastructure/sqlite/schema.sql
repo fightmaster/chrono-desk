@@ -207,6 +207,66 @@ CREATE TABLE IF NOT EXISTS local_changes (
 
 CREATE INDEX IF NOT EXISTS idx_local_changes_entity ON local_changes(entity, entity_id);
 
+-- Packet issuance is an independent registration journal. It deliberately
+-- does not reuse local_changes (legacy overwrite sync) or the timing outboxes.
+-- The full projection preserves string bibs/EPCs and person provenance that
+-- cannot be reconstructed losslessly from the legacy members table.
+CREATE TABLE IF NOT EXISTS packet_issuance_scopes (
+    event_id     TEXT PRIMARY KEY REFERENCES events(id),
+    scope_id     TEXT NOT NULL UNIQUE,
+    baseline_id  TEXT NOT NULL,
+    source_kind  TEXT NOT NULL CHECK (source_kind IN ('site')),
+    installed_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS packet_issuance_registrations (
+    registration_id TEXT PRIMARY KEY REFERENCES members(id),
+    event_id         TEXT NOT NULL REFERENCES events(id),
+    value_json       TEXT NOT NULL,
+    heads_json       TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_packet_issuance_registrations_event
+    ON packet_issuance_registrations(event_id, registration_id);
+
+CREATE TABLE IF NOT EXISTS packet_issuance_operations (
+    operation_id       TEXT PRIMARY KEY,
+    event_id           TEXT NOT NULL REFERENCES events(id),
+    scope_id           TEXT NOT NULL,
+    baseline_id        TEXT NOT NULL,
+    origin_instance_id TEXT NOT NULL,
+    origin_sequence    INTEGER NOT NULL,
+    content_hash       TEXT NOT NULL,
+    operation_json     TEXT NOT NULL,
+    outcome            TEXT NOT NULL CHECK (outcome IN ('applied','equivalent','waiting_dependency','conflict','rejected')),
+    outcome_code       TEXT,
+    recorded_at        INTEGER NOT NULL,
+    UNIQUE (origin_instance_id, origin_sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_packet_issuance_operations_event
+    ON packet_issuance_operations(event_id, recorded_at, operation_id);
+
+CREATE TABLE IF NOT EXISTS packet_issuance_feed_heads (
+    event_id      TEXT PRIMARY KEY REFERENCES events(id),
+    last_sequence INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS packet_issuance_feed_actions (
+    action_id           TEXT PRIMARY KEY,
+    event_id            TEXT NOT NULL REFERENCES events(id),
+    event_sequence      INTEGER NOT NULL,
+    kind                TEXT NOT NULL CHECK (kind IN ('operation','server_change')),
+    source_code         TEXT NOT NULL,
+    source_operation_id TEXT,
+    outcome             TEXT NOT NULL CHECK (outcome IN ('applied','equivalent','conflict')),
+    outcome_code        TEXT,
+    changes_json        TEXT NOT NULL,
+    recorded_at         INTEGER NOT NULL,
+    UNIQUE (event_id, event_sequence),
+    UNIQUE (source_operation_id)
+);
+CREATE INDEX IF NOT EXISTS idx_packet_issuance_feed_event
+    ON packet_issuance_feed_actions(event_id, event_sequence);
+
 -- «Зафиксировать время»: wall-clock finishes the judge captured before a
 -- participant number is known. They persist here so a restart doesn't lose
 -- them (the bug: they used to live only in frontend state). Binding a number

@@ -117,6 +117,12 @@ by a random per-process bearer token; Wails bindings expose only bootstrap value
 `internal/transport/publicweb` is a second, **read-only** HTTP server for the LAN results
 broadcast (see status above) — same `service` layer, GET-only, PII-trimmed, off by default.
 The LAN broadcast remains tokenless and never receives the localhost control token.
+Packet issuance adds a separate `internal/packetissuance` domain and dedicated SQLite
+journal. Its LAN API must be a third, narrow authenticated HTTPS surface: do not expose
+the localhost bearer, add writes to `publicweb`, or mix issuance delivery with RFID
+observation outboxes. Current CHR-SW-009 code is a local storage/service candidate only;
+it must not advertise Desk receiver capabilities until protected transport and relay
+acceptance are complete.
 
 ## Critical contracts
 
