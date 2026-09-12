@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -62,6 +63,65 @@ func ParseOperation(data []byte) (Operation, error) {
 		return Operation{}, err
 	}
 	return operations[0], nil
+}
+
+func ParseBootstrap(data []byte) (Bootstrap, error) {
+	root, err := decodeValue(data)
+	if err != nil {
+		return Bootstrap{}, errors.New("invalid_bootstrap")
+	}
+	obj, ok := root.(map[string]any)
+	if !ok || !exactKeys(obj, "schemaVersion", "scopeId", "sourceKind", "event", "races", "registrations", "baselineId") ||
+		integer(obj["schemaVersion"]) != 1 || stringValue(obj["sourceKind"]) != "site" ||
+		!identifierPattern.MatchString(stringValue(obj["scopeId"])) || !identifierPattern.MatchString(stringValue(obj["baselineId"])) {
+		return Bootstrap{}, errors.New("invalid_bootstrap")
+	}
+	eventObj, ok := obj["event"].(map[string]any)
+	if !ok || !exactKeys(eventObj, "id", "name", "date") {
+		return Bootstrap{}, errors.New("invalid_bootstrap")
+	}
+	event := Event{ID: stringValue(eventObj["id"]), Name: stringValue(eventObj["name"]), Date: stringValue(eventObj["date"])}
+	if !identifierPattern.MatchString(event.ID) || !validText(event.Name, 512) || !validDate(event.Date) {
+		return Bootstrap{}, errors.New("invalid_bootstrap")
+	}
+	rawRaces, racesOK := obj["races"].([]any)
+	rawRows, rowsOK := obj["registrations"].([]any)
+	if !racesOK || !rowsOK || len(rawRaces) > 1000 || len(rawRows) > 20000 {
+		return Bootstrap{}, errors.New("invalid_bootstrap")
+	}
+	races := make([]Race, 0, len(rawRaces))
+	raceIDs := make(map[string]bool, len(rawRaces))
+	for _, raw := range rawRaces {
+		raceObj, ok := raw.(map[string]any)
+		if !ok || !exactKeys(raceObj, "id", "name") {
+			return Bootstrap{}, errors.New("invalid_bootstrap")
+		}
+		race := Race{ID: stringValue(raceObj["id"]), Name: stringValue(raceObj["name"])}
+		if !identifierPattern.MatchString(race.ID) || !validText(race.Name, 256) || raceIDs[race.ID] {
+			return Bootstrap{}, errors.New("invalid_bootstrap")
+		}
+		raceIDs[race.ID] = true
+		races = append(races, race)
+	}
+	rows := make([]Registration, 0, len(rawRows))
+	rowIDs := make(map[string]bool, len(rawRows))
+	for _, raw := range rawRows {
+		row, err := parseRegistration(raw)
+		if err != nil || row.EventID != event.ID || !raceIDs[row.RaceID] || rowIDs[row.ID] {
+			return Bootstrap{}, errors.New("invalid_bootstrap")
+		}
+		rowIDs[row.ID] = true
+		rows = append(rows, row)
+	}
+	for _, row := range rows {
+		if row.TransferredTo != nil && (*row.TransferredTo == row.ID || !rowIDs[*row.TransferredTo]) {
+			return Bootstrap{}, errors.New("invalid_bootstrap")
+		}
+	}
+	return Bootstrap{
+		SchemaVersion: 1, ScopeID: stringValue(obj["scopeId"]), SourceKind: "site",
+		Event: event, Races: races, Registrations: rows, BaselineID: stringValue(obj["baselineId"]),
+	}, nil
 }
 
 func ContentHash(operation Operation) string {
@@ -421,6 +481,13 @@ func validReason(value string) bool {
 		}
 	}
 	return false
+}
+func validDate(value string) bool {
+	if !datePattern.MatchString(value) {
+		return false
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	return err == nil && parsed.Format("2006-01-02") == value
 }
 func personField(key string) bool {
 	return key == "firstName" || key == "lastName" || key == "birthDate" || key == "gender" || key == "team" || key == "city"

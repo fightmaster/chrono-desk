@@ -81,3 +81,24 @@ type Receipt struct {
 	Known       bool    `json:"known"`
 	Code        *string `json:"code"`
 }
+
+type Event struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Date string `json:"date"`
+}
+
+type Race struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type Bootstrap struct {
+	SchemaVersion int            `json:"schemaVersion"`
+	ScopeID       string         `json:"scopeId"`
+	SourceKind    string         `json:"sourceKind"`
+	Event         Event          `json:"event"`
+	Races         []Race         `json:"races"`
+	Registrations []Registration `json:"registrations"`
+	BaselineID    string         `json:"baselineId"`
+}

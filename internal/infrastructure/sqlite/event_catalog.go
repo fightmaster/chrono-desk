@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 type EventCatalog struct {
 	dataDir string
 	origin  *installationOrigin
+	relays  *packetRelayState
 
 	mu     sync.Mutex
 	stores map[string]*Store
@@ -39,7 +41,30 @@ func NewEventCatalog(dataDir string) (*EventCatalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &EventCatalog{dataDir: dataDir, origin: origin, stores: map[string]*Store{}}, nil
+	relays, err := loadOrCreatePacketRelayState(dataDir)
+	if err != nil {
+		origin.Close()
+		return nil, err
+	}
+	return &EventCatalog{dataDir: dataDir, origin: origin, relays: relays, stores: map[string]*Store{}}, nil
+}
+
+func (c *EventCatalog) InstallationID() string { return c.origin.instanceID }
+
+func (c *EventCatalog) PreparePacketRelay(ctx context.Context, eventID, siteBaseURL string) (PacketRelayState, error) {
+	return c.relays.Prepare(ctx, eventID, siteBaseURL, c.origin.instanceID)
+}
+
+func (c *EventCatalog) CompletePacketRelay(ctx context.Context, state PacketRelayState) error {
+	return c.relays.Complete(ctx, state)
+}
+
+func (c *EventCatalog) GetPacketRelay(ctx context.Context, eventID string) (PacketRelayState, bool, error) {
+	return c.relays.Get(ctx, eventID)
+}
+
+func (c *EventCatalog) AdvancePacketRelayFeed(ctx context.Context, eventID, expected, next string) error {
+	return c.relays.AdvanceFeed(ctx, eventID, expected, next)
 }
 
 func (c *EventCatalog) eventPath(eventID string) string {
@@ -163,6 +188,9 @@ func (c *EventCatalog) Close() error {
 	}
 	if err := c.origin.Close(); err != nil && firstErr == nil {
 		firstErr = fmt.Errorf("close observation origin: %w", err)
+	}
+	if err := c.relays.Close(); err != nil && firstErr == nil {
+		firstErr = fmt.Errorf("close packet relay state: %w", err)
 	}
 	return firstErr
 }

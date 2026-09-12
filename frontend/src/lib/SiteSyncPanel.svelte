@@ -20,6 +20,7 @@
   let pullResult = null
   let saved = false
   let loaded = false
+  let packetStatus = null
 
   async function loadConfig() {
     error = ''
@@ -29,6 +30,7 @@
       tokenSet = cfg.token_set
       lastSyncedAt = cfg.last_synced_at
       storage = cfg.storage || null
+      packetStatus = await call('GET', `/api/events/${eventId}/packet-issuance/site`)
       loaded = true
     } catch (e) { error = e.message }
   }
@@ -70,6 +72,13 @@
       pullResult = await call('POST', `/api/events/${eventId}/sync-pull`, JSON.stringify({overwrite: siteWins}))
       dispatch('pulled')
     } catch (e) { error = `Получение: ${e.message}` } finally { busy = '' }
+  }
+
+  async function connectPacketIssuance() {
+    error = ''; busy = 'Подключение выдачи пакетов…'
+    try {
+      packetStatus = await call('POST', `/api/events/${eventId}/packet-issuance/site/connect`, '{}')
+    } catch (e) { error = `Выдача пакетов: ${e.message}` } finally { busy = '' }
   }
 </script>
 
@@ -113,6 +122,18 @@
   </div>
 
   <div class="actions">
+    <span class="faint">
+      Выдача пакетов:
+      {#if packetStatus?.roster_installed}список сайта установлен
+      {:else if packetStatus?.configured}доступ получен, список не установлен
+      {:else}не подключена{/if}
+      {#if packetStatus?.expires_at} · доступ до {packetStatus.expires_at}{/if}
+    </span>
+    <button class="btn" disabled={!!busy || !baseUrl || !tokenSet || packetStatus?.roster_installed}
+      on:click={connectPacketIssuance}>Подключить выдачу пакетов</button>
+  </div>
+
+  <div class="actions">
     <label class="check" title="Взять значения сайта поверх локальных правок.">
       <input type="checkbox" bind:checked={siteWins}/> значения сайта важнее локальных правок
     </label>
@@ -126,7 +147,8 @@
       правки логов: <b>{result.sent?.rfid_log_edits ?? 0}</b> ·
       ручные: <b>{result.sent?.manual_results ?? 0}</b> ·
       правки участников: <b>{result.sent?.member_edits ?? 0}</b> ·
-      новые: <b>{result.sent?.new_members ?? 0}</b>
+      новые: <b>{result.sent?.new_members ?? 0}</b> ·
+      операции выдачи: <b>{result.packet_issuance?.accepted ?? 0}</b>
     </div>
   {/if}
   {#if pullResult}

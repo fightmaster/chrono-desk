@@ -34,7 +34,31 @@ func migrate(db *sql.DB) error {
 	if err := addProjectionRevisionFence(db); err != nil {
 		return err
 	}
+	if err := addPacketIssuanceSiteDelivery(db); err != nil {
+		return err
+	}
 	return nil
+}
+
+func addPacketIssuanceSiteDelivery(db *sql.DB) error {
+	for _, column := range []struct{ name, typeSQL string }{
+		{"site_acknowledged", "INTEGER NOT NULL DEFAULT 0"},
+		{"site_outcome", "TEXT"}, {"site_outcome_code", "TEXT"},
+		{"site_attempts", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('packet_issuance_operations') WHERE name=?`, column.name).Scan(&count); err != nil {
+			return fmt.Errorf("inspect packet_issuance_operations.%s: %w", column.name, err)
+		}
+		if count == 0 {
+			if _, err := db.Exec(`ALTER TABLE packet_issuance_operations ADD COLUMN ` + column.name + ` ` + column.typeSQL); err != nil {
+				return fmt.Errorf("add packet_issuance_operations.%s: %w", column.name, err)
+			}
+		}
+	}
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_packet_operations_site_pending
+		ON packet_issuance_operations(event_id,site_acknowledged,recorded_at,operation_id)`)
+	return err
 }
 
 func addEdgeRelayDelivery(db *sql.DB) error {

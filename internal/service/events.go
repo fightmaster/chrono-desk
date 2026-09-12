@@ -54,6 +54,24 @@ func (s *EventService) StorageStats(eventID string) (sqlite.EventStorageStats, e
 	return s.catalog.StorageStats(eventID)
 }
 
+func (s *EventService) InstallationID() string { return s.catalog.InstallationID() }
+
+func (s *EventService) PreparePacketRelay(ctx context.Context, eventID, siteBaseURL string) (sqlite.PacketRelayState, error) {
+	return s.catalog.PreparePacketRelay(ctx, eventID, siteBaseURL)
+}
+
+func (s *EventService) CompletePacketRelay(ctx context.Context, state sqlite.PacketRelayState) error {
+	return s.catalog.CompletePacketRelay(ctx, state)
+}
+
+func (s *EventService) GetPacketRelay(ctx context.Context, eventID string) (sqlite.PacketRelayState, bool, error) {
+	return s.catalog.GetPacketRelay(ctx, eventID)
+}
+
+func (s *EventService) AdvancePacketRelayFeed(ctx context.Context, eventID, expected, next string) error {
+	return s.catalog.AdvancePacketRelayFeed(ctx, eventID, expected, next)
+}
+
 // ImportExport parses a run5 event export and applies it to the event's
 // database file, creating the file on first import. Local edits win.
 func (s *EventService) ImportExport(ctx context.Context, r io.Reader) (ImportStats, error) {

@@ -227,10 +227,15 @@ lossless registration projection, immutable operation outcomes and an ordered
 issuance feed in tables separate from both legacy `local_changes` and timing
 outboxes. Projection + operation + feed commit atomically; a retry after a lost
 response returns the existing outcome. The canonical chrono-docs operation
-fixture is pinned byte-for-byte in its package testdata. A dedicated authenticated
-HTTPS LAN adapter and the site relay are still required before advertising this
-capability; neither the localhost control API nor the tokenless read-only results
-server may be reused for tablet writes.
+fixture is pinned byte-for-byte in its package testdata. The site relay client is
+now a local candidate: it converts the already configured event sync token into a
+narrow 30-day grant, stores its pre-generated credential in an installation-private
+database outside `.chrono`, installs the strict bootstrap and sends the durable
+operation outbox with the ordinary site-sync action. Matching terminal receipts
+are committed atomically; lost responses are retried with the same operation and
+credential. A dedicated authenticated HTTPS LAN adapter and incoming site feed are
+still required before advertising this capability; neither the localhost control
+API nor the tokenless read-only results server may be reused for tablet writes.
 
 ## Checkpoint semantics (inherited from run5 / rfid-sync)
 

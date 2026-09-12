@@ -124,7 +124,14 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 	if err := store.SetSyncResult(r.Context(), eventID, time.Now().UnixMilli(), hex.EncodeToString(sum[:])); err != nil {
 		s.logger.Printf("save sync result: %v", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sent": summary, "response": resp.Summary})
+	packetResult, err := service.SyncPacketOperations(r.Context(), s.events, eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sent": summary, "response": resp.Summary, "packet_issuance": packetResult,
+	})
 }
 
 func applyObservationAck(ctx context.Context, store *sqlite.Store, batch *sqlite.ObservationBatch, ack *service.ObservationAck) error {

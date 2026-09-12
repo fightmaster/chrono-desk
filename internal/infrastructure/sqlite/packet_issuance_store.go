@@ -36,6 +36,48 @@ type PacketOperationRecord struct {
 	RecordedAt       int64
 }
 
+func (s *Store) ListPendingPacketOperations(ctx context.Context, eventID string, limit int) ([]packetissuance.Operation, error) {
+	if limit < 1 || limit > 64 {
+		return nil, fmt.Errorf("invalid packet operation delivery limit")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT operation_json FROM packet_issuance_operations
+		WHERE event_id=? AND site_acknowledged=0 AND outcome<>'waiting_dependency'
+		ORDER BY recorded_at,operation_id LIMIT ?`, eventID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list packet operations for site: %w", err)
+	}
+	defer rows.Close()
+	operations := make([]packetissuance.Operation, 0)
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		operation, err := packetissuance.ParseOperation(raw)
+		if err != nil {
+			return nil, fmt.Errorf("stored packet operation is invalid: %w", err)
+		}
+		operations = append(operations, operation)
+	}
+	return operations, rows.Err()
+}
+
+func (s *Store) MarkPacketOperationSiteReceipt(ctx context.Context, receipt packetissuance.Receipt) error {
+	acknowledged := receipt.Outcome != "waiting_dependency"
+	result, err := s.db.ExecContext(ctx, `UPDATE packet_issuance_operations SET
+		site_acknowledged=?,site_outcome=?,site_outcome_code=?,site_attempts=site_attempts+1
+		WHERE operation_id=? AND content_hash=?`, acknowledged, receipt.Outcome, receipt.Code,
+		receipt.OperationID, receipt.ContentHash)
+	if err != nil {
+		return fmt.Errorf("save packet operation site receipt: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil || count != 1 {
+		return fmt.Errorf("packet operation receipt identity mismatch")
+	}
+	return nil
+}
+
 // InstallPacketIssuanceRoster creates the Desk projection from the site's
 // authenticated bootstrap. It refuses replacement once any issuance history
 // exists; later changes must arrive through the feed rather than a snapshot.

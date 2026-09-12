@@ -240,6 +240,10 @@ CREATE TABLE IF NOT EXISTS packet_issuance_operations (
     outcome            TEXT NOT NULL CHECK (outcome IN ('applied','equivalent','waiting_dependency','conflict','rejected')),
     outcome_code       TEXT,
     recorded_at        INTEGER NOT NULL,
+    site_acknowledged  INTEGER NOT NULL DEFAULT 0,
+    site_outcome       TEXT,
+    site_outcome_code  TEXT,
+    site_attempts      INTEGER NOT NULL DEFAULT 0,
     UNIQUE (origin_instance_id, origin_sequence)
 );
 CREATE INDEX IF NOT EXISTS idx_packet_issuance_operations_event

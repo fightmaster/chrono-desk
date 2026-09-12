@@ -120,9 +120,11 @@ The LAN broadcast remains tokenless and never receives the localhost control tok
 Packet issuance adds a separate `internal/packetissuance` domain and dedicated SQLite
 journal. Its LAN API must be a third, narrow authenticated HTTPS surface: do not expose
 the localhost bearer, add writes to `publicweb`, or mix issuance delivery with RFID
-observation outboxes. Current CHR-SW-009 code is a local storage/service candidate only;
-it must not advertise Desk receiver capabilities until protected transport and relay
-acceptance are complete.
+observation outboxes. The server relay credential belongs in the installation-private
+`.packet-issuance-relays.sqlite`, never in the portable event `.chrono` file. Current
+CHR-SW-009 code includes local storage, site enrollment/bootstrap and operation delivery;
+it must not advertise Desk receiver capabilities until protected LAN transport, incoming
+site feed and device acceptance are complete.
 
 ## Critical contracts
 

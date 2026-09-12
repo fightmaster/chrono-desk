@@ -138,3 +138,31 @@ func TestPacketIssuanceRosterRetainsStringBibAndRejectsPartialSnapshot(t *testin
 		t.Fatal("partial snapshot accepted")
 	}
 }
+
+func TestPacketIssuanceSiteOutboxKeepsOperationUntilMatchingTerminalReceipt(t *testing.T) {
+	operation := packetFixtureOperation(t)
+	store := packetStore(t, operation)
+	row := operation.Changes[0].Before
+	ctx := context.Background()
+	connection := PacketConnectionContext{EventID: row.EventID, ScopeID: operation.ScopeID, OriginInstanceID: operation.OriginInstanceID}
+	receipts, err := NewPacketIssuanceReceiver().Receive(ctx, store, connection, []packetissuance.Operation{operation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := store.ListPendingPacketOperations(ctx, row.EventID, 64)
+	if err != nil || len(pending) != 1 || pending[0].OperationID != operation.OperationID {
+		t.Fatalf("pending=%+v err=%v", pending, err)
+	}
+	if err := store.MarkPacketOperationSiteReceipt(ctx, receipts[0]); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = store.ListPendingPacketOperations(ctx, row.EventID, 64)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("acknowledged operation remains pending: %+v err=%v", pending, err)
+	}
+	bad := receipts[0]
+	bad.ContentHash = "sha256:wrong"
+	if err := store.MarkPacketOperationSiteReceipt(ctx, bad); err == nil {
+		t.Fatal("mismatched receipt updated operation")
+	}
+}
