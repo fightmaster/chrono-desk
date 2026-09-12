@@ -9,8 +9,9 @@ import (
 )
 
 type SyncPullResult struct {
-	Changes ChangePullStats `json:"changes"`
-	Recount *RecountStats   `json:"recount,omitempty"`
+	Changes        ChangePullStats      `json:"changes"`
+	Recount        *RecountStats        `json:"recount,omitempty"`
+	PacketIssuance PacketFeedSyncResult `json:"packet_issuance"`
 }
 
 // SyncPullManager owns both manual and live-session pulls. A per-event mutex
@@ -121,7 +122,18 @@ func (m *SyncPullManager) PullNow(ctx context.Context, eventID string) (SyncPull
 			result.Recount = &recount
 		}
 	}
+	result.PacketIssuance, err = SyncPacketFeed(ctx, m.events, eventID)
+	if err != nil {
+		return SyncPullResult{}, err
+	}
 	return result, nil
+}
+
+func (m *SyncPullManager) PullPacketNow(ctx context.Context, eventID string) (PacketFeedSyncResult, error) {
+	lock := m.eventLock(eventID)
+	lock.Lock()
+	defer lock.Unlock()
+	return SyncPacketFeed(ctx, m.events, eventID)
 }
 
 func (m *SyncPullManager) eventLock(eventID string) *sync.Mutex {

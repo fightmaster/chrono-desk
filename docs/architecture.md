@@ -238,6 +238,9 @@ action journal: a page, compatible three-way projection changes and its cursor
 commit atomically, while incompatible local branches remain unchanged and become
 review records. Timing evidence is never accepted from the feed and registration
 deletion is a projection tombstone, not destructive timing-history deletion. A
+normal site pull and the existing live-session background pull also advance this
+feed; a manual site push performs the same serialized pull after delivering the
+local operation outbox. A
 dedicated authenticated HTTPS LAN adapter is still required before advertising
 this capability; neither the localhost control API nor the tokenless read-only
 results server may be reused for tablet writes.

@@ -129,7 +129,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	packetFeedResult, err := service.SyncPacketFeed(r.Context(), s.events, eventID)
+	packetFeedResult, err := s.syncPull.PullPacketNow(r.Context(), eventID)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -213,6 +213,7 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		pulled.Recount = &recount
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"imported": stats, "changes": pulled.Changes, "recount": pulled.Recount, "site_wins": siteWins,
+		"imported": stats, "changes": pulled.Changes, "recount": pulled.Recount,
+		"packet_issuance": pulled.PacketIssuance, "site_wins": siteWins,
 	})
 }
