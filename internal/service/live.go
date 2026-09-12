@@ -71,6 +71,7 @@ type liveSession struct {
 	mu       sync.Mutex
 	lastErr  string
 	finished bool
+	combined bool
 }
 
 // LiveManager runs at most one listener per event and transport profile.
@@ -89,13 +90,13 @@ func NewLiveManager(logger *log.Logger) *LiveManager {
 
 // Start launches a Feibot TCP listener for the event on 0.0.0.0:port.
 func (m *LiveManager) Start(store *sqlite.Store, eventID, port string) error {
-	return m.startListener(store, eventID, port, false)
+	return m.startListener(store, eventID, port, false, false)
 }
 
-func (m *LiveManager) startListener(store *sqlite.Store, eventID, port string, edgeMode bool) error {
+func (m *LiveManager) startListener(store *sqlite.Store, eventID, port string, edgeMode, combined bool) error {
 	if port == "" {
 		port = "5084"
-		if edgeMode {
+		if edgeMode && !combined {
 			port = "5085"
 		}
 	}
@@ -138,9 +139,10 @@ func (m *LiveManager) startListener(store *sqlite.Store, eventID, port string, e
 	ctx, cancel := context.WithCancel(context.Background())
 	session := &liveSession{
 		port: port, cancel: cancel,
-		stats:   &LiveStats{},
-		metrics: telemetry.NewRegistry(),
-		done:    make(chan struct{}),
+		combined: combined,
+		stats:    &LiveStats{},
+		metrics:  telemetry.NewRegistry(),
+		done:     make(chan struct{}),
 	}
 	selected[eventID] = session
 
@@ -160,6 +162,17 @@ func (m *LiveManager) startListener(store *sqlite.Store, eventID, port string, e
 		cfg.ReadTimeout = 30 * time.Second
 		cfg.WriteTimeout = 5 * time.Second
 		publisher = &edgePublisher{store: store, eventID: eventID, stats: session.stats, logger: m.logger, onError: session.recordError}
+		if combined {
+			cfg.Name = "chrono-desk-feibot-edge:" + eventID
+			cfg.Adapter = tcp.FeibotEdgeAdapter{}
+			// Native arrays retain their bounded 64KiB framing allowance;
+			// the shared Edge codec still enforces 10KiB for an owned object.
+			cfg.MaxLineLenBytes = 65536
+			publisher = combinedPublisher{
+				native: &livePublisher{store: store, proc: processor.New(sqlite.NewProcessorRepo(store), m.logger, false), eventID: eventID, stats: session.stats},
+				edge:   publisher,
+			}
+		}
 	}
 	pipeline := ingest.NewPipeline(publisher, 1, 256, 0)
 
@@ -189,6 +202,7 @@ func (m *LiveManager) Status(eventID string) LiveStatus {
 	m.mu.Unlock()
 
 	status := LiveStatus{IPs: lanIPs(), Edge: edgeSessionStatus(edgeSession)}
+	status.Readers = readerStatuses(s, edgeSession)
 	status.AnyRunning = status.Edge.Running
 	if !ok {
 		return status
@@ -203,22 +217,39 @@ func (m *LiveManager) Status(eventID string) LiveStatus {
 	status.LastReadMs = s.stats.LastReadMs.Load()
 	status.LastError = s.lastError()
 
-	now := time.Now().Unix()
-	for _, hb := range s.metrics.FeibotSnapshots() {
-		status.Readers = append(status.Readers, ReaderStatus{
-			Device:            hb.DeviceCode,
-			BatteryPercent:    hb.BatteryPercent,
-			TotalTagsRead:     hb.TotalTagsRead,
-			DifferentTagsRead: hb.DifferentTagsRead,
-			Heartbeats:        hb.HeartbeatTotal,
-			LastSeenUnix:      hb.LastHeartbeatUnix,
-			AgeSeconds:        max(0, now-hb.LastHeartbeatUnix),
-		})
-	}
-	sort.Slice(status.Readers, func(i, j int) bool {
-		return status.Readers[i].Device < status.Readers[j].Device
-	})
 	return status
+}
+
+func readerStatuses(sessions ...*liveSession) []ReaderStatus {
+	now := time.Now().Unix()
+	byDevice := map[string]ReaderStatus{}
+	for _, session := range sessions {
+		if session == nil || session.metrics == nil {
+			continue
+		}
+		for _, hb := range session.metrics.FeibotSnapshots() {
+			if previous, ok := byDevice[hb.DeviceCode]; ok && previous.LastSeenUnix > hb.LastHeartbeatUnix {
+				continue
+			}
+			byDevice[hb.DeviceCode] = ReaderStatus{
+				Device:            hb.DeviceCode,
+				BatteryPercent:    hb.BatteryPercent,
+				TotalTagsRead:     hb.TotalTagsRead,
+				DifferentTagsRead: hb.DifferentTagsRead,
+				Heartbeats:        hb.HeartbeatTotal,
+				LastSeenUnix:      hb.LastHeartbeatUnix,
+				AgeSeconds:        max(0, now-hb.LastHeartbeatUnix),
+			}
+		}
+	}
+	readers := make([]ReaderStatus, 0, len(byDevice))
+	for _, reader := range byDevice {
+		readers = append(readers, reader)
+	}
+	sort.Slice(readers, func(i, j int) bool {
+		return readers[i].Device < readers[j].Device
+	})
+	return readers
 }
 
 // StopAll shuts every listener down (app exit).

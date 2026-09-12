@@ -63,13 +63,18 @@ func (s *Server) handleEdgeStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		Port string `json:"port"`
+		Port     string `json:"port"`
+		Combined bool   `json:"combined"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request); err != nil && err != io.EOF {
 		s.fail(w, err)
 		return
 	}
-	if err := s.live.StartEdge(store, eventID, request.Port); err != nil {
+	start := s.live.StartEdge
+	if request.Combined {
+		start = s.live.StartCombined
+	}
+	if err := start(store, eventID, request.Port); err != nil {
 		s.fail(w, err)
 		return
 	}

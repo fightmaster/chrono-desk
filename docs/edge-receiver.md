@@ -10,7 +10,8 @@ This opt-in LAN input accepts the owned `edge-observation-v1` format from our
 sidecar, independent of the reader manufacturer. It reuses `rfid-core/edge`
 validation/identity/ACKs and `tcp.EdgeAdapter`; Desk has no second edge parser.
 The canonical contract is `chrono-docs/contracts/edge-observation-v1.md`.
-Heartbeat and Internet device administration are outside this work.
+Internet device administration is outside this work. The combined input below
+preserves ordinary vendor heartbeat monitoring; it adds no Edge heartbeat wire.
 
 The existing native Feibot listener stays on default port **5084** with its
 existing protocol and limits. The new independent listener defaults to **5085**;
@@ -18,6 +19,16 @@ neither starts merely because an event is opened. Both can run simultaneously.
 Edge limits are 16 connections, 10,240 bytes per message, 30-second read and
 5-second write timeouts, a 256-item bounded queue and one publisher worker.
 These are initial limits, not a measured sustained throughput guarantee.
+
+Local unpublished combined-input correction: the operator can instead select
+**Feibot + RFID Edge / plate**, authorize sources and start the combined input on
+the vendor's existing Desk port (default5084). Stop the old native input first;
+port conflicts are rejected, not resolved by silently stopping another session.
+The opt-in `combined=true` start flag uses shared `tcp.FeibotEdgeAdapter` and
+native/Edge publishers with separate admission and journals. Vendor arrays keep
+a 64KiB framing limit; owned objects still pass the codec's 10KiB limit. Other
+Edge connection/queue/deadline limits remain bounded as above. Existing API
+clients omitting the flag retain the separate Edge-only input.
 
 The RFID input is for a trusted venue LAN, not an authenticated public service.
 Do not expose it to the Internet. Device/event/session provisioning prevents
@@ -30,12 +41,19 @@ per-process bearer token. No new account, role or SSO system is introduced.
 1. Import the intended RUN5/Chrono event. Its ID must be a canonical positive
    decimal ID. Explicit board/session authorization admits raw input even before
    logical checkpoints are configured.
-2. Open **LIVE → Sidecar / plate — собственный протокол edge v1**.
-3. Add the exact board and source session from the sidecar, then save. At most
-   64 boards can be provisioned, one accepted session per board. Unsaved binding
-   edits disable Start. A session is not silently inferred from the open event.
-4. Set an unused TCP port, configure that Desk address in the sidecar's edge
-   destination, and start the edge input. Confirm incoming/inserted counters and
+2. Open **LIVE → Feibot + RFID Edge / plate**.
+3. Use **Добавить Feibot** and enter the exact `Feibot:<DeviceCode>` board, then
+   save. The authenticated provisioning service resolves an omitted Feibot
+   session to the explicitly selected canonical numeric event ID, matching the
+   Feibot CSV profile. No sidecar screen or copied session text is required.
+   Generic/plate boards still require an explicit capture session; an explicit
+   historical session is never overwritten. At most64 boards can be provisioned,
+   one accepted session per board. Inbound packets cannot self-enrol, and unsaved
+   binding edits disable Start.
+4. For combined reception use the same address entered in Feibot, enable the
+   matching sender's `follow_vendor_endpoint` setting once during installation,
+   and start the combined input after stopping the old native listener. Separate
+   Edge-only reception remains an advanced alternative. Confirm counters and
    the actual local result; an edge ACK is not a central RUN5 result receipt.
 5. Stop edge input before changing a binding. Stop closes active connections and
    joins their handlers/publisher before returning. It does not stop the native
@@ -56,7 +74,8 @@ checkpoint, the existing processor writes no result; later mapping does not
 rewrite raw facts. Explicit recount remains a separate authorized action.
 
 This raw-admission correction is local after published Desk 0.5.0/build166;
-that published build still requires checkpoints. Receiver update and field
+that published build still requires checkpoints and has no combined adapter.
+Receiver update and field
 acceptance must precede enabling a raw-only source.
 
 ## Persistence and acknowledgement boundary

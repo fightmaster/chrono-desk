@@ -7,7 +7,8 @@
   export let status = {}
   export let ips = []
   const dispatch = createEventDispatcher()
-  let port = status.port || '5085'
+  let combined = status.running ? !!status.combined : true
+  let port = status.port || '5084'
   let bindings = []
   let pending = 0
   let error = ''
@@ -31,7 +32,7 @@
       if (operation === 'save') {
         await call('PUT', `/api/events/${eventId}/live/edge/config`, JSON.stringify({bindings}))
       } else {
-        const current = await call('POST', `/api/events/${eventId}/live/edge/${operation}`, JSON.stringify({port}))
+        const current = await call('POST', `/api/events/${eventId}/live/edge/${operation}`, JSON.stringify({port, combined}))
         dispatch('status', current)
       }
       await load()
@@ -41,22 +42,28 @@
 </script>
 
 <details class="edge">
-  <summary>Sidecar / plate — собственный протокол edge v1 {status.running ? '· приём включён' : ''}</summary>
-  <p>Отдельный вход для нашего приложения. Обычный Feibot-вход не меняется. Только доверенная локальная сеть: не открывайте этот порт в интернет.</p>
-  <p>В sidecar укажите адрес Desk: <strong>{ips[0] || 'IP компьютера'}:{status.port || port}</strong>. Здесь разрешается приём от конкретного устройства и сессии в это событие. Чекпоинты нужны для расчёта, но не для сохранения сырых отметок; один прибор может обслуживать несколько точек.</p>
+  <summary>Feibot + RFID Edge / plate {status.running ? '· приём включён' : ''}</summary>
+  <p>Совместный вход принимает штатный Feibot и Edge на одном адресе. Перед его запуском остановите прежний отдельный вход. Только доверенная локальная сеть: не открывайте этот порт в интернет.</p>
+  <p>Адрес Desk в настройках Feibot: <strong>{ips[0] || 'IP компьютера'}:{status.port || port}</strong>. Edge с включённым следованием настройкам Feibot использует этот же адрес. Чекпоинты нужны для расчёта, но не для сохранения сырых отметок; один прибор может обслуживать несколько точек.</p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if status.last_error}<p class="error">Последняя ошибка приёма: {status.last_error}</p>{/if}
   <fieldset disabled={busy || status.running || !loaded}>
     {#each bindings as binding, i}
       <div class="binding">
         <label>Board<input class="input mono" bind:value={binding.board} maxlength="128" /></label>
-        <label>Сессия sidecar<input class="input mono" bind:value={binding.source_session_id} maxlength="96" /></label>
+        {#if binding.board.startsWith('Feibot:') && (!binding.source_session_id || binding.source_session_id === eventId)}
+          <label>Сессия Feibot<input class="input mono" value={eventId} readonly /><small>Из выбранного события; копировать из sidecar не нужно.</small></label>
+        {:else}
+          <label>Сессия plate / явная историческая сессия<input class="input mono" bind:value={binding.source_session_id} maxlength="96" /></label>
+        {/if}
         <button class="btn" on:click={() => bindings = bindings.filter((_, index) => index !== i)}>Убрать</button>
       </div>
     {/each}
     <button class="btn" disabled={bindings.length >= 64} on:click={() => bindings = [...bindings, {board: '', source_session_id: ''}]}>Добавить прибор</button>
+    <button class="btn" disabled={bindings.length >= 64} on:click={() => bindings = [...bindings, {board: 'Feibot:', source_session_id: ''}]}>Добавить Feibot</button>
     <button class="btn" on:click={() => act('save')}>Сохранить привязки</button>
     <label>TCP-порт<input class="input mono" bind:value={port} inputmode="numeric" /></label>
+    <label><input type="checkbox" bind:checked={combined} /> Принимать штатный Feibot на этом же порту</label>
   </fieldset>
   {#if bindingsDirty}<p role="status">Перед запуском сохраните изменённые привязки.</p>{/if}
   {#if status.running}

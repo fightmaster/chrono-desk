@@ -4,16 +4,20 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
+	"gitlab.com/fightmaster1/rfid-core/edge"
 	"gitlab.com/fightmaster1/rfid-core/ingest"
 	"gitlab.com/fightmaster1/rfid-core/telemetry"
 )
 
 type EdgeLiveStatus struct {
 	Running    bool                         `json:"running"`
+	Combined   bool                         `json:"combined"`
 	Port       string                       `json:"port"`
 	Received   int64                        `json:"received"`
 	Inserted   int64                        `json:"inserted"`
@@ -27,11 +31,17 @@ func edgeSessionStatus(s *liveSession) EdgeLiveStatus {
 	if s == nil {
 		return EdgeLiveStatus{}
 	}
-	return EdgeLiveStatus{Running: !s.isFinished(), Port: s.port, Received: s.stats.Received.Load(), Inserted: s.stats.Inserted.Load(), Duplicates: s.stats.Duplicates.Load(), Errors: s.stats.Errors.Load(), LastError: s.lastError(), Listeners: s.metrics.Snapshot()}
+	return EdgeLiveStatus{Running: !s.isFinished(), Combined: s.combined, Port: s.port, Received: s.stats.Received.Load(), Inserted: s.stats.Inserted.Load(), Duplicates: s.stats.Duplicates.Load(), Errors: s.stats.Errors.Load(), LastError: s.lastError(), Listeners: s.metrics.Snapshot()}
 }
 
 func (m *LiveManager) StartEdge(store *sqlite.Store, eventID, port string) error {
-	return m.startListener(store, eventID, port, true)
+	return m.startListener(store, eventID, port, true, false)
+}
+
+// StartCombined is opt-in: the native-only input remains unchanged unless the
+// operator authorizes Edge bindings and deliberately selects the shared input.
+func (m *LiveManager) StartCombined(store *sqlite.Store, eventID, port string) error {
+	return m.startListener(store, eventID, port, true, true)
 }
 
 func (m *LiveManager) StopEdge(eventID string) {
@@ -50,7 +60,35 @@ func (m *LiveManager) ConfigureEdge(ctx context.Context, store *sqlite.Store, ev
 	if s := m.edgeSessions[eventID]; s != nil && !s.isFinished() {
 		return fmt.Errorf("остановите edge-приём перед изменением привязок")
 	}
-	return store.SetEdgeBindings(ctx, eventID, bindings)
+	resolved := append([]domain.EdgeBinding(nil), bindings...)
+	for i := range resolved {
+		// The Feibot CSV profile uses its selected vendor event as source
+		// session. Resolve only an explicitly authorized Feibot board, never a
+		// packet or a generic/plate source with an unknown capture session.
+		b := &resolved[i]
+		if b.SourceSessionID == "" && strings.HasPrefix(b.Board, "Feibot:") && edge.ValidToken(strings.TrimPrefix(b.Board, "Feibot:")) {
+			id, err := strconv.ParseInt(eventID, 10, 64)
+			if err != nil || id <= 0 || strconv.FormatInt(id, 10) != eventID {
+				return fmt.Errorf("для Feibot требуется числовой идентификатор события")
+			}
+			b.SourceSessionID = eventID
+		}
+	}
+	return store.SetEdgeBindings(ctx, eventID, resolved)
+}
+
+// The parser chooses wire semantics; this dispatcher preserves the distinct
+// authorization/ownership/outbox paths after decoding. No Edge-to-native retry.
+type combinedPublisher struct {
+	native ingest.Publisher
+	edge   ingest.Publisher
+}
+
+func (p combinedPublisher) Publish(ctx context.Context, event ingest.Event) error {
+	if event.EdgeVersion != 0 || event.SourceSessionID != "" || event.IdentityProfile != "" || event.ClockEvidenceID != "" || event.ClockQuality != "" {
+		return p.edge.Publish(ctx, event)
+	}
+	return p.native.Publish(ctx, event)
 }
 
 type edgePublisher struct {

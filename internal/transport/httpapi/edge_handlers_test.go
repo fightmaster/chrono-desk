@@ -79,6 +79,9 @@ func TestEdgeControlAPIRequiresAuthAndExplicitProvisioning(t *testing.T) {
 	if code, _ := request("PUT", "/config", `{"bindings":[{"board":"raw-device","source_session_id":"one"}]}`, true); code != 200 {
 		t.Fatal("explicit raw source authorization required a calculation checkpoint")
 	}
+	if code, body := request("PUT", "/config", `{"bindings":[{"board":"Feibot:U659"}]}`, true); code != 200 || !strings.Contains(string(body), `"source_session_id":"100"`) {
+		t.Fatalf("Feibot required manually copied source session: %d %s", code, body)
+	}
 	config := `{"bindings":[{"board":"Feibot:U659","source_session_id":"one"}]}`
 	if code, _ := request("PUT", "/config", config, false); code != 401 {
 		t.Fatal("unprotected settings")
