@@ -83,7 +83,7 @@ github.com/xuri/excelize/v2 v2.10.1 h1:V62UlqopMqha3kOpnlHy2CcRVw1V8E63jFoWUmMzx
 github.com/xuri/excelize/v2 v2.10.1/go.mod h1:iG5tARpgaEeIhTqt3/fgXCGoBRt4hNXgCp3tfXKoOIc=
 github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 h1:+C0TIdyyYmzadGaL/HBLbf3WdLgC29pgyhTjAT/0nuE=
 github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9/go.mod h1:WwHg+CVyzlv/TX9xqBFXEZAuxOPxn2k1GNHwG41IIUQ=
-gitlab.com/fightmaster1/rfid-core v0.4.2-0.20260912211744-9ded809cbeaf h1:lv/VwFbLhotZtCgVpcQarFwGNF20LWS7Ge/8Fv6uiYo=
+gitlab.com/fightmaster1/rfid-core v0.4.2-0.20260912211744-9ded809cbeaf h1:1C87VYzchSDNY4j0yefOpDpJLw4p/OOPt+zlRsAuc0A=
 gitlab.com/fightmaster1/rfid-core v0.4.2-0.20260912211744-9ded809cbeaf/go.mod h1:gdqqSnDz8jV6fIkg7CYJsdQ7ej5Z1xyasTqDplL0qGQ=
 gitlab.com/fightmaster1/timing-core v0.8.0 h1:jVJO90LQ1sZvArdn7p8SYzXtiPPguTwXEYUsDKDSMBc=
 gitlab.com/fightmaster1/timing-core v0.8.0/go.mod h1:n2oVRF1zRI7/kp8GWad9bRlo/FPi0UGwtqv6rOfubmQ=
