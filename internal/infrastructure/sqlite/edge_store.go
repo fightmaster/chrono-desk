@@ -51,15 +51,8 @@ func (s *Store) SetEdgeBindings(ctx context.Context, eventID string, bindings []
 		if err := tx.db.QueryRowContext(ctx, `SELECT id FROM events WHERE id=?`, eventID).Scan(&storedID); err != nil {
 			return err
 		}
-		for _, b := range bindings {
-			var count int
-			if err := tx.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM checkpoints WHERE event_id=? AND board=?`, eventID, b.Board).Scan(&count); err != nil {
-				return err
-			}
-			if count == 0 {
-				return fmt.Errorf("board %s has no checkpoint in event %s", b.Board, eventID)
-			}
-		}
+		// Explicit local event/board/session authorization admits raw input.
+		// Logical checkpoints belong to downstream timing, not transport access.
 		previous, err := tx.EdgeBindings(ctx, eventID)
 		if err != nil {
 			return err
@@ -102,13 +95,6 @@ func (s *Store) AcceptEdgeObservation(ctx context.Context, eventID string, event
 	}
 	if session != event.SourceSessionID {
 		return EdgeAcceptance{}, errors.New("edge source session does not match provisioned binding")
-	}
-	var checkpoints int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM checkpoints WHERE event_id=? AND board=?`, eventID, event.Board).Scan(&checkpoints); err != nil {
-		return EdgeAcceptance{}, err
-	}
-	if checkpoints == 0 {
-		return EdgeAcceptance{}, errors.New("edge board no longer has an event checkpoint")
 	}
 	entry := domain.RfidLog{ID: event.ID, EventID: eventID, Status: event.Status, Number: event.Number, TimeMs: event.Time, Ant: event.Ant, EPC: event.EPC, RSSI: event.RSSI, Board: event.Board,
 		ObservationVersion: event.ObservationVersion, CaptureSourceID: event.CaptureSourceID, OriginSystem: event.OriginSystem, OriginInstanceID: event.OriginInstanceID, OriginSequence: int64(event.OriginSequence),

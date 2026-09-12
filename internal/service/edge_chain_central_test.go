@@ -115,7 +115,7 @@ type edgeChainCentralSnapshot struct {
 	} `json:"feed"`
 }
 
-func newEdgeChainCentral(t *testing.T, hub *edgeChainHub, board, session string) *edgeChainCentral {
+func newEdgeChainCentral(t *testing.T, hub *edgeChainHub, board, session string, setupActions ...string) *edgeChainCentral {
 	t.Helper()
 	for _, key := range []string{"EDGE_MYSQL_IMAGE", "EDGE_PHP_IMAGE"} {
 		if !regexp.MustCompile(`^sha256:[0-9a-f]{64}$`).MatchString(os.Getenv(key)) {
@@ -184,7 +184,13 @@ func newEdgeChainCentral(t *testing.T, hub *edgeChainHub, board, session string)
 	hub.docker(t, "exec", c.phpID, "mkdir", "-p", "/fixture/tests/Support", "/fixture/storage/framework/cache", "/fixture/storage/framework/sessions", "/fixture/storage/framework/views", "/fixture/storage/logs")
 	hub.docker(t, "cp", filepath.Join(root, "vendor"), c.phpID+":/fixture/vendor")
 	hub.docker(t, "cp", filepath.Join(root, "tests/Support/edge-chain.php"), c.phpID+":/fixture/tests/Support/edge-chain.php")
-	setup := c.snapshot(t, "setup", board, session)
+	setupAction := "setup"
+	if len(setupActions) == 1 && setupActions[0] == "setup-raw" {
+		setupAction = setupActions[0]
+	} else if len(setupActions) != 0 {
+		t.Fatal("unknown central fixture setup")
+	}
+	setup := c.snapshot(t, setupAction, board, session)
 	t.Logf("RUN5 schema/grant ready: MySQL=%s PHP=%s migrations=%d", setup.MySQLVersion, setup.PHPVersion, setup.Migrations)
 	c.startConsumer(t)
 	return c

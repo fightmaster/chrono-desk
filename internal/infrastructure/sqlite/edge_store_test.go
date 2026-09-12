@@ -81,8 +81,8 @@ func TestEdgeStoragePreservesProducerWireAndIndependentRelayJournal(t *testing.T
 	}
 }
 
-func TestEdgeStorageRejectsWrongEventSessionCheckpointAndContent(t *testing.T) {
-	for _, kind := range []string{"event", "session", "board", "checkpoint removed", "content"} {
+func TestEdgeStorageRejectsWrongEventSessionGrantAndContent(t *testing.T) {
+	for _, kind := range []string{"event", "session", "board", "grant revoked", "content"} {
 		t.Run(kind, func(t *testing.T) {
 			s, ev := edgeStoreFixture(t)
 			switch kind {
@@ -93,8 +93,8 @@ func TestEdgeStorageRejectsWrongEventSessionCheckpointAndContent(t *testing.T) {
 			case "board":
 				ev.Board = "unknown"
 				ev.ID = ingest.RFIDReadID(ev.Board, ev.EPC, ev.Time, ev.Ant)
-			case "checkpoint removed":
-				if _, err := s.DB().Exec(`DELETE FROM checkpoints`); err != nil {
+			case "grant revoked":
+				if err := s.SetEdgeBindings(context.Background(), "100", nil); err != nil {
 					t.Fatal(err)
 				}
 			case "content":

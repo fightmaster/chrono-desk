@@ -43,7 +43,7 @@
 <details class="edge">
   <summary>Sidecar / plate — собственный протокол edge v1 {status.running ? '· приём включён' : ''}</summary>
   <p>Отдельный вход для нашего приложения. Обычный Feibot-вход не меняется. Только доверенная локальная сеть: не открывайте этот порт в интернет.</p>
-  <p>В sidecar укажите адрес Desk: <strong>{ips[0] || 'IP компьютера'}:{status.port || port}</strong>. Здесь укажите точные board и идентификатор сессии из sidecar; board должен существовать в чекпоинтах этого события.</p>
+  <p>В sidecar укажите адрес Desk: <strong>{ips[0] || 'IP компьютера'}:{status.port || port}</strong>. Здесь разрешается приём от конкретного устройства и сессии в это событие. Чекпоинты нужны для расчёта, но не для сохранения сырых отметок; один прибор может обслуживать несколько точек.</p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if status.last_error}<p class="error">Последняя ошибка приёма: {status.last_error}</p>{/if}
   <fieldset disabled={busy || status.running || !loaded}>

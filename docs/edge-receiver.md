@@ -28,7 +28,8 @@ per-process bearer token. No new account, role or SSO system is introduced.
 ## Operator workflow
 
 1. Import the intended RUN5/Chrono event. Its ID must be a canonical positive
-   decimal ID; the selected board must exist in an event checkpoint.
+   decimal ID. Explicit board/session authorization admits raw input even before
+   logical checkpoints are configured.
 2. Open **LIVE → Sidecar / plate — собственный протокол edge v1**.
 3. Add the exact board and source session from the sidecar, then save. At most
    64 boards can be provisioned, one accepted session per board. Unsaved binding
@@ -40,11 +41,23 @@ per-process bearer token. No new account, role or SSO system is introduced.
    joins their handlers/publisher before returning. It does not stop the native
    Feibot input. **Остановить все входы** stops both profiles for this event.
 
-Event/session mismatch, a removed checkpoint or conflicting immutable content
+Event/session mismatch, a revoked source binding or conflicting immutable content
 receives no successful ACK. The source retains its pending delivery. To receive
 an older session, deliberately stop and provision that session for its original
 event; do not rebind old observations to a new event. Clearing bindings requires
 an explicit empty list, not an omitted field.
+
+Source admission is independent of course configuration. One physical board may
+serve multiple logical checkpoints; antenna/port, time, EPC and provenance stay
+in the immutable observation. Checkpoint selection is downstream timing work,
+not a receiver grant or a separate TCP listener per course point. A removed
+checkpoint does not revoke permission to preserve raw input. With no matching
+checkpoint, the existing processor writes no result; later mapping does not
+rewrite raw facts. Explicit recount remains a separate authorized action.
+
+This raw-admission correction is local after published Desk 0.5.0/build166;
+that published build still requires checkpoints. Receiver update and field
+acceptance must precede enabling a raw-only source.
 
 ## Persistence and acknowledgement boundary
 

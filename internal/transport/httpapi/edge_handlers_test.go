@@ -73,8 +73,11 @@ func TestEdgeControlAPIRequiresAuthAndExplicitProvisioning(t *testing.T) {
 	if code, _ := request("PUT", "/config", `{}`, true); code < 400 {
 		t.Fatal("missing bindings treated as deletion")
 	}
-	if code, _ := request("PUT", "/config", `{"bindings":[{"board":"unregistered","source_session_id":"one"}]}`, true); code < 400 {
-		t.Fatal("unknown checkpoint board allowed")
+	if code, _ := request("PUT", "/config", `{"bindings":[{"board":" raw-device","source_session_id":"one"}]}`, true); code < 400 {
+		t.Fatal("invalid board allowed")
+	}
+	if code, _ := request("PUT", "/config", `{"bindings":[{"board":"raw-device","source_session_id":"one"}]}`, true); code != 200 {
+		t.Fatal("explicit raw source authorization required a calculation checkpoint")
 	}
 	config := `{"bindings":[{"board":"Feibot:U659","source_session_id":"one"}]}`
 	if code, _ := request("PUT", "/config", config, false); code != 401 {

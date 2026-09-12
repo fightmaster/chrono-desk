@@ -157,6 +157,15 @@ removing leftover resources; do not use global Docker prune commands.
 
 ## Evidence limits
 
+The `edgecentralintegration` test `TestEdgeChainCentralRawWithoutCheckpoint`
+uses the existing immutable Hub/sync/PHP/MySQL/Redis prerequisites and the
+guarded RUN5 `setup-raw` fixture. It verifies actual PHP event-board admission
+without checkpoints, Hub scoped ACK, central MySQL raw storage, five antenna
+identities and revoke/retry/re-enable with no timing outcomes. It does not need
+or operate a field reader. `TestEdgeRawAdmissionMultipleAntennasWithoutCheckpoint`
+separately covers Desk raw/journal persistence before course setup and unchanged
+facts after later mapping and retransmission. No timing engine is replaced.
+
 The original receiver scenario covers the source-to-receiver and Desk-relay links, not central MySQL
 admission/projection, RUN5 feed/export, event-switch/revocation, native vendor
 overlap, disk/power faults, sustained load, a physical reader or phone rendering.
