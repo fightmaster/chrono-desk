@@ -184,6 +184,38 @@ func TestPushPacketOperationsAcceptsOnlyOrderedMatchingReceipts(t *testing.T) {
 	}
 }
 
+func TestPullPacketFeedUsesRelayCredentialCursorAndStrictFixture(t *testing.T) {
+	raw, err := os.ReadFile("../packetissuance/testdata/packet-issuance-feed-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := syncHTTPClient
+	t.Cleanup(func() { syncHTTPClient = previous })
+	syncHTTPClient = &http.Client{Transport: packetRoundTrip(func(request *http.Request) (*http.Response, error) {
+		if request.Method != http.MethodGet || request.URL.Path != "/api/packet-issuance/v1/relays/relay/feed" ||
+			request.URL.Query().Get("after") != "16" || request.URL.Query().Get("limit") != "100" ||
+			request.Header.Get("Authorization") != "Bearer relay-secret" || request.Header.Get("X-SYNC-TOKEN") != "" {
+			t.Fatalf("bad feed request: %s headers=%v", request.URL, request.Header)
+		}
+		return packetResponse(http.StatusOK, string(raw)), nil
+	})}
+	page, err := PullPacketFeedPage(context.Background(),
+		"https://app.chrono.events/api/packet-issuance/v1/relays/relay", "relay-secret",
+		"site:22222222-2222-4222-8222-222222222222:621632", "16")
+	if err != nil || len(page.Actions) != 2 || page.Cursor.Next != "18" {
+		t.Fatalf("page=%+v err=%v", page, err)
+	}
+
+	syncHTTPClient = &http.Client{Transport: packetRoundTrip(func(*http.Request) (*http.Response, error) {
+		return packetResponse(http.StatusOK, `{"schemaVersion":1,"scopeId":"wrong","cursor":{"after":"16","next":"16","head":"16","hasMore":false},"actions":[]}`), nil
+	})}
+	if _, err := PullPacketFeedPage(context.Background(),
+		"https://app.chrono.events/api/packet-issuance/v1/relays/relay", "relay-secret",
+		"site:22222222-2222-4222-8222-222222222222:621632", "16"); err == nil {
+		t.Fatal("mismatched feed scope was accepted")
+	}
+}
+
 func packetResponse(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
 }

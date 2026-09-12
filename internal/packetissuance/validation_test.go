@@ -97,3 +97,64 @@ func TestTransitionsKeepPacketAndParticipationIndependent(t *testing.T) {
 		t.Fatal("DNS must not undo issuance")
 	}
 }
+
+func TestFeedPageRequiresContiguousCursorAndSeparatesTimingEvidence(t *testing.T) {
+	data, err := os.ReadFile("testdata/packet-issuance-operations-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Operation map[string]any `json:"operation"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	operationChanges := fixture.Operation["changes"].([]any)
+	feedChanges := make([]any, 0, len(operationChanges))
+	for _, raw := range operationChanges {
+		encoded, _ := json.Marshal(raw)
+		var change map[string]any
+		_ = json.Unmarshal(encoded, &change)
+		delete(change["before"].(map[string]any), "hasTimingEvidence")
+		delete(change["after"].(map[string]any), "hasTimingEvidence")
+		feedChanges = append(feedChanges, change)
+	}
+	scope := fixture.Operation["scopeId"].(string)
+	page := map[string]any{
+		"schemaVersion": 1, "scopeId": scope,
+		"cursor": map[string]any{"after": "16", "next": "17", "head": "17", "hasMore": false},
+		"actions": []any{map[string]any{
+			"actionId": fixture.Operation["operationId"], "kind": "operation", "sequence": "17",
+			"recordedAt": "2026-09-13T08:00:00.123Z", "sourceCode": "pwa.packet_issuance",
+			"outcome": "applied", "code": nil, "operation": fixture.Operation, "changes": feedChanges,
+		}},
+	}
+	wire, _ := json.Marshal(page)
+	parsed, err := ParseFeedPage(wire, scope, "16")
+	if err != nil || parsed.Cursor.Next != "17" || len(parsed.Actions) != 1 || parsed.Actions[0].Operation == nil {
+		t.Fatalf("page=%+v err=%v", parsed, err)
+	}
+	if parsed.Actions[0].Changes[0].After.HasTimingEvidence {
+		t.Fatal("feed invented timing evidence")
+	}
+
+	page["cursor"].(map[string]any)["next"] = "18"
+	wire, _ = json.Marshal(page)
+	if _, err := ParseFeedPage(wire, scope, "16"); err == nil {
+		t.Fatal("cursor gap was accepted")
+	}
+}
+
+func TestCanonicalPacketFeedFixtureChecksum(t *testing.T) {
+	data, err := os.ReadFile("testdata/packet-issuance-feed-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fmt.Sprintf("%x", sha256.Sum256(data)), "ccd78c5ec3a320f34068aa91481ba8131f97dcbe99dd4da64833bfe4717dc5bb"; got != want {
+		t.Fatalf("canonical fixture checksum=%s want=%s", got, want)
+	}
+	page, err := ParseFeedPage(data, "site:22222222-2222-4222-8222-222222222222:621632", "16")
+	if err != nil || len(page.Actions) != 2 || page.Cursor.Next != "18" {
+		t.Fatalf("page=%+v err=%v", page, err)
+	}
+}

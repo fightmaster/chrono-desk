@@ -129,8 +129,14 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	packetFeedResult, err := service.SyncPacketFeed(r.Context(), s.events, eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sent": summary, "response": resp.Summary, "packet_issuance": packetResult,
+		"packet_issuance_feed": packetFeedResult,
 	})
 }
 

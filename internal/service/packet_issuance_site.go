@@ -49,6 +49,13 @@ type PacketOperationSyncResult struct {
 	Waiting   int `json:"waiting"`
 }
 
+type PacketFeedSyncResult struct {
+	Received int    `json:"received"`
+	Applied  int    `json:"applied"`
+	Review   int    `json:"review"`
+	Cursor   string `json:"cursor,omitempty"`
+}
+
 func ConnectPacketIssuanceSite(ctx context.Context, events *EventService, eventID, label string) (PacketRelayStatus, error) {
 	store, err := events.Open(eventID)
 	if err != nil {
@@ -87,7 +94,7 @@ func ConnectPacketIssuanceSite(ctx context.Context, events *EventService, eventI
 	}
 	return PacketRelayStatus{
 		Configured: true, RelayID: state.RelayID, ScopeID: state.ScopeID,
-		ExpiresAt: state.ExpiresAt, FeedCursor: state.FeedCursor, RosterInstalled: true,
+		ExpiresAt: state.ExpiresAt, FeedCursor: "0", RosterInstalled: true,
 	}, nil
 }
 
@@ -106,7 +113,7 @@ func GetPacketRelayStatus(ctx context.Context, events *EventService, eventID str
 	}
 	return PacketRelayStatus{
 		Configured: state.RelayID != "", RelayID: state.RelayID, ScopeID: state.ScopeID,
-		ExpiresAt: state.ExpiresAt, FeedCursor: state.FeedCursor,
+		ExpiresAt: state.ExpiresAt, FeedCursor: scope.SiteFeedCursor,
 		RosterInstalled: scope.ScopeID != "" && scope.ScopeID == state.ScopeID,
 	}, nil
 }
@@ -154,6 +161,52 @@ func SyncPacketOperations(ctx context.Context, events *EventService, eventID str
 		}
 	}
 	return result, errors.New("packet operation delivery limit reached; repeat synchronization")
+}
+
+func SyncPacketFeed(ctx context.Context, events *EventService, eventID string) (PacketFeedSyncResult, error) {
+	state, found, err := events.GetPacketRelay(ctx, eventID)
+	if err != nil {
+		return PacketFeedSyncResult{}, err
+	}
+	if !found || state.RelayID == "" || state.APIBaseURL == "" || state.Credential == "" {
+		return PacketFeedSyncResult{}, nil
+	}
+	store, err := events.Open(eventID)
+	if err != nil {
+		return PacketFeedSyncResult{}, err
+	}
+	result := PacketFeedSyncResult{}
+	for pageNumber := 0; pageNumber < 100; pageNumber++ {
+		scope, err := store.GetPacketIssuanceScope(ctx, eventID)
+		if err != nil {
+			return result, err
+		}
+		if scope.ScopeID == "" || scope.ScopeID != state.ScopeID {
+			return result, errors.New("packet issuance roster is not installed")
+		}
+		page, err := PullPacketFeedPage(ctx, state.APIBaseURL, state.Credential, scope.ScopeID, scope.SiteFeedCursor)
+		if err != nil {
+			return result, err
+		}
+		applications, err := ApplyPacketFeedPage(ctx, store, eventID, page)
+		if err != nil {
+			return result, err
+		}
+		result.Received += len(applications)
+		result.Cursor = page.Cursor.Next
+		for _, application := range applications {
+			switch application.Application {
+			case "applied", "observed":
+				result.Applied++
+			case "review":
+				result.Review++
+			}
+		}
+		if !page.Cursor.HasMore {
+			return result, nil
+		}
+	}
+	return result, errors.New("packet feed page limit reached; repeat synchronization")
 }
 
 func EnrollPacketRelay(ctx context.Context, baseURL, token, eventID, deskInstanceID, credential, label string) (PacketRelayDescriptor, error) {
@@ -291,6 +344,39 @@ func PushPacketOperations(ctx context.Context, apiBaseURL, credential string, op
 		receipts = append(receipts, receipt)
 	}
 	return receipts, nil
+}
+
+func PullPacketFeedPage(ctx context.Context, apiBaseURL, credential, scopeID, after string) (packetissuance.FeedPage, error) {
+	endpoint, err := url.Parse(strings.TrimRight(apiBaseURL, "/") + "/feed")
+	if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil {
+		return packetissuance.FeedPage{}, errors.New("invalid packet feed endpoint")
+	}
+	query := endpoint.Query()
+	query.Set("after", after)
+	query.Set("limit", "100")
+	endpoint.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return packetissuance.FeedPage{}, fmt.Errorf("create packet feed request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+credential)
+	resp, err := syncHTTPClient.Do(req)
+	if err != nil {
+		return packetissuance.FeedPage{}, fmt.Errorf("packet feed unavailable: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, (32<<20)+1))
+	if len(body) > 32<<20 {
+		return packetissuance.FeedPage{}, errors.New("packet feed exceeds limit")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return packetissuance.FeedPage{}, fmt.Errorf("packet feed returned %d: %s", resp.StatusCode, summaryError(body))
+	}
+	page, err := packetissuance.ParseFeedPage(body, scopeID, after)
+	if err != nil {
+		return packetissuance.FeedPage{}, err
+	}
+	return page, nil
 }
 
 func validPacketReceipt(receipt packetissuance.Receipt) bool {

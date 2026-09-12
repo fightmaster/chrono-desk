@@ -63,10 +63,6 @@ func (c *EventCatalog) GetPacketRelay(ctx context.Context, eventID string) (Pack
 	return c.relays.Get(ctx, eventID)
 }
 
-func (c *EventCatalog) AdvancePacketRelayFeed(ctx context.Context, eventID, expected, next string) error {
-	return c.relays.AdvanceFeed(ctx, eventID, expected, next)
-}
-
 func (c *EventCatalog) eventPath(eventID string) string {
 	name := unsafeEventFileChars.ReplaceAllString(eventID, "_")
 	return filepath.Join(c.dataDir, name+".chrono")

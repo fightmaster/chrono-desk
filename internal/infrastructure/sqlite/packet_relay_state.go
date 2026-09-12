@@ -24,7 +24,6 @@ type PacketRelayState struct {
 	APIBaseURL     string `json:"api_base_url"`
 	ScopeID        string `json:"scope_id"`
 	ExpiresAt      string `json:"expires_at"`
-	FeedCursor     string `json:"feed_cursor"`
 	EnrolledAt     *int64 `json:"enrolled_at"`
 }
 
@@ -53,7 +52,6 @@ func loadOrCreatePacketRelayState(dataDir string) (*packetRelayState, error) {
 			api_base_url TEXT NOT NULL DEFAULT '',
 			scope_id TEXT NOT NULL DEFAULT '',
 			expires_at TEXT NOT NULL DEFAULT '',
-			feed_cursor TEXT NOT NULL DEFAULT '0',
 			enrolled_at INTEGER
 		)`); err != nil {
 		db.Close()
@@ -81,14 +79,14 @@ func (s *packetRelayState) Prepare(ctx context.Context, eventID, siteBaseURL, de
 	}
 	state := PacketRelayState{
 		EventID: eventID, SiteBaseURL: siteBaseURL, DeskInstanceID: deskInstanceID,
-		Credential: base64.RawURLEncoding.EncodeToString(secret), FeedCursor: "0",
+		Credential: base64.RawURLEncoding.EncodeToString(secret),
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO packet_relays
-		(event_id,site_base_url,desk_instance_id,credential,feed_cursor)
-		VALUES(?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET
+		(event_id,site_base_url,desk_instance_id,credential)
+		VALUES(?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET
 		site_base_url=excluded.site_base_url,desk_instance_id=excluded.desk_instance_id,
 		credential=excluded.credential,relay_id='',api_base_url='',scope_id='',expires_at='',
-		feed_cursor='0',enrolled_at=NULL`, eventID, siteBaseURL, deskInstanceID, state.Credential, state.FeedCursor)
+		enrolled_at=NULL`, eventID, siteBaseURL, deskInstanceID, state.Credential)
 	if err != nil {
 		return PacketRelayState{}, fmt.Errorf("prepare packet relay: %w", err)
 	}
@@ -115,11 +113,10 @@ func (s *packetRelayState) Complete(ctx context.Context, state PacketRelayState)
 func (s *packetRelayState) Get(ctx context.Context, eventID string) (PacketRelayState, bool, error) {
 	var state PacketRelayState
 	err := s.db.QueryRowContext(ctx, `SELECT event_id,site_base_url,desk_instance_id,credential,
-		relay_id,api_base_url,scope_id,expires_at,feed_cursor,enrolled_at
+		relay_id,api_base_url,scope_id,expires_at,enrolled_at
 		FROM packet_relays WHERE event_id=?`, eventID).Scan(
 		&state.EventID, &state.SiteBaseURL, &state.DeskInstanceID, &state.Credential,
-		&state.RelayID, &state.APIBaseURL, &state.ScopeID, &state.ExpiresAt,
-		&state.FeedCursor, &state.EnrolledAt,
+		&state.RelayID, &state.APIBaseURL, &state.ScopeID, &state.ExpiresAt, &state.EnrolledAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PacketRelayState{}, false, nil
@@ -128,19 +125,6 @@ func (s *packetRelayState) Get(ctx context.Context, eventID string) (PacketRelay
 		return PacketRelayState{}, false, fmt.Errorf("get packet relay: %w", err)
 	}
 	return state, true, nil
-}
-
-func (s *packetRelayState) AdvanceFeed(ctx context.Context, eventID, expected, next string) error {
-	result, err := s.db.ExecContext(ctx, `UPDATE packet_relays SET feed_cursor=? WHERE event_id=? AND feed_cursor=?`,
-		next, eventID, expected)
-	if err != nil {
-		return fmt.Errorf("advance packet relay feed: %w", err)
-	}
-	count, err := result.RowsAffected()
-	if err != nil || count != 1 {
-		return fmt.Errorf("packet relay feed cursor changed")
-	}
-	return nil
 }
 
 func (s *packetRelayState) Close() error { return s.db.Close() }

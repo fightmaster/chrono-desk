@@ -58,6 +58,33 @@ func addPacketIssuanceSiteDelivery(db *sql.DB) error {
 	}
 	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_packet_operations_site_pending
 		ON packet_issuance_operations(event_id,site_acknowledged,recorded_at,operation_id)`)
+	if err != nil {
+		return err
+	}
+	for _, tableColumn := range []struct{ table, name, typeSQL string }{
+		{"packet_issuance_scopes", "site_feed_cursor", "TEXT NOT NULL DEFAULT '0'"},
+		{"packet_issuance_registrations", "deleted", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		var count int
+		query := `SELECT COUNT(*) FROM pragma_table_info('` + tableColumn.table + `') WHERE name=?`
+		if err := db.QueryRow(query, tableColumn.name).Scan(&count); err != nil {
+			return fmt.Errorf("inspect %s.%s: %w", tableColumn.table, tableColumn.name, err)
+		}
+		if count == 0 {
+			if _, err := db.Exec(`ALTER TABLE ` + tableColumn.table + ` ADD COLUMN ` + tableColumn.name + ` ` + tableColumn.typeSQL); err != nil {
+				return fmt.Errorf("add %s.%s: %w", tableColumn.table, tableColumn.name, err)
+			}
+		}
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS packet_issuance_site_feed_actions (
+		action_id TEXT PRIMARY KEY,event_id TEXT NOT NULL REFERENCES events(id),site_sequence TEXT NOT NULL,
+		action_json TEXT NOT NULL,application TEXT NOT NULL CHECK (application IN ('applied','observed','review')),
+		application_code TEXT,recorded_at INTEGER NOT NULL,UNIQUE(event_id,site_sequence))`)
+	if err != nil {
+		return fmt.Errorf("create packet issuance site feed: %w", err)
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_packet_site_feed_event
+		ON packet_issuance_site_feed_actions(event_id,recorded_at,action_id)`)
 	return err
 }
 

@@ -102,3 +102,38 @@ type Bootstrap struct {
 	Registrations []Registration `json:"registrations"`
 	BaselineID    string         `json:"baselineId"`
 }
+
+type FeedChange struct {
+	RegistrationID string        `json:"registrationId"`
+	Before         *Registration `json:"before"`
+	After          *Registration `json:"after"`
+}
+
+type FeedAction struct {
+	ActionID   string       `json:"actionId"`
+	Kind       string       `json:"kind"`
+	Sequence   string       `json:"sequence"`
+	RecordedAt string       `json:"recordedAt"`
+	SourceCode string       `json:"sourceCode"`
+	Outcome    string       `json:"outcome"`
+	Code       *string      `json:"code"`
+	Operation  *Operation   `json:"operation"`
+	Changes    []FeedChange `json:"changes"`
+	canonical  []byte
+}
+
+func (a FeedAction) CanonicalJSON() []byte { return append([]byte(nil), a.canonical...) }
+
+type FeedCursor struct {
+	After   string `json:"after"`
+	Next    string `json:"next"`
+	Head    string `json:"head"`
+	HasMore bool   `json:"hasMore"`
+}
+
+type FeedPage struct {
+	SchemaVersion int          `json:"schemaVersion"`
+	ScopeID       string       `json:"scopeId"`
+	Cursor        FeedCursor   `json:"cursor"`
+	Actions       []FeedAction `json:"actions"`
+}

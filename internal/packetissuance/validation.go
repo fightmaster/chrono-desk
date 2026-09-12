@@ -12,15 +12,20 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 )
 
 var (
-	uuidPattern       = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-	identifierPattern = regexp.MustCompile(`^[A-Za-z0-9:._-]{1,128}$`)
-	datePattern       = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+	uuidPattern            = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	identifierPattern      = regexp.MustCompile(`^[A-Za-z0-9:._-]{1,128}$`)
+	datePattern            = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+	sourceCodePattern      = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
+	canonicalCursorPattern = regexp.MustCompile(`^(0|[1-9][0-9]{0,19})$`)
+	positiveDecimalPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
+	timestampPattern       = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$`)
 )
 
 func ParseBatch(data []byte) ([]Operation, error) {
@@ -122,6 +127,178 @@ func ParseBootstrap(data []byte) (Bootstrap, error) {
 		SchemaVersion: 1, ScopeID: stringValue(obj["scopeId"]), SourceKind: "site",
 		Event: event, Races: races, Registrations: rows, BaselineID: stringValue(obj["baselineId"]),
 	}, nil
+}
+
+func ParseFeedPage(data []byte, scopeID, expectedAfter string) (FeedPage, error) {
+	root, err := decodeValue(data)
+	obj, ok := root.(map[string]any)
+	if err != nil || !ok || !exactKeys(obj, "schemaVersion", "scopeId", "cursor", "actions") ||
+		integer(obj["schemaVersion"]) != 1 || stringValue(obj["scopeId"]) != scopeID {
+		return FeedPage{}, errors.New("invalid_feed_response")
+	}
+	cursorObj, ok := obj["cursor"].(map[string]any)
+	if !ok || !exactKeys(cursorObj, "after", "next", "head", "hasMore") {
+		return FeedPage{}, errors.New("invalid_feed_response")
+	}
+	after, afterNumber, afterOK := feedCursor(cursorObj["after"])
+	next, nextNumber, nextOK := feedCursor(cursorObj["next"])
+	head, headNumber, headOK := feedCursor(cursorObj["head"])
+	hasMore, moreOK := cursorObj["hasMore"].(bool)
+	if !afterOK || !nextOK || !headOK || !moreOK || after != expectedAfter || afterNumber > nextNumber ||
+		nextNumber > headNumber || hasMore != (nextNumber < headNumber) {
+		return FeedPage{}, errors.New("invalid_feed_response")
+	}
+	eventID := feedEventID(scopeID)
+	rawActions, ok := obj["actions"].([]any)
+	if eventID == "" || !ok || len(rawActions) > 100 {
+		return FeedPage{}, errors.New("invalid_feed_response")
+	}
+	actions := make([]FeedAction, 0, len(rawActions))
+	seen := make(map[string]bool, len(rawActions))
+	expectedSequence := afterNumber
+	for _, raw := range rawActions {
+		expectedSequence++
+		action, err := parseFeedAction(raw, scopeID, eventID, expectedSequence)
+		if err != nil || seen[action.ActionID] {
+			return FeedPage{}, errors.New("invalid_feed_response")
+		}
+		seen[action.ActionID] = true
+		actions = append(actions, action)
+	}
+	if expectedSequence != nextNumber || (len(actions) == 0 && next != after) {
+		return FeedPage{}, errors.New("invalid_feed_response")
+	}
+	return FeedPage{SchemaVersion: 1, ScopeID: scopeID,
+		Cursor: FeedCursor{After: after, Next: next, Head: head, HasMore: hasMore}, Actions: actions}, nil
+}
+
+func parseFeedAction(value any, scopeID, eventID string, expectedSequence uint64) (FeedAction, error) {
+	obj, ok := value.(map[string]any)
+	if !ok || !exactKeys(obj, "actionId", "kind", "sequence", "recordedAt", "sourceCode", "outcome", "code", "operation", "changes") {
+		return FeedAction{}, errors.New("invalid")
+	}
+	sequence, sequenceNumber, sequenceOK := feedCursor(obj["sequence"])
+	action := FeedAction{ActionID: stringValue(obj["actionId"]), Kind: stringValue(obj["kind"]),
+		Sequence: sequence, RecordedAt: stringValue(obj["recordedAt"]), SourceCode: stringValue(obj["sourceCode"]),
+		Outcome: stringValue(obj["outcome"])}
+	if !uuidPattern.MatchString(action.ActionID) || !sequenceOK || sequenceNumber != expectedSequence ||
+		!validTimestamp(action.RecordedAt) || !sourceCodePattern.MatchString(action.SourceCode) {
+		return FeedAction{}, errors.New("invalid")
+	}
+	if obj["code"] != nil {
+		code, ok := obj["code"].(string)
+		if !ok || !sourceCodePattern.MatchString(code) {
+			return FeedAction{}, errors.New("invalid")
+		}
+		action.Code = &code
+	}
+	if (action.Outcome == "conflict") != (action.Code != nil) ||
+		(action.Outcome != "applied" && action.Outcome != "equivalent" && action.Outcome != "conflict") {
+		return FeedAction{}, errors.New("invalid")
+	}
+	rawChanges, ok := obj["changes"].([]any)
+	if !ok || len(rawChanges) > 20000 {
+		return FeedAction{}, errors.New("invalid")
+	}
+	ids := make(map[string]bool, len(rawChanges))
+	for _, raw := range rawChanges {
+		change, err := parseFeedChange(raw, eventID)
+		if err != nil || ids[change.RegistrationID] {
+			return FeedAction{}, errors.New("invalid")
+		}
+		ids[change.RegistrationID] = true
+		action.Changes = append(action.Changes, change)
+	}
+	if action.Kind == "operation" {
+		rawOperation, err := canonicalJSON(obj["operation"])
+		if err != nil {
+			return FeedAction{}, errors.New("invalid")
+		}
+		operation, err := ParseOperation(rawOperation)
+		if err != nil || operation.OperationID != action.ActionID || operation.ScopeID != scopeID ||
+			(action.Outcome == "applied") != (len(action.Changes) > 0) {
+			return FeedAction{}, errors.New("invalid")
+		}
+		action.Operation = &operation
+	} else if action.Kind != "server_change" || obj["operation"] != nil || action.Outcome != "applied" || len(action.Changes) == 0 {
+		return FeedAction{}, errors.New("invalid")
+	}
+	canonical, err := canonicalJSON(value)
+	if err != nil {
+		return FeedAction{}, errors.New("invalid")
+	}
+	action.canonical = canonical
+	return action, nil
+}
+
+func parseFeedChange(value any, eventID string) (FeedChange, error) {
+	obj, ok := value.(map[string]any)
+	if !ok || !exactKeys(obj, "registrationId", "before", "after") {
+		return FeedChange{}, errors.New("invalid")
+	}
+	id := stringValue(obj["registrationId"])
+	if !identifierPattern.MatchString(id) || (obj["before"] == nil && obj["after"] == nil) {
+		return FeedChange{}, errors.New("invalid")
+	}
+	change := FeedChange{RegistrationID: id}
+	parseSide := func(raw any) (*Registration, error) {
+		if raw == nil {
+			return nil, nil
+		}
+		row, err := parseFeedRegistration(raw)
+		if err != nil || row.ID != id || row.EventID != eventID {
+			return nil, errors.New("invalid")
+		}
+		return &row, nil
+	}
+	var err error
+	change.Before, err = parseSide(obj["before"])
+	if err != nil {
+		return FeedChange{}, err
+	}
+	change.After, err = parseSide(obj["after"])
+	if err != nil {
+		return FeedChange{}, errors.New("invalid")
+	}
+	return change, nil
+}
+
+func parseFeedRegistration(value any) (Registration, error) {
+	obj, ok := value.(map[string]any)
+	if !ok || !exactKeys(obj, "id", "eventId", "raceId", "bib", "epc", "person", "reserve", "issued", "status", "transferredTo") {
+		return Registration{}, errors.New("invalid")
+	}
+	copy := make(map[string]any, len(obj)+1)
+	for key, raw := range obj {
+		copy[key] = raw
+	}
+	copy["hasTimingEvidence"] = false
+	return parseRegistration(copy)
+}
+
+func feedCursor(value any) (string, uint64, bool) {
+	text, ok := value.(string)
+	if !ok || !canonicalCursorPattern.MatchString(text) {
+		return "", 0, false
+	}
+	number, err := strconv.ParseUint(text, 10, 64)
+	return text, number, err == nil
+}
+
+func feedEventID(scopeID string) string {
+	parts := strings.Split(scopeID, ":")
+	if len(parts) != 3 || parts[0] != "site" || !positiveDecimalPattern.MatchString(parts[2]) {
+		return ""
+	}
+	return parts[2]
+}
+
+func validTimestamp(value string) bool {
+	if !timestampPattern.MatchString(value) {
+		return false
+	}
+	_, err := time.Parse("2006-01-02T15:04:05.000Z", value)
+	return err == nil
 }
 
 func ContentHash(operation Operation) string {

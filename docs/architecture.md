@@ -233,9 +233,14 @@ narrow 30-day grant, stores its pre-generated credential in an installation-priv
 database outside `.chrono`, installs the strict bootstrap and sends the durable
 operation outbox with the ordinary site-sync action. Matching terminal receipts
 are committed atomically; lost responses are retried with the same operation and
-credential. A dedicated authenticated HTTPS LAN adapter and incoming site feed are
-still required before advertising this capability; neither the localhost control
-API nor the tokenless read-only results server may be reused for tablet writes.
+credential. The incoming site feed has its own per-event cursor and immutable
+action journal: a page, compatible three-way projection changes and its cursor
+commit atomically, while incompatible local branches remain unchanged and become
+review records. Timing evidence is never accepted from the feed and registration
+deletion is a projection tombstone, not destructive timing-history deletion. A
+dedicated authenticated HTTPS LAN adapter is still required before advertising
+this capability; neither the localhost control API nor the tokenless read-only
+results server may be reused for tablet writes.
 
 ## Checkpoint semantics (inherited from run5 / rfid-sync)
 

@@ -216,14 +216,16 @@ CREATE TABLE IF NOT EXISTS packet_issuance_scopes (
     scope_id     TEXT NOT NULL UNIQUE,
     baseline_id  TEXT NOT NULL,
     source_kind  TEXT NOT NULL CHECK (source_kind IN ('site')),
-    installed_at INTEGER NOT NULL
+    installed_at INTEGER NOT NULL,
+    site_feed_cursor TEXT NOT NULL DEFAULT '0'
 );
 
 CREATE TABLE IF NOT EXISTS packet_issuance_registrations (
     registration_id TEXT PRIMARY KEY REFERENCES members(id),
     event_id         TEXT NOT NULL REFERENCES events(id),
     value_json       TEXT NOT NULL,
-    heads_json       TEXT NOT NULL DEFAULT '[]'
+    heads_json       TEXT NOT NULL DEFAULT '[]',
+    deleted          INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_packet_issuance_registrations_event
     ON packet_issuance_registrations(event_id, registration_id);
@@ -270,6 +272,19 @@ CREATE TABLE IF NOT EXISTS packet_issuance_feed_actions (
 );
 CREATE INDEX IF NOT EXISTS idx_packet_issuance_feed_event
     ON packet_issuance_feed_actions(event_id, event_sequence);
+
+CREATE TABLE IF NOT EXISTS packet_issuance_site_feed_actions (
+    action_id        TEXT PRIMARY KEY,
+    event_id         TEXT NOT NULL REFERENCES events(id),
+    site_sequence    TEXT NOT NULL,
+    action_json      TEXT NOT NULL,
+    application      TEXT NOT NULL CHECK (application IN ('applied','observed','review')),
+    application_code TEXT,
+    recorded_at      INTEGER NOT NULL,
+    UNIQUE (event_id, site_sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_packet_site_feed_event
+    ON packet_issuance_site_feed_actions(event_id, recorded_at, action_id);
 
 -- «Зафиксировать время»: wall-clock finishes the judge captured before a
 -- participant number is known. They persist here so a restart doesn't lose

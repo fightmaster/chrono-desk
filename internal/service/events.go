@@ -68,10 +68,6 @@ func (s *EventService) GetPacketRelay(ctx context.Context, eventID string) (sqli
 	return s.catalog.GetPacketRelay(ctx, eventID)
 }
 
-func (s *EventService) AdvancePacketRelayFeed(ctx context.Context, eventID, expected, next string) error {
-	return s.catalog.AdvancePacketRelayFeed(ctx, eventID, expected, next)
-}
-
 // ImportExport parses a run5 event export and applies it to the event's
 // database file, creating the file on first import. Local edits win.
 func (s *EventService) ImportExport(ctx context.Context, r io.Reader) (ImportStats, error) {
