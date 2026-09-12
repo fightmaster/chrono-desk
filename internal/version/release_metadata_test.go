@@ -56,8 +56,8 @@ func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 	}
 
 	goMod := readRepositoryFile(t, "go.mod")
-	if !strings.Contains(goMod, "gitlab.com/fightmaster1/rfid-core v0.4.1") {
-		t.Fatal("go.mod does not pin canonical GitLab rfid-core v0.4.1")
+	if !strings.Contains(goMod, "gitlab.com/fightmaster1/rfid-core v0.4.2-0.20260912211744-9ded809cbeaf") {
+		t.Fatal("go.mod does not pin the source-addressed canonical GitLab rfid-core candidate")
 	}
 	if strings.Contains(goMod, "replace gitlab.com/fightmaster1/rfid-core") ||
 		strings.Contains(goMod, "../rfid-core") {

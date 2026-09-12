@@ -230,9 +230,19 @@ func (c *edgeChainCentral) snapshot(t *testing.T, action string, args ...string)
 
 func (c *edgeChainCentral) waitRows(t *testing.T, want int) {
 	t.Helper()
+	c.waitRowsAndOutcomes(t, want, want)
+}
+
+func (c *edgeChainCentral) waitRawRows(t *testing.T, want int) {
+	t.Helper()
+	c.waitRowsAndOutcomes(t, want, 0)
+}
+
+func (c *edgeChainCentral) waitRowsAndOutcomes(t *testing.T, want, outcomes int) {
+	t.Helper()
 	edgeChainWait(t, fmt.Sprintf("central MySQL facts/projection=%d and Redis pending=0", want), func() bool {
 		s := c.snapshot(t, "snapshot")
-		if len(s.Rows) != want || s.Results != want || s.MemberResults != want || s.Finished != want {
+		if len(s.Rows) != want || s.Results != outcomes || s.MemberResults != outcomes || s.Finished != outcomes {
 			return false
 		}
 		// Pending=0 alone can hide entries the consumer has not read yet.

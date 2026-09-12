@@ -10,7 +10,8 @@ type EdgeBinding struct {
 // EdgeRelayConfig selects the explicit Hub destination for this event only.
 // It never changes captured observation event/session/source metadata.
 type EdgeRelayConfig struct {
-	Endpoint string `json:"endpoint"`
-	Enabled  bool   `json:"enabled"`
-	Revision int64  `json:"revision"`
+	Endpoint  string `json:"endpoint"`
+	Enabled   bool   `json:"enabled"`
+	Revision  int64  `json:"revision"`
+	TLSBundle string `json:"tls_bundle,omitempty"`
 }

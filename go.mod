@@ -8,8 +8,9 @@ require (
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/xuri/excelize/v2 v2.10.1
-	gitlab.com/fightmaster1/rfid-core v0.4.1
+	gitlab.com/fightmaster1/rfid-core v0.4.2-0.20260912211744-9ded809cbeaf
 	gitlab.com/fightmaster1/timing-core v0.8.0
+	golang.org/x/sys v0.41.0
 	modernc.org/sqlite v1.44.0
 )
 
@@ -48,7 +49,6 @@ require (
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/net v0.50.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	modernc.org/libc v1.67.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

@@ -67,6 +67,27 @@ func TestEdgeControlAPIRequiresAuthAndExplicitProvisioning(t *testing.T) {
 	if code, body := request("PUT", "/relay", `{"endpoint":"127.0.0.1:4004","enabled":false,"revision":1}`, true); code != 200 || !strings.Contains(string(body), `"running":false`) {
 		t.Fatalf("pause relay %d %s", code, body)
 	}
+	if code, _ := request("PUT", "/relay", `{"endpoint":"tls://hub.test:44004","enabled":false,"revision":2}`, true); code < 400 {
+		t.Fatal("TLS relay without its own credential bundle accepted")
+	}
+	bundle := t.TempDir()
+	secureRequest, _ := json.Marshal(domain.EdgeRelayConfig{Endpoint: "tls://hub.test:44004", Revision: 2, TLSBundle: bundle})
+	if code, _ := request("PUT", "/relay", string(secureRequest), false); code != 401 {
+		t.Fatal("unprotected TLS relay configuration")
+	}
+	if code, body := request("PUT", "/relay", string(secureRequest), true); code != 200 {
+		t.Fatalf("TLS relay configuration failed: %d %s", code, body)
+	}
+	if code, body := request("GET", "/relay", "", true); code != 200 {
+		t.Fatal("TLS relay status unavailable")
+	} else {
+		var status struct {
+			Config domain.EdgeRelayConfig `json:"config"`
+		}
+		if json.Unmarshal(body, &status) != nil || status.Config.TLSBundle != bundle || status.Config.Enabled || status.Config.Revision != 3 {
+			t.Fatal("TLS bundle path was lost or activated while paused")
+		}
+	}
 	if code, _ := request("POST", "/start", `{}`, true); code < 400 {
 		t.Fatal("started without binding")
 	}

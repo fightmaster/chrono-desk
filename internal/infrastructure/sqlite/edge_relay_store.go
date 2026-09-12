@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,8 +18,8 @@ import (
 
 func (s *Store) EdgeRelayConfig(ctx context.Context, eventID string) (domain.EdgeRelayConfig, error) {
 	var config domain.EdgeRelayConfig
-	err := s.db.QueryRowContext(ctx, `SELECT endpoint,enabled,revision FROM edge_relay_config WHERE event_id=?`, eventID).
-		Scan(&config.Endpoint, &config.Enabled, &config.Revision)
+	err := s.db.QueryRowContext(ctx, `SELECT endpoint,enabled,revision,tls_bundle FROM edge_relay_config WHERE event_id=?`, eventID).
+		Scan(&config.Endpoint, &config.Enabled, &config.Revision, &config.TLSBundle)
 	if errors.Is(err, sql.ErrNoRows) {
 		return config, nil
 	}
@@ -29,6 +30,14 @@ func (s *Store) EdgeRelayConfig(ctx context.Context, eventID string) (domain.Edg
 // Only the delivery destination changes; immutable source packets never do.
 func (s *Store) ConfigureEdgeRelay(ctx context.Context, eventID string, requested domain.EdgeRelayConfig, confirmPending bool) (domain.EdgeRelayConfig, error) {
 	requested.Endpoint = strings.TrimPrefix(strings.TrimSpace(requested.Endpoint), "tcp://")
+	secure := strings.HasPrefix(requested.Endpoint, "tls://")
+	if secure {
+		requested.Endpoint = strings.TrimPrefix(requested.Endpoint, "tls://")
+	}
+	if (secure && (requested.Endpoint == "" || requested.TLSBundle == "" || !filepath.IsAbs(requested.TLSBundle) || filepath.Clean(requested.TLSBundle) != requested.TLSBundle)) ||
+		(!secure && requested.TLSBundle != "") || len(requested.TLSBundle) > 4096 || strings.ContainsAny(requested.TLSBundle, "\r\n\x00") {
+		return domain.EdgeRelayConfig{}, errors.New("для TLS укажите отдельный каталог сертификата Desk; обычный адрес не может использовать TLS-ключ")
+	}
 	if requested.Endpoint != "" {
 		host, portText, err := net.SplitHostPort(requested.Endpoint)
 		port, portErr := strconv.Atoi(portText)
@@ -36,6 +45,9 @@ func (s *Store) ConfigureEdgeRelay(ctx context.Context, eventID string, requeste
 			return domain.EdgeRelayConfig{}, errors.New("укажите адрес edge-входа Hub как host:port")
 		}
 		requested.Endpoint = net.JoinHostPort(host, strconv.Itoa(port))
+		if secure {
+			requested.Endpoint = "tls://" + requested.Endpoint
+		}
 	}
 	if requested.Revision < 0 || (requested.Enabled && requested.Endpoint == "") {
 		return domain.EdgeRelayConfig{}, errors.New("для досылки требуется явный адрес Hub")
@@ -52,7 +64,7 @@ func (s *Store) ConfigureEdgeRelay(ctx context.Context, eventID string, requeste
 		if previous.Revision != requested.Revision {
 			return errors.New("настройки досылки изменились; обновите страницу")
 		}
-		if previous.Endpoint == requested.Endpoint && previous.Enabled == requested.Enabled {
+		if previous.Endpoint == requested.Endpoint && previous.Enabled == requested.Enabled && previous.TLSBundle == requested.TLSBundle {
 			saved = previous
 			return nil
 		}
@@ -60,13 +72,13 @@ func (s *Store) ConfigureEdgeRelay(ctx context.Context, eventID string, requeste
 		if err != nil {
 			return err
 		}
-		if previous.Endpoint != requested.Endpoint && pending > 0 && !confirmPending {
+		if (previous.Endpoint != requested.Endpoint || previous.TLSBundle != requested.TLSBundle) && pending > 0 && !confirmPending {
 			return errors.New("подтвердите отправку сохранённой очереди на новый адрес")
 		}
 		saved = requested
 		saved.Revision++
-		if _, err := tx.db.ExecContext(ctx, `INSERT INTO edge_relay_config(event_id,endpoint,enabled,revision) VALUES(?,?,?,?)
-			ON CONFLICT(event_id) DO UPDATE SET endpoint=excluded.endpoint,enabled=excluded.enabled,revision=excluded.revision`, eventID, saved.Endpoint, saved.Enabled, saved.Revision); err != nil {
+		if _, err := tx.db.ExecContext(ctx, `INSERT INTO edge_relay_config(event_id,endpoint,enabled,revision,tls_bundle) VALUES(?,?,?,?,?)
+			ON CONFLICT(event_id) DO UPDATE SET endpoint=excluded.endpoint,enabled=excluded.enabled,revision=excluded.revision,tls_bundle=excluded.tls_bundle`, eventID, saved.Endpoint, saved.Enabled, saved.Revision, saved.TLSBundle); err != nil {
 			return err
 		}
 		before, _ := json.Marshal(previous)

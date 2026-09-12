@@ -172,7 +172,8 @@ CREATE TABLE IF NOT EXISTS edge_relay_config (
     event_id TEXT PRIMARY KEY REFERENCES events(id),
     endpoint TEXT NOT NULL,
     enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
-    revision INTEGER NOT NULL
+    revision INTEGER NOT NULL,
+    tls_bundle TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS results (

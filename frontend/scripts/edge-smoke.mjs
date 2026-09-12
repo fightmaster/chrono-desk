@@ -37,7 +37,7 @@ export function edgeSmokeFixture() {
           if (requested.revision !== relay.revision || (requested.endpoint !== relay.endpoint && !requested.confirm_pending)) {
             response.writeHead(409); response.end('{}'); return true
           }
-          relay = {endpoint: requested.endpoint, enabled: requested.enabled, revision: relay.revision + 1}
+          relay = {endpoint: requested.endpoint, enabled: requested.enabled, tls_bundle: requested.tls_bundle || '', revision: relay.revision + 1}
           calls.relay++
         }
         value = {config: relay, running: relay.enabled, progress: {pending: 3, acked: 0, attempts: 1, last_error: 'Проверочная ошибка связи'}, last_error: ''}
@@ -55,7 +55,7 @@ export function edgeSmokeFixture() {
       return true
     },
     verify(html) {
-      if (!html.includes('data-edge-smoke="passed"') || calls.save !== 2 || calls.start !== 1 || calls.stop !== 1 || calls.relay !== 2 || relay.enabled || relay.endpoint !== '127.0.0.1:4004' || bindings[0]?.source_session_id !== 'changed-session' || bindings[1]?.board !== 'Feibot:U660' || bindings[1]?.source_session_id !== '100' || combined !== true || port !== '5084') {
+      if (!html.includes('data-edge-smoke="passed"') || calls.save !== 2 || calls.start !== 1 || calls.stop !== 1 || calls.relay !== 2 || relay.enabled || relay.endpoint !== 'tls://hub.test:44004' || relay.tls_bundle !== '/synthetic/desk-only' || bindings[0]?.source_session_id !== 'changed-session' || bindings[1]?.board !== 'Feibot:U660' || bindings[1]?.source_session_id !== '100' || combined !== true || port !== '5084') {
         throw new Error(`Edge UI did not complete save/start/stop: ${JSON.stringify(calls)}\n${html.slice(-4000)}`)
       }
     }
@@ -106,7 +106,9 @@ window.addEventListener('DOMContentLoaded', async () => {
       const element = relaySection.querySelector('input[type="text"], input.input');
       return element && !element.matches(':disabled') && element;
     });
-    relayAddress.value = '127.0.0.1:4004'; relayAddress.dispatchEvent(new Event('input', {bubbles:true}));
+    relayAddress.value = 'tls://hub.test:44004'; relayAddress.dispatchEvent(new Event('input', {bubbles:true}));
+    const bundle = await wait(() => relaySection.querySelectorAll('input.input')[1]);
+    bundle.value = '/synthetic/desk-only'; bundle.dispatchEvent(new Event('input', {bubbles:true}));
     relaySection.querySelector('input[type="checkbox"]').click();
     await wait(() => button('Сохранить досылку').disabled);
     (await wait(() => relaySection.querySelectorAll('input[type="checkbox"]')[1])).click();

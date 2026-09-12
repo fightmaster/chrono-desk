@@ -6,6 +6,40 @@ Status: local unpublished implementation; receiver acceptance is not end-to-end 
 
 ## Scope
 
+The coordinated candidate pins shared core
+`v0.4.2-0.20260912211744-9ded809cbeaf` from clean commit
+`9ded809cbeafc2c49b5b833d78040b281d530ac2`, without `replace` or `go.work`.
+Canonical docs' `scripts/local-core-proxy.go` reproduces its offline module
+snapshot. This is not a published module or field acceptance; later publication
+must reproduce the same canonical module checksum.
+
+## Protected Hub relay
+
+The existing independent relay can opt into `tls://verified-hub:port` plus
+`tls_bundle`, an absolute private directory containing `client.pem`,
+`client-key.pem` and `server-ca.pem`. First installation provisions a **separate
+Desk client key** through an authorized offline issuer and its exact Hub
+public-key/board allowlist. Never copy the Feibot key or a site administration
+secret. Certificate hostname verification uses the configured endpoint; there
+is no plaintext fallback, auto-enrolment or new receiver/checkpoint creation.
+
+The UI/API persist only the bundle path, not PEM. On Unix the directory/key must
+be 0700/0600 and not symlinks. Windows validates the actual owner/DACL rather
+than treating POSIX mode bits as security: only the current user, SYSTEM and
+Administrators may have ordinary allow entries; unfamiliar ACE forms fail
+closed. Windows native ACL/installer acceptance remains a platform gate,
+distinct from cross-compilation on Linux.
+
+`tls_bundle` is an additive local SQLite relay-configuration column; old rows
+default to empty and native relay behavior is unchanged. Endpoint or bundle
+changes require confirmation for a pending queue and bump the same audited
+revision. Stale claims cannot acknowledge the replacement route. A failed TLS
+attempt leaves the original journal pending and reloads the bundle on retry,
+allowing certificate renewal without another source read or a site-sync button.
+TLS ACK still means durable Hub publication, not central MySQL/results.
+
+## Input scope
+
 This opt-in LAN input accepts the owned `edge-observation-v1` format from our
 sidecar, independent of the reader manufacturer. It reuses `rfid-core/edge`
 validation/identity/ACKs and `tcp.EdgeAdapter`; Desk has no second edge parser.

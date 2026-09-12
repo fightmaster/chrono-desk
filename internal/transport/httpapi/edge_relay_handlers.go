@@ -33,9 +33,10 @@ func (s *Server) handleEdgeRelayConfigure(w http.ResponseWriter, r *http.Request
 		Endpoint       *string `json:"endpoint"`
 		Enabled        *bool   `json:"enabled"`
 		Revision       *int64  `json:"revision"`
+		TLSBundle      string  `json:"tls_bundle"`
 		ConfirmPending bool    `json:"confirm_pending"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&request); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -43,7 +44,7 @@ func (s *Server) handleEdgeRelayConfigure(w http.ResponseWriter, r *http.Request
 		http.Error(w, "укажите endpoint, enabled и revision явно", http.StatusBadRequest)
 		return
 	}
-	config := domain.EdgeRelayConfig{Endpoint: *request.Endpoint, Enabled: *request.Enabled, Revision: *request.Revision}
+	config := domain.EdgeRelayConfig{Endpoint: *request.Endpoint, Enabled: *request.Enabled, Revision: *request.Revision, TLSBundle: request.TLSBundle}
 	if _, err := s.edgeRelay.Configure(r.Context(), r.PathValue("id"), config, request.ConfirmPending); err != nil {
 		s.fail(w, err)
 		return

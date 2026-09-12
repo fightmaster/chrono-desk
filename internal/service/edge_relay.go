@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/credentials"
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/rfid-core/edge"
@@ -197,10 +198,16 @@ func (s *edgeRelaySession) run(ctx context.Context, store *sqlite.Store, eventID
 			deliveryErr = fmt.Errorf("сохранённый edge-пакет не соответствует журналу события")
 		}
 		if deliveryErr == nil {
+			if strings.HasPrefix(config.Endpoint, "tls://") && client.TLSConfig == nil {
+				client.TLSConfig, deliveryErr = credentials.RelayTLS(config.TLSBundle)
+			}
+		}
+		if deliveryErr == nil {
 			deliveryErr = client.Send(ctx, claim.Payload, strings.TrimSuffix(string(edge.ACK(packet)), "\n"))
 		}
 		if deliveryErr != nil {
 			_ = client.Close()
+			client.TLSConfig = nil // Reload renewed credentials on the next retry.
 		}
 		// Cleanup may record an already received ACK or release a cancelled
 		// attempt even when shutdown cancelled the network operation.

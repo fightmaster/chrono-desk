@@ -7,6 +7,8 @@
   let enabled = false
   let revision = 0
   let savedEndpoint = ''
+  let tlsBundle = ''
+  let savedTLSBundle = ''
   let confirmPending = false
   let loaded = false
   let busy = false
@@ -14,11 +16,14 @@
   let running = false
   let lastError = ''
   let progress = {pending: 0, acked: 0, attempts: 0}
-  $: redirectPending = progress.pending > 0 && endpoint.trim().replace(/^tcp:\/\//, '') !== savedEndpoint
+  $: redirectPending = progress.pending > 0 && (endpoint.trim().replace(/^tcp:\/\//, '') !== savedEndpoint || tlsBundle !== savedTLSBundle)
+  $: secure = endpoint.trim().startsWith('tls://')
 
   function apply(value) {
     endpoint = value.config.endpoint
     savedEndpoint = endpoint
+    tlsBundle = value.config.tls_bundle || ''
+    savedTLSBundle = tlsBundle
     enabled = value.config.enabled
     revision = value.config.revision
     progress = value.progress
@@ -36,7 +41,7 @@
   async function save() {
     error = ''; busy = true
     try {
-      apply(await call('PUT', `/api/events/${eventId}/live/edge/relay`, JSON.stringify({endpoint, enabled, revision, confirm_pending: confirmPending})))
+      apply(await call('PUT', `/api/events/${eventId}/live/edge/relay`, JSON.stringify({endpoint, enabled, revision, tls_bundle: tlsBundle, confirm_pending: confirmPending})))
     } catch (e) { error = e.message }
     finally { busy = false }
   }
@@ -50,6 +55,10 @@
   {#if lastError}<p class="error">Последняя ошибка досылки: {lastError}</p>{/if}
   <fieldset disabled={busy || !loaded}>
     <label>Адрес edge-входа Hub<input class="input mono" bind:value={endpoint} placeholder="host:port" maxlength="270" /></label>
+    {#if secure || tlsBundle}
+      <label>Каталог отдельного сертификата Desk<input class="input mono" bind:value={tlsBundle} maxlength="4096" /></label>
+      <p>Для tls:// нужны client.pem, client-key.pem и server-ca.pem в закрытом каталоге этого компьютера. Не копируйте ключ Feibot. Первичную выдачу сертификата и разрешения Hub выполняет администратор.</p>
+    {/if}
     <label><input type="checkbox" bind:checked={enabled} /> Автоматически досылать в Hub</label>
     {#if redirectPending}
       <label><input type="checkbox" bind:checked={confirmPending} /> Подтверждаю досылку сохранённой очереди ({progress.pending}) на указанный адрес. Событие, сессия и исходные пакеты не изменятся.</label>

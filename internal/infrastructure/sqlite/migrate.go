@@ -38,6 +38,15 @@ func migrate(db *sql.DB) error {
 }
 
 func addEdgeRelayDelivery(db *sql.DB) error {
+	var hasTLS int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('edge_relay_config') WHERE name='tls_bundle'`).Scan(&hasTLS); err != nil {
+		return err
+	}
+	if hasTLS == 0 {
+		if _, err := db.Exec(`ALTER TABLE edge_relay_config ADD COLUMN tls_bundle TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
 	for _, column := range []struct{ name, typeSQL string }{
 		{"relay_endpoint", "TEXT"}, {"attempts", "INTEGER NOT NULL DEFAULT 0"},
 		{"next_attempt_at", "INTEGER NOT NULL DEFAULT 0"}, {"last_attempt_at", "INTEGER"},

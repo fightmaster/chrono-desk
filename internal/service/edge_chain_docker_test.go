@@ -53,7 +53,7 @@ func newEdgeChainHubOnNetwork(t *testing.T, eventID int64, board, session, netwo
 	return newEdgeChainHubTopology(t, eventID, board, session, network, false)
 }
 
-func newEdgeChainHubTopology(t *testing.T, eventID int64, board, session, network string, mixed bool) *edgeChainHub {
+func newEdgeChainHubTopology(t *testing.T, eventID int64, board, session, network string, mixed bool, security ...*edgeChainTLS) *edgeChainHub {
 	t.Helper()
 	binary := edgeChainBinary(t, "EDGE_HUB_BINARY")
 	image := os.Getenv("EDGE_REDIS_IMAGE")
@@ -68,19 +68,40 @@ func newEdgeChainHubTopology(t *testing.T, eventID int64, board, session, networ
 		"name": "edge-chain", "adapter": "edge_observation_v1", "host": "0.0.0.0", "port": "44004", "ack_mode": "id", "max_connections": 8,
 		"edge_bindings": []map[string]any{{"board": board, "event_id": eventID, "source_session_id": session}},
 	}}
+	if len(security) > 1 {
+		t.Fatal("multiple TLS fixture configurations")
+	}
+	if len(security) == 1 {
+		fixture := security[0]
+		clients := []map[string]any{{"public_key_sha256": fixture.publicKey, "boards": []string{board}}}
+		if fixture.allowRelay {
+			clients = append(clients, map[string]any{"public_key_sha256": fixture.replacementKey, "boards": []string{board}})
+		}
+		topology[0]["mtls"] = map[string]any{
+			"certificate_file": "/tmp/edge-chain-tls/server.pem", "key_file": "/tmp/edge-chain-tls/server-key.pem", "client_ca_file": "/tmp/edge-chain-tls/ca.pem",
+			"clients": clients,
+		}
+		// Another admitted board demonstrates that a signed device key cannot
+		// impersonate every tuple on a shared listener.
+		topology[0]["edge_bindings"] = []map[string]any{{"board": board, "event_id": eventID, "source_session_id": session}, {"board": "Feibot:other-synthetic", "event_id": eventID, "source_session_id": session}}
+	}
 	if mixed {
 		topology = append(topology,
 			map[string]any{"name": "myrace-mixed", "adapter": "myrace_nano", "port": "44002", "max_connections": 4, "publish_workers": 1, "publish_queue_size": 32},
 			map[string]any{"name": "feibot-mixed", "adapter": "feibot", "port": "44003", "max_connections": 8, "publish_workers": 8, "publish_queue_size": 2048})
 	}
 	listeners, _ := json.Marshal(topology)
+	startup := `redis-server --bind 127.0.0.1 --save '' --appendonly no --dir /data & exec /tmp/rfid-hub`
+	if len(security) == 1 {
+		startup = `redis-server --bind 127.0.0.1 --save '' --appendonly no --dir /data & while [ ! -f /tmp/edge-chain-tls/.ready ]; do sleep 0.05; done; exec /tmp/rfid-hub`
+	}
 	h.id = h.docker(t, "create", "--pull", "never", "--name", name, "--label", "task=CHR-SIDE-002", "--network", network,
 		"--user", strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()),
 		"--memory", "192m", "--cpus", "1", "--pids-limit", "64",
 		"--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/data:rw,noexec,nosuid,size=32m",
 		"--workdir", "/data",
 		"--env", "REDIS_ADDR=127.0.0.1:6379", "--env", "REDIS_STREAM=synthetic-edge-chain", "--env", "TCP_LISTENERS_JSON="+string(listeners),
-		"--entrypoint", "/bin/sh", image, "-c", `redis-server --bind 127.0.0.1 --save '' --appendonly no --dir /data & exec /tmp/rfid-hub`)
+		"--entrypoint", "/bin/sh", image, "-c", startup)
 	t.Cleanup(func() {
 		if t.Failed() {
 			state, _ := edgeChainDocker("inspect", "--format", `running={{.State.Running}} exit={{.State.ExitCode}} bindings={{json .HostConfig.PortBindings}} ports={{json .NetworkSettings.Ports}}`, h.id)
@@ -99,6 +120,9 @@ func newEdgeChainHubTopology(t *testing.T, eventID int64, board, session, networ
 	// test temporary directory with its VM. No source tree is mounted.
 	h.docker(t, "cp", binary, h.id+":/tmp/rfid-hub")
 	h.docker(t, "start", h.id)
+	if len(security) == 1 {
+		security[0].copyServerBundle(t, h)
+	}
 	edgeChainWait(t, "Hub and Redis fixture startup", func() bool {
 		output, err := edgeChainDocker("exec", h.id, "/bin/sh", "-c", "redis-cli PING && /bin/busybox nc -z -w 1 127.0.0.1 44004")
 		return err == nil && output == "PONG"
