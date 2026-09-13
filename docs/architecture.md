@@ -257,11 +257,12 @@ open only while on.
   security window), so `govulncheck` permanently reports stdlib vulnerabilities fixed
   only in 1.25+. Accepted for an offline desktop app whose HTTP API binds to
   localhost/LAN; do NOT "fix" by bumping Go. Re-evaluate when the Mac constraint goes.
-- The 2026-08-21 audit also reports Excelize and `x/net` findings whose patched
-  releases require Go 1.25. They remain explicit in `make audit`; they are not
-  represented as a green security gate. Chrono Desk creates XLSX files but does
-  not parse uploaded workbooks, and its control API remains localhost-only. This
-  is mitigation, not remediation; upgrading the competition Mac and Go closes it.
+- The 2026-08-21 audit also reports `x/net` findings whose patched releases
+  require Go 1.25. They remain explicit in `make audit`; they are not represented
+  as a green security gate. The former Excelize dependency was removed by
+  replacing protocol XLSX generation with standard-library CSV generation. The
+  control API remains localhost/LAN-only. Upgrading the competition Mac and Go
+  is still required to close the remaining toolchain and network findings.
 - Dependencies are capped by the pin too: `modernc.org/sqlite` is held at v1.44.0
   (v1.45+ requires Go 1.25).
 - **macOS builds cannot be cross-compiled from Linux** (CGO + Apple frameworks). Two

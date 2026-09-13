@@ -76,13 +76,13 @@
     } catch (err) { error = `Экспорт JSON: ${err.message}` }
   }
 
-  async function exportExcel() {
+  async function exportCSV() {
     msg = ''; error = ''
-    if (!currentRace) { error = 'Выберите дистанцию на экране «Результаты» для экспорта Excel.'; return }
+    if (!currentRace) { error = 'Выберите дистанцию на экране «Результаты» для экспорта CSV.'; return }
     try {
-      const res = await call('POST', `/api/events/${eventId}/races/${currentRace.id}/export-xlsx`)
-      msg = `Протокол Excel сохранён: ${res.path}`
-    } catch (err) { error = `Экспорт Excel: ${err.message}` }
+      const res = await call('POST', `/api/events/${eventId}/races/${currentRace.id}/export-csv`)
+      msg = `Протокол CSV сохранён: ${res.path}`
+    } catch (err) { error = `Экспорт CSV: ${err.message}` }
   }
 
   async function backup() {
@@ -226,7 +226,7 @@
       <div class="ctitle mb">Данные события</div>
       <div class="data-btns">
         <button class="btn" on:click={exportJson}>Экспорт JSON</button>
-        <button class="btn" on:click={exportExcel} title="Протокол выбранной на «Результатах» дистанции">Экспорт Excel</button>
+        <button class="btn" on:click={exportCSV} title="Протокол выбранной на «Результатах» дистанции">Экспорт CSV</button>
         <button class="btn" on:click={backup}>Резервная копия</button>
       </div>
     </div>

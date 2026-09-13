@@ -42,7 +42,7 @@ ingest uses the shared `rfid-core` module.
 - Go 1.24 (pinned: newer Go drops macOS 11, the competition MacBook's OS), Wails v2,
   Svelte + Vite frontend (same pattern as RaceTorchApp)
 - SQLite via `modernc.org/sqlite` (pure Go, no CGO) — one event = one portable `.db` file
-- Excel export via `excelize`
+- protocol export as UTF-8 CSV for Excel, Numbers and LibreOffice
 - UI talks to the Go core through an embedded localhost HTTP API (not Wails bindings),
   so the same API can later be opened to the local network and run headless
 

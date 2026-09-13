@@ -125,29 +125,29 @@ func (s *Server) handleProtocol(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, protocol)
 }
 
-func (s *Server) handleProtocolXLSX(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleProtocolCSV(w http.ResponseWriter, r *http.Request) {
 	store, err := s.events.Open(r.PathValue("id"))
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	data, name, err := service.BuildProtocolXLSX(r.Context(), store, r.PathValue("raceID"))
+	data, name, err := service.BuildProtocolCSV(r.Context(), store, r.PathValue("raceID"))
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
 	_, _ = w.Write(data)
 }
 
-func (s *Server) handleExportXLSX(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
 	store, err := s.events.Open(r.PathValue("id"))
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	data, name, err := service.BuildProtocolXLSX(r.Context(), store, r.PathValue("raceID"))
+	data, name, err := service.BuildProtocolCSV(r.Context(), store, r.PathValue("raceID"))
 	if err != nil {
 		s.fail(w, err)
 		return
