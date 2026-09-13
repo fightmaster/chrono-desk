@@ -92,7 +92,9 @@ func LoadOrCreatePacketLAN(dataDir, installationID string) (PacketLANTLS, error)
 	sum := sha256.Sum256(ca.Raw)
 	return PacketLANTLS{
 		Config: &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{certificate},
-			NextProtos: []string{"h2", "http/1.1"}},
+			// Issuance polling does not benefit from HTTP/2. Keep the Go 1.24
+			// compatibility build off its known HTTP/2 server paths.
+			NextProtos: []string{"http/1.1"}},
 		CACertificate: append([]byte(nil), caPEM...), CAFingerprint: hex.EncodeToString(sum[:]),
 	}, nil
 }

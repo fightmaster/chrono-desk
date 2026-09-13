@@ -32,6 +32,9 @@ func TestPacketLANTLSIsStableAndContainsNoPrivateMaterial(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(directory, "packet-lan-tls", "ca-key.pem")); err != nil {
 		t.Fatal(err)
 	}
+	if len(first.Config.NextProtos) != 1 || first.Config.NextProtos[0] != "http/1.1" {
+		t.Fatalf("packet LAN protocols = %v, want HTTP/1.1 only", first.Config.NextProtos)
+	}
 }
 
 func TestPacketLANTLSFailsClosedOnIncompleteMaterial(t *testing.T) {

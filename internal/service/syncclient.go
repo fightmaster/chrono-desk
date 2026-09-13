@@ -19,7 +19,28 @@ import (
 
 const syncHTTPTimeout = 120 * time.Second
 
-var syncHTTPClient = &http.Client{Timeout: syncHTTPTimeout}
+var syncHTTPClient = newSyncHTTPClient()
+
+func newSyncHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Packet issuance and event synchronization are small, bounded HTTP/1.1
+	// exchanges. Disabling HTTP/2 keeps the Go 1.24 compatibility build away
+	// from its known HTTP/2 advisories until the competition Mac can move to a
+	// supported Go toolchain.
+	transport.ForceAttemptHTTP2 = false
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	transport.Protocols = protocols
+	return &http.Client{
+		Transport: transport,
+		Timeout:   syncHTTPTimeout,
+		// Never forward X-SYNC-TOKEN or relay bearer credentials through an
+		// HTTP redirect. Receiver endpoints are explicit versioned contracts.
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
 
 type SyncCapabilities struct {
 	PushSchemaVersions               []int `json:"push_schema_versions"`

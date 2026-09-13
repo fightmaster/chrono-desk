@@ -66,11 +66,14 @@ func New(
 	s.syncPull = service.NewSyncPullManager(events, logger, 5*time.Second)
 	s.edgeRelay = service.NewEdgeRelayManager(events, logger, time.Second)
 
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
 	s.httpServer = &http.Server{
 		// The Wails webview loads the UI from its own origin, so the
 		// localhost API must answer CORS preflight.
 		Handler:           cors(requireAPIToken(apiToken, s.routes())),
 		ReadHeaderTimeout: 5 * time.Second,
+		Protocols:         protocols,
 	}
 	return s, nil
 }

@@ -20,6 +20,8 @@ import (
 
 var packetRelayUUID = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
+const maxPacketRelayURLBytes = 2048
+
 var (
 	ErrPacketSiteFeedCursorAhead   = errors.New("packet_site_feed_cursor_ahead")
 	ErrPacketSiteFeedCursorExpired = errors.New("packet_site_feed_cursor_expired")
@@ -275,7 +277,11 @@ func EnrollPacketRelay(ctx context.Context, baseURL, token, eventID, deskInstanc
 }
 
 func FetchPacketBootstrap(ctx context.Context, descriptor PacketRelayDescriptor, credential string) (packetissuance.Bootstrap, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, descriptor.APIBaseURL+"/bootstrap", nil)
+	endpoint, err := packetRelayActionURL(descriptor.APIBaseURL, "/bootstrap")
+	if err != nil {
+		return packetissuance.Bootstrap{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return packetissuance.Bootstrap{}, fmt.Errorf("create packet roster request: %w", err)
 	}
@@ -310,7 +316,11 @@ func PushPacketOperations(ctx context.Context, apiBaseURL, credential string, op
 	if err != nil || len(payload) > 1<<20 {
 		return nil, errors.New("invalid packet operation batch")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(apiBaseURL, "/")+"/operations", bytes.NewReader(payload))
+	endpoint, err := packetRelayActionURL(apiBaseURL, "/operations")
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("create packet operation request: %w", err)
 	}
@@ -373,9 +383,13 @@ func PushPacketOperations(ctx context.Context, apiBaseURL, credential string, op
 }
 
 func PullPacketFeedPage(ctx context.Context, apiBaseURL, credential, scopeID, after string) (packetissuance.FeedPage, error) {
-	endpoint, err := url.Parse(strings.TrimRight(apiBaseURL, "/") + "/feed")
-	if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil {
-		return packetissuance.FeedPage{}, errors.New("invalid packet feed endpoint")
+	endpointString, err := packetRelayActionURL(apiBaseURL, "/feed")
+	if err != nil {
+		return packetissuance.FeedPage{}, err
+	}
+	endpoint, err := url.Parse(endpointString)
+	if err != nil {
+		return packetissuance.FeedPage{}, errors.New("invalid packet relay endpoint")
 	}
 	query := endpoint.Query()
 	query.Set("after", after)
@@ -458,6 +472,9 @@ func validPacketReceipt(receipt packetissuance.Receipt) bool {
 
 func packetEnrollmentURL(baseURL, eventID string) (string, error) {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if len(base) == 0 || len(base) > maxPacketRelayURLBytes || strings.ContainsRune(base, '\x00') {
+		return "", errors.New("packet issuance requires a bounded HTTPS site address")
+	}
 	parsed, err := url.Parse(base)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", errors.New("packet issuance requires an HTTPS site address")
@@ -476,6 +493,9 @@ func decodePacketRelayDescriptor(body []byte) (PacketRelayDescriptor, error) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return PacketRelayDescriptor{}, errors.New("invalid packet relay descriptor")
 	}
+	if len(descriptor.APIBaseURL) == 0 || len(descriptor.APIBaseURL) > maxPacketRelayURLBytes || strings.ContainsRune(descriptor.APIBaseURL, '\x00') {
+		return PacketRelayDescriptor{}, errors.New("invalid packet relay endpoint")
+	}
 	endpoint, err := url.Parse(descriptor.APIBaseURL)
 	if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" ||
 		!strings.HasSuffix(strings.TrimRight(endpoint.Path, "/"), "/relays/"+descriptor.RelayID) {
@@ -489,4 +509,17 @@ func decodePacketRelayDescriptor(body []byte) (PacketRelayDescriptor, error) {
 		return PacketRelayDescriptor{}, errors.New("unsupported packet relay descriptor")
 	}
 	return descriptor, nil
+}
+
+func packetRelayActionURL(apiBaseURL, suffix string) (string, error) {
+	base := strings.TrimRight(strings.TrimSpace(apiBaseURL), "/")
+	if len(base) == 0 || len(base) > maxPacketRelayURLBytes || strings.ContainsRune(base, '\x00') {
+		return "", errors.New("invalid packet relay endpoint")
+	}
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil ||
+		parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("invalid packet relay endpoint")
+	}
+	return base + suffix, nil
 }

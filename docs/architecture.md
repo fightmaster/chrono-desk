@@ -346,6 +346,14 @@ resolution remain release gates; the localhost bearer is never sent to a tablet.
   represented as a green security gate. Chrono Desk creates XLSX files but does
   not parse uploaded workbooks, and its control API remains localhost-only. This
   is mitigation, not remediation; upgrading the competition Mac and Go closes it.
+- The authenticated site/packet client rejects redirects and explicitly disables
+  HTTP/2, so event and relay credentials stay on the configured endpoint and the
+  Go 1.24 compatibility build does not enter its known HTTP/2 client paths. All
+  embedded servers accept HTTP/1 only, and the opt-in packet-issuance TLS listener
+  advertises only `http/1.1`; its existing connection, header, body and deadline
+  bounds remain mandatory. These controls
+  narrow the legacy-toolchain exposure but do not turn `govulncheck` green or
+  replace the platform decision above.
 - Dependencies are capped by the pin too: `modernc.org/sqlite` is held at v1.44.0
   (v1.45+ requires Go 1.25).
 - **macOS builds cannot be cross-compiled from Linux** (CGO + Apple frameworks). Two

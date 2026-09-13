@@ -75,7 +75,9 @@ func (s *Server) Publish(eventID string) error {
 		s.publishedID = ""
 		return fmt.Errorf("не удалось открыть порт %d: %w", s.port, err)
 	}
-	srv := &http.Server{Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second}
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	srv := &http.Server{Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second, Protocols: protocols}
 	s.httpServer = srv
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

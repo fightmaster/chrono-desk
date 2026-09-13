@@ -153,9 +153,11 @@ func (s *Server) start(ctx context.Context, eventID string, persist bool) error 
 			return err
 		}
 	}
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
 	httpServer := &http.Server{Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 20 * time.Second, WriteTimeout: 40 * time.Second, IdleTimeout: 60 * time.Second,
-		MaxHeaderBytes: 16 << 10}
+		MaxHeaderBytes: 16 << 10, Protocols: protocols}
 	s.eventID, s.actualPort, s.listener, s.mdns, s.httpServer = eventID, actualPort, listener, mdns, httpServer
 	go func() {
 		err := httpServer.Serve(tls.NewListener(listener, s.tls.Config.Clone()))

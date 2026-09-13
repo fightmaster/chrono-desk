@@ -75,6 +75,22 @@ func TestPacketRelayRejectsHTTPAndServerSelectedUnsafeEndpoint(t *testing.T) {
 	}
 }
 
+func TestPacketRelayActionURLRejectsUnboundedOrAmbiguousAddresses(t *testing.T) {
+	valid, err := packetRelayActionURL(" https://app.chrono.events/api/packet-issuance/v1/relays/test/ ", "/feed")
+	if err != nil || valid != "https://app.chrono.events/api/packet-issuance/v1/relays/test/feed" {
+		t.Fatalf("valid URL = %q, err=%v", valid, err)
+	}
+	for _, value := range []string{
+		"", "http://app.chrono.events/relay", "https://user@app.chrono.events/relay",
+		"https://app.chrono.events/relay?next=other", "https://app.chrono.events/relay#other",
+		"https://app.chrono.events/\x00relay", "https://app.chrono.events/" + strings.Repeat("a", maxPacketRelayURLBytes),
+	} {
+		if _, err := packetRelayActionURL(value, "/feed"); err == nil {
+			t.Fatalf("unsafe packet relay URL accepted: %q", value)
+		}
+	}
+}
+
 func TestConnectPacketIssuanceSitePersistsGrantBeforeInstallingRoster(t *testing.T) {
 	previous := syncHTTPClient
 	t.Cleanup(func() { syncHTTPClient = previous })

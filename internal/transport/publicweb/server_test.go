@@ -142,6 +142,10 @@ func TestPublishLifecycle(t *testing.T) {
 	if err := s.Publish("ev-100"); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
+	if s.httpServer.Protocols == nil || !s.httpServer.Protocols.HTTP1() || s.httpServer.Protocols.HTTP2() ||
+		s.httpServer.Protocols.UnencryptedHTTP2() {
+		t.Fatal("public LAN must use HTTP/1 only on the Go 1.24 compatibility build")
+	}
 	if st := s.Status(); !st.Running || st.EventID != "ev-100" {
 		t.Fatalf("status = %+v, want running ev-100", st)
 	}

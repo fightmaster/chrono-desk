@@ -56,6 +56,10 @@ func TestPacketLANHTTPSExposesOnlyScopedIssuanceAndResumes(t *testing.T) {
 	if err := server.Start(ctx, "ev-100"); err != nil {
 		t.Fatal(err)
 	}
+	if server.httpServer.Protocols == nil || !server.httpServer.Protocols.HTTP1() || server.httpServer.Protocols.HTTP2() ||
+		server.httpServer.Protocols.UnencryptedHTTP2() {
+		t.Fatal("packet LAN must use HTTP/1 only on the Go 1.24 compatibility build")
+	}
 	t.Cleanup(func() {
 		stop, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()

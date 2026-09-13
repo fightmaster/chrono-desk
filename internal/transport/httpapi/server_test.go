@@ -70,6 +70,10 @@ func freePort(t *testing.T) int {
 
 func TestHealthEndpoint(t *testing.T) {
 	srv := startTestServer(t)
+	if srv.httpServer.Protocols == nil || !srv.httpServer.Protocols.HTTP1() || srv.httpServer.Protocols.HTTP2() ||
+		srv.httpServer.Protocols.UnencryptedHTTP2() {
+		t.Fatal("localhost control API must use HTTP/1 only on the Go 1.24 compatibility build")
+	}
 
 	resp := mustGet(t, srv.BaseURL()+"/health")
 	defer resp.Body.Close()

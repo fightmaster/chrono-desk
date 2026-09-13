@@ -2,12 +2,31 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestSyncHTTPClientKeepsCredentialsOnExplicitHTTP1Endpoint(t *testing.T) {
+	client := newSyncHTTPClient()
+	if client.Timeout != syncHTTPTimeout {
+		t.Fatalf("timeout = %s", client.Timeout)
+	}
+	if client.CheckRedirect == nil || !errors.Is(client.CheckRedirect(nil, nil), http.ErrUseLastResponse) {
+		t.Fatal("authenticated sync client must reject redirects")
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T", client.Transport)
+	}
+	if transport.ForceAttemptHTTP2 || transport.Protocols == nil || !transport.Protocols.HTTP1() ||
+		transport.Protocols.HTTP2() || transport.Protocols.UnencryptedHTTP2() {
+		t.Fatal("Go 1.24 sync client must disable HTTP/2")
+	}
+}
 
 func TestPushSyncSendsTokenAndParsesSummary(t *testing.T) {
 	var gotToken, gotPath, gotBody string
