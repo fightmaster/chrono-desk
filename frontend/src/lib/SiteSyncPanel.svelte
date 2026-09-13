@@ -117,6 +117,15 @@
     } catch (e) { error = `Отзыв планшета: ${e.message}` } finally { busy = '' }
   }
 
+  async function compactPacketFeed() {
+    if (!confirm('Архивировать до 100 старых записей транспорта? История сохранится, отставшие планшеты заново сверят список.')) return
+    error = ''; busy = 'Архивация журнала выдачи…'
+    try {
+      await call('POST', `/api/events/${eventId}/packet-issuance/lan/compact`, JSON.stringify({execute: true}))
+      packetLAN = await call('GET', `/api/events/${eventId}/packet-issuance/lan`)
+    } catch (e) { error = `Архивация выдачи: ${e.message}` } finally { busy = '' }
+  }
+
   async function downloadPacketCA() {
     error = ''
     try {
@@ -203,6 +212,12 @@
               {#if !peer.revoked_at}<button class="btn link" disabled={!!busy} on:click={() => revokePacketConnection(peer.connection_id)}>отозвать</button>{/if}
             </div>
           {/each}
+        </div>
+      {/if}
+      {#if !packetLAN?.running && packetLAN?.retention?.candidate > 0}
+        <div class="actions">
+          <span class="faint">Старый транспортный журнал: {packetLAN.retention.candidate} записей доступно для архивации.</span>
+          <button class="btn" disabled={!!busy} on:click={compactPacketFeed}>Архивировать 100 записей</button>
         </div>
       {/if}
     </div>

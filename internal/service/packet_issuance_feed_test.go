@@ -176,6 +176,10 @@ func TestApplyPacketFeedPageKeepsIncompatibleLocalEditForReview(t *testing.T) {
 	if applications[1].Application != "review" || applications[1].Code == nil || *applications[1].Code != "feed_state_conflict" {
 		t.Fatalf("applications=%+v", applications)
 	}
+	baseline, err := store.FindPacketSiteRegistration(ctx, "621632", "700")
+	if err != nil || !baseline.Value.Issued || baseline.Value.Person.FirstName != "Анна-Мария" {
+		t.Fatalf("site baseline did not advance independently: %+v err=%v", baseline, err)
+	}
 }
 
 func TestApplyPacketFeedPageRollsBackProjectionAndCursorOnJournalFailure(t *testing.T) {
@@ -189,8 +193,9 @@ func TestApplyPacketFeedPageRollsBackProjectionAndCursorOnJournalFailure(t *test
 	}
 	rows, _ := store.ListPacketRegistrations(ctx, "621632")
 	scope, _ := store.GetPacketIssuanceScope(ctx, "621632")
-	if rows[0].Issued || scope.SiteFeedCursor != "16" {
-		t.Fatalf("projection=%+v cursor=%s", rows[0], scope.SiteFeedCursor)
+	baseline, _ := store.FindPacketSiteRegistration(ctx, "621632", "700")
+	if rows[0].Issued || baseline.Value.Issued || scope.SiteFeedCursor != "16" {
+		t.Fatalf("projection=%+v baseline=%+v cursor=%s", rows[0], baseline, scope.SiteFeedCursor)
 	}
 }
 

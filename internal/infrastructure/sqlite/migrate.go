@@ -47,6 +47,74 @@ func migrate(db *sql.DB) error {
 	if err := addPacketIssuanceResolutions(db); err != nil {
 		return err
 	}
+	if err := addPacketIssuanceSnapshotRebase(db); err != nil {
+		return err
+	}
+	if err := addPacketIssuanceFeedRetention(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+func addPacketIssuanceFeedRetention(db *sql.DB) error {
+	var columns int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('packet_issuance_feed_heads')
+		WHERE name='first_available_sequence'`).Scan(&columns); err != nil {
+		return err
+	}
+	if columns == 0 {
+		if _, err := db.Exec(`ALTER TABLE packet_issuance_feed_heads
+			ADD COLUMN first_available_sequence INTEGER NOT NULL DEFAULT 1`); err != nil {
+			return fmt.Errorf("add packet issuance feed floor: %w", err)
+		}
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS packet_issuance_feed_archives (
+		action_id TEXT PRIMARY KEY,event_id TEXT NOT NULL REFERENCES events(id),
+		event_sequence INTEGER NOT NULL,kind TEXT NOT NULL,source_code TEXT NOT NULL,
+		source_operation_id TEXT,outcome TEXT NOT NULL,outcome_code TEXT,
+		changes_gzip BLOB NOT NULL,recorded_at INTEGER NOT NULL,archived_at INTEGER NOT NULL,
+		UNIQUE(event_id,event_sequence))`); err != nil {
+		return fmt.Errorf("create packet issuance feed archive: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_packet_issuance_archive_event
+		ON packet_issuance_feed_archives(event_id,event_sequence)`); err != nil {
+		return err
+	}
+	return nil
+}
+
+func addPacketIssuanceSnapshotRebase(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS packet_issuance_site_registrations (
+		event_id TEXT NOT NULL REFERENCES events(id),registration_id TEXT NOT NULL,
+		value_json TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY(event_id,registration_id))`); err != nil {
+		return fmt.Errorf("create packet issuance site baseline: %w", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS packet_issuance_snapshot_rebases (
+		rebase_sequence INTEGER PRIMARY KEY AUTOINCREMENT,event_id TEXT NOT NULL REFERENCES events(id),
+		scope_id TEXT NOT NULL,before_baseline_id TEXT NOT NULL,after_baseline_id TEXT NOT NULL,
+		before_cursor TEXT NOT NULL,after_cursor TEXT NOT NULL,snapshot_json TEXT NOT NULL,
+		applications_json TEXT NOT NULL,recorded_at INTEGER NOT NULL,
+		UNIQUE(event_id,rebase_sequence))`); err != nil {
+		return fmt.Errorf("create packet issuance snapshot rebases: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_packet_snapshot_rebases_event
+		ON packet_issuance_snapshot_rebases(event_id,rebase_sequence)`); err != nil {
+		return err
+	}
+	// Existing unpublished candidate databases have no trustworthy separate
+	// server baseline. Backfill only untouched scopes; any operation/feed
+	// history makes inference unsafe and is deliberately left fail-closed.
+	_, err := db.Exec(`INSERT OR IGNORE INTO packet_issuance_site_registrations
+		(event_id,registration_id,value_json,deleted)
+		SELECT r.event_id,r.registration_id,r.value_json,r.deleted
+		FROM packet_issuance_registrations r
+		WHERE NOT EXISTS (SELECT 1 FROM packet_issuance_operations o WHERE o.event_id=r.event_id)
+		AND NOT EXISTS (SELECT 1 FROM packet_issuance_site_feed_actions s WHERE s.event_id=r.event_id)
+		AND NOT EXISTS (SELECT 1 FROM packet_issuance_feed_actions f WHERE f.event_id=r.event_id)`)
+	if err != nil {
+		return fmt.Errorf("backfill untouched packet issuance site baseline: %w", err)
+	}
 	return nil
 }
 

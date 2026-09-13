@@ -259,8 +259,9 @@ CREATE INDEX IF NOT EXISTS idx_packet_issuance_operations_event
     ON packet_issuance_operations(event_id, recorded_at, operation_id);
 
 CREATE TABLE IF NOT EXISTS packet_issuance_feed_heads (
-    event_id      TEXT PRIMARY KEY REFERENCES events(id),
-    last_sequence INTEGER NOT NULL DEFAULT 0
+    event_id                 TEXT PRIMARY KEY REFERENCES events(id),
+    last_sequence            INTEGER NOT NULL DEFAULT 0,
+    first_available_sequence INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS packet_issuance_feed_actions (
@@ -280,6 +281,26 @@ CREATE TABLE IF NOT EXISTS packet_issuance_feed_actions (
 CREATE INDEX IF NOT EXISTS idx_packet_issuance_feed_event
     ON packet_issuance_feed_actions(event_id, event_sequence);
 
+-- Live feed rows may be compacted only through the explicit bounded retention
+-- path. The immutable private archive remains available for causal admission
+-- and operator audit; clients behind the floor must rebase from bootstrap.
+CREATE TABLE IF NOT EXISTS packet_issuance_feed_archives (
+    action_id           TEXT PRIMARY KEY,
+    event_id            TEXT NOT NULL REFERENCES events(id),
+    event_sequence      INTEGER NOT NULL,
+    kind                TEXT NOT NULL,
+    source_code         TEXT NOT NULL,
+    source_operation_id TEXT,
+    outcome             TEXT NOT NULL,
+    outcome_code        TEXT,
+    changes_gzip        BLOB NOT NULL,
+    recorded_at         INTEGER NOT NULL,
+    archived_at         INTEGER NOT NULL,
+    UNIQUE (event_id, event_sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_packet_issuance_archive_event
+    ON packet_issuance_feed_archives(event_id, event_sequence);
+
 CREATE TABLE IF NOT EXISTS packet_issuance_site_feed_actions (
     action_id        TEXT PRIMARY KEY,
     event_id         TEXT NOT NULL REFERENCES events(id),
@@ -292,6 +313,35 @@ CREATE TABLE IF NOT EXISTS packet_issuance_site_feed_actions (
 );
 CREATE INDEX IF NOT EXISTS idx_packet_site_feed_event
     ON packet_issuance_site_feed_actions(event_id, recorded_at, action_id);
+
+-- The current Desk projection may include pending local edits. Keep the last
+-- authenticated site value separately so an expired feed cursor can be
+-- rebased with a three-way merge instead of replacing local work.
+CREATE TABLE IF NOT EXISTS packet_issuance_site_registrations (
+    event_id         TEXT NOT NULL REFERENCES events(id),
+    registration_id TEXT NOT NULL,
+    value_json       TEXT NOT NULL,
+    deleted          INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (event_id, registration_id)
+);
+
+-- Snapshot rebases are rare recovery boundaries. Retain the authenticated
+-- snapshot and deterministic per-registration decisions for later review.
+CREATE TABLE IF NOT EXISTS packet_issuance_snapshot_rebases (
+    rebase_sequence    INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id           TEXT NOT NULL REFERENCES events(id),
+    scope_id           TEXT NOT NULL,
+    before_baseline_id TEXT NOT NULL,
+    after_baseline_id  TEXT NOT NULL,
+    before_cursor      TEXT NOT NULL,
+    after_cursor       TEXT NOT NULL,
+    snapshot_json      TEXT NOT NULL,
+    applications_json  TEXT NOT NULL,
+    recorded_at        INTEGER NOT NULL,
+    UNIQUE (event_id, rebase_sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_packet_snapshot_rebases_event
+    ON packet_issuance_snapshot_rebases(event_id, rebase_sequence);
 
 CREATE TABLE IF NOT EXISTS packet_issuance_resolutions (
     resolution_operation_id TEXT PRIMARY KEY REFERENCES packet_issuance_operations(operation_id),

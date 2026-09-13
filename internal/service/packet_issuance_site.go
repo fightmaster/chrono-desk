@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -18,6 +19,11 @@ import (
 )
 
 var packetRelayUUID = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+
+var (
+	ErrPacketSiteFeedCursorAhead   = errors.New("packet_site_feed_cursor_ahead")
+	ErrPacketSiteFeedCursorExpired = errors.New("packet_site_feed_cursor_expired")
+)
 
 type PacketRelayDescriptor struct {
 	SchemaVersion  int    `json:"schemaVersion"`
@@ -54,6 +60,7 @@ type PacketFeedSyncResult struct {
 	Applied  int    `json:"applied"`
 	Review   int    `json:"review"`
 	Cursor   string `json:"cursor,omitempty"`
+	Rebased  bool   `json:"rebased,omitempty"`
 }
 
 func ConnectPacketIssuanceSite(ctx context.Context, events *EventService, eventID, label string) (PacketRelayStatus, error) {
@@ -186,6 +193,25 @@ func SyncPacketFeed(ctx context.Context, events *EventService, eventID string) (
 		}
 		page, err := PullPacketFeedPage(ctx, state.APIBaseURL, state.Credential, scope.ScopeID, scope.SiteFeedCursor)
 		if err != nil {
+			if errors.Is(err, ErrPacketSiteFeedCursorAhead) || errors.Is(err, ErrPacketSiteFeedCursorExpired) {
+				bootstrap, fetchErr := FetchPacketBootstrap(ctx, PacketRelayDescriptor{
+					APIBaseURL: state.APIBaseURL,
+					ScopeID:    state.ScopeID,
+					EventID:    eventID,
+				}, state.Credential)
+				if fetchErr != nil {
+					return result, fetchErr
+				}
+				rebase, rebaseErr := RebasePacketIssuanceRoster(ctx, store, eventID, bootstrap)
+				if rebaseErr != nil {
+					return result, rebaseErr
+				}
+				result.Applied += rebase.Applied
+				result.Review += rebase.Review
+				result.Cursor = bootstrap.FeedCursor
+				result.Rebased = true
+				return result, nil
+			}
 			return result, err
 		}
 		applications, err := ApplyPacketFeedPage(ctx, store, eventID, page)
@@ -365,18 +391,58 @@ func PullPacketFeedPage(ctx context.Context, apiBaseURL, credential, scopeID, af
 		return packetissuance.FeedPage{}, fmt.Errorf("packet feed unavailable: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4097))
+		if cursorErr := packetFeedCursorError(resp, body); cursorErr != nil {
+			return packetissuance.FeedPage{}, cursorErr
+		}
+		return packetissuance.FeedPage{}, fmt.Errorf("packet feed returned %d: %s", resp.StatusCode, summaryError(body))
+	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, (32<<20)+1))
 	if len(body) > 32<<20 {
 		return packetissuance.FeedPage{}, errors.New("packet feed exceeds limit")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return packetissuance.FeedPage{}, fmt.Errorf("packet feed returned %d: %s", resp.StatusCode, summaryError(body))
 	}
 	page, err := packetissuance.ParseFeedPage(body, scopeID, after)
 	if err != nil {
 		return packetissuance.FeedPage{}, err
 	}
 	return page, nil
+}
+
+func packetFeedCursorError(resp *http.Response, body []byte) error {
+	if resp.StatusCode != http.StatusConflict || len(body) == 0 || len(body) > 4096 {
+		return nil
+	}
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return nil
+	}
+	var envelope map[string]json.RawMessage
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(&envelope); err != nil || len(envelope) != 1 {
+		return nil
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil
+	}
+	for _, key := range []string{"message", "error"} {
+		raw, found := envelope[key]
+		if !found {
+			continue
+		}
+		var code string
+		if json.Unmarshal(raw, &code) != nil {
+			return nil
+		}
+		switch code {
+		case "cursor_ahead":
+			return ErrPacketSiteFeedCursorAhead
+		case "cursor_expired":
+			return ErrPacketSiteFeedCursorExpired
+		}
+	}
+	return nil
 }
 
 func validPacketReceipt(receipt packetissuance.Receipt) bool {

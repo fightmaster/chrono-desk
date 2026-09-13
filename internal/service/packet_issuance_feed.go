@@ -61,7 +61,14 @@ func ApplyPacketFeedPage(ctx context.Context, store *sqlite.Store, eventID strin
 				return errors.New("invalid_feed_response")
 			}
 			application, code := "observed", action.Code
-			if action.Operation != nil && action.Operation.SchemaVersion == 2 {
+			trustedSiteState := action.Outcome == "applied" || action.Outcome == "equivalent"
+			resolution := action.Operation != nil && action.Operation.SchemaVersion == 2
+			if trustedSiteState {
+				if err := validatePacketSiteBaseline(ctx, txStore, eventID, action.Changes, resolution); err != nil {
+					return err
+				}
+			}
+			if resolution {
 				application, code, err = applyPacketResolution(ctx, txStore, eventID, action, recordedAt.UnixMilli())
 				if err != nil {
 					return err
@@ -71,6 +78,11 @@ func ApplyPacketFeedPage(ctx context.Context, store *sqlite.Store, eventID strin
 			} else if action.Outcome == "applied" {
 				application, code, err = applyPacketFeedChanges(ctx, txStore, eventID, action)
 				if err != nil {
+					return err
+				}
+			}
+			if trustedSiteState {
+				if err := advancePacketSiteBaseline(ctx, txStore, eventID, action.Changes); err != nil {
 					return err
 				}
 			}
@@ -97,6 +109,62 @@ func ApplyPacketFeedPage(ctx context.Context, store *sqlite.Store, eventID strin
 		return txStore.AdvancePacketSiteCursor(ctx, eventID, page.Cursor.After, page.Cursor.Next)
 	})
 	return applications, err
+}
+
+func validatePacketSiteBaseline(ctx context.Context, store *sqlite.Store, eventID string,
+	changes []packetissuance.FeedChange, resolution bool) error {
+	if resolution {
+		// A resolution's before value describes the selected causal branch, not
+		// necessarily the site's current projection. Its authenticated after
+		// value is authoritative and is persisted below.
+		return nil
+	}
+	for _, change := range changes {
+		baseline, err := store.FindPacketSiteRegistration(ctx, eventID, change.RegistrationID)
+		if err != nil {
+			return err
+		}
+		if change.Before == nil {
+			if baseline.Found && !baseline.Deleted {
+				return errors.New("packet_site_baseline_mismatch")
+			}
+			continue
+		}
+		if !baseline.Found || baseline.Deleted ||
+			!reflect.DeepEqual(packetFeedProjection(baseline.Value), packetFeedProjection(*change.Before)) {
+			return errors.New("packet_site_baseline_mismatch")
+		}
+	}
+	return nil
+}
+
+func advancePacketSiteBaseline(ctx context.Context, store *sqlite.Store, eventID string,
+	changes []packetissuance.FeedChange) error {
+	for _, change := range changes {
+		if change.After != nil {
+			if err := store.PutPacketSiteRegistration(ctx, eventID, change.After); err != nil {
+				return err
+			}
+			continue
+		}
+		baseline, err := store.FindPacketSiteRegistration(ctx, eventID, change.RegistrationID)
+		if err != nil {
+			return err
+		}
+		var previous packetissuance.Registration
+		switch {
+		case baseline.Found:
+			previous = baseline.Value
+		case change.Before != nil:
+			previous = *change.Before
+		default:
+			return errors.New("packet_site_baseline_mismatch")
+		}
+		if err := store.DeletePacketSiteRegistration(ctx, eventID, previous); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func packetLocalOperationOutcome(application, siteOutcome string) string {

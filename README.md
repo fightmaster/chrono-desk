@@ -114,6 +114,15 @@ Changes pulled from chrono.events are relayed into the same local tablet feed.
 This includes administrator conflict decisions: Desk consumes their trusted
 schema-v2 operation, closes the referenced review durably and never uploads the
 received decision back to the site. Ordinary tablet uploads remain schema v1.
+If the site feed cursor is no longer available, Desk fetches one authenticated
+snapshot and rebases it without deleting pending tablet work. Local same-field
+conflicts remain visible instead of using timestamp last-write-wins.
+
+The tablet transport keeps the newest 10,000 feed actions live. When older rows
+exist, the settings panel offers bounded archive batches only after LAN reception
+is stopped and every current tablet access is revoked. The private compressed
+history is retained; an old tablet cursor receives `cursor_expired` and safely
+rebases from a new Desk snapshot. Compaction is never automatic.
 Do not publish this candidate until Android and iPhone have both passed local
 certificate, `chrono-desk.local`, offline/reconnect and resource acceptance.
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/packetissuance"
 )
 
@@ -217,6 +219,124 @@ func TestPullPacketFeedUsesRelayCredentialCursorAndStrictFixture(t *testing.T) {
 		"https://app.chrono.events/api/packet-issuance/v1/relays/relay", "relay-secret",
 		"site:22222222-2222-4222-8222-222222222222:621632", "16"); err == nil {
 		t.Fatal("mismatched feed scope was accepted")
+	}
+}
+
+func TestPullPacketFeedRecognizesOnlyStrictCursorRecoveryResponses(t *testing.T) {
+	tests := []struct {
+		name        string
+		status      int
+		contentType string
+		body        string
+		want        error
+	}{
+		{name: "expired message", status: http.StatusConflict, contentType: "application/json", body: `{"message":"cursor_expired"}`, want: ErrPacketSiteFeedCursorExpired},
+		{name: "ahead error", status: http.StatusConflict, contentType: "application/json; charset=utf-8", body: `{"error":"cursor_ahead"}`, want: ErrPacketSiteFeedCursorAhead},
+		{name: "additional field", status: http.StatusConflict, contentType: "application/json", body: `{"message":"cursor_expired","detail":"private"}`},
+		{name: "wrong status", status: http.StatusBadRequest, contentType: "application/json", body: `{"message":"cursor_expired"}`},
+		{name: "wrong content type", status: http.StatusConflict, contentType: "text/html", body: `{"message":"cursor_expired"}`},
+		{name: "unknown code", status: http.StatusConflict, contentType: "application/json", body: `{"message":"try_again"}`},
+		{name: "oversized", status: http.StatusConflict, contentType: "application/json", body: strings.Repeat(" ", 4096) + `{"message":"cursor_expired"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			previous := syncHTTPClient
+			t.Cleanup(func() { syncHTTPClient = previous })
+			syncHTTPClient = &http.Client{Transport: packetRoundTrip(func(*http.Request) (*http.Response, error) {
+				response := packetResponse(test.status, test.body)
+				response.Header.Set("Content-Type", test.contentType)
+				return response, nil
+			})}
+			_, err := PullPacketFeedPage(context.Background(),
+				"https://app.chrono.events/api/packet-issuance/v1/relays/relay", "relay-secret", "scope", "0")
+			if test.want != nil && !errors.Is(err, test.want) {
+				t.Fatalf("error=%v want=%v", err, test.want)
+			}
+			if test.want == nil && (errors.Is(err, ErrPacketSiteFeedCursorAhead) || errors.Is(err, ErrPacketSiteFeedCursorExpired)) {
+				t.Fatalf("unsafe recovery admitted: %v", err)
+			}
+		})
+	}
+}
+
+func TestSyncPacketFeedRebasesOnlyAfterAuthenticatedCursorExpiry(t *testing.T) {
+	previous := syncHTTPClient
+	t.Cleanup(func() { syncHTTPClient = previous })
+	manager, err := NewEventManager(t.TempDir(), log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(manager.Close)
+	fixture, err := os.Open("testdata/event-export.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.ImportExport(context.Background(), fixture); err != nil {
+		t.Fatal(err)
+	}
+	fixture.Close()
+	row := packetissuance.Registration{ID: "mem-1", EventID: "ev-100", RaceID: "race-10k", Bib: "101", EPC: "E280AAA",
+		Person: &packetissuance.Person{ID: "member-person:mem-1", FirstName: "Ivan", LastName: "Petrov", BirthDate: "1990-05-01", Gender: "male", City: "Moscow"},
+		Status: "registered"}
+	store, err := manager.Open("ev-100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InstallPacketIssuanceRoster(context.Background(), sqlite.PacketIssuanceScope{
+		EventID: "ev-100", ScopeID: "site:authority:ev-100", BaselineID: "snapshot:old", SourceKind: "site", SiteFeedCursor: "7",
+	}, []packetissuance.Registration{row, {
+		ID: "mem-2", EventID: "ev-100", RaceID: "race-10k", Bib: "102", EPC: "E280BBB",
+		Person: &packetissuance.Person{ID: "member-person:mem-2", FirstName: "Anna", LastName: "Ivanova", Gender: "female"}, Status: "dns",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := manager.PreparePacketRelay(context.Background(), "ev-100", "https://app.chrono.events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.RelayID = "66666666-6666-4666-8666-666666666666"
+	state.APIBaseURL = "https://app.chrono.events/api/packet-issuance/v1/relays/66666666-6666-4666-8666-666666666666"
+	state.ScopeID = "site:authority:ev-100"
+	state.ExpiresAt = time.Now().UTC().Add(time.Hour).Format("2006-01-02T15:04:05.000Z")
+	if err := manager.CompletePacketRelay(context.Background(), state); err != nil {
+		t.Fatal(err)
+	}
+	row.Person.City = "Engels"
+	snapshot := packetissuance.Bootstrap{SchemaVersion: 2, ScopeID: state.ScopeID, SourceKind: "site", FeedCursor: "20",
+		Event: packetissuance.Event{ID: "ev-100", Name: "Test Marathon", Date: "2026-06-07"},
+		Races: []packetissuance.Race{{ID: "race-10k", Name: "10 km"}}, Registrations: []packetissuance.Registration{row, {
+			ID: "mem-2", EventID: "ev-100", RaceID: "race-10k", Bib: "102", EPC: "E280BBB",
+			Person: &packetissuance.Person{ID: "member-person:mem-2", FirstName: "Anna", LastName: "Ivanova", Gender: "female"}, Status: "dns",
+		}}, BaselineID: "snapshot:new"}
+	snapshotJSON, _ := json.Marshal(snapshot)
+	requests := 0
+	syncHTTPClient = &http.Client{Transport: packetRoundTrip(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if request.Header.Get("Authorization") != "Bearer "+state.Credential {
+			t.Fatalf("missing relay credential: %v", request.Header)
+		}
+		if strings.HasSuffix(request.URL.Path, "/feed") {
+			if request.URL.Query().Get("after") != "7" {
+				t.Fatalf("cursor=%s", request.URL.Query().Get("after"))
+			}
+			response := packetResponse(http.StatusConflict, `{"message":"cursor_expired"}`)
+			response.Header.Set("Content-Type", "application/json")
+			return response, nil
+		}
+		if strings.HasSuffix(request.URL.Path, "/bootstrap") {
+			return packetResponse(http.StatusOK, string(snapshotJSON)), nil
+		}
+		return packetResponse(http.StatusNotFound, "unexpected"), nil
+	})}
+	result, err := SyncPacketFeed(context.Background(), manager, "ev-100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := store.ListPacketRegistrations(context.Background(), "ev-100")
+	scope, _ := store.GetPacketIssuanceScope(context.Background(), "ev-100")
+	if requests != 2 || !result.Rebased || result.Cursor != "20" || scope.SiteFeedCursor != "20" ||
+		rows[0].Person.City != "Engels" {
+		t.Fatalf("requests=%d result=%+v scope=%+v rows=%+v", requests, result, scope, rows)
 	}
 }
 

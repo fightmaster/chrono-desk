@@ -119,6 +119,28 @@ func TestPacketLANHTTPSExposesOnlyScopedIssuanceAndResumes(t *testing.T) {
 		t.Fatalf("oversized feed limit returned %d", response.StatusCode)
 	}
 	response.Body.Close()
+	store, err := events.Open("ev-100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`INSERT INTO packet_issuance_feed_heads(event_id,last_sequence)
+		VALUES('ev-100',2) ON CONFLICT(event_id) DO UPDATE SET last_sequence=2;
+		INSERT INTO packet_issuance_feed_actions
+		(action_id,event_id,event_sequence,kind,source_code,outcome,changes_json,recorded_at)
+		VALUES('22222222-2222-4222-8222-222222222222','ev-100',1,'server_change','test','applied','[]',1),
+		('33333333-3333-4333-8333-333333333333','ev-100',2,'server_change','test','applied','[]',2)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CompactPacketIssuanceFeed(ctx, store, "ev-100", 1, true, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	response = packetRequest(t, client, http.MethodGet, base+"/feed?after=0&limit=100", nil, credential, "https://www.run5.run")
+	var cursorError map[string]string
+	if response.StatusCode != http.StatusConflict || json.NewDecoder(response.Body).Decode(&cursorError) != nil || cursorError["error"] != "cursor_expired" {
+		response.Body.Close()
+		t.Fatalf("expired feed cursor returned %d: %+v", response.StatusCode, cursorError)
+	}
+	response.Body.Close()
 	request, err := http.NewRequest(http.MethodPost, base+"/operations", strings.NewReader(`{"schemaVersion":1,"operations":[]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -211,6 +233,45 @@ func TestPacketLANClaimLimiterIsBoundedAndResets(t *testing.T) {
 	}
 	if !server.allowClaim("192.0.2.1:9999", "connection", now.Add(time.Minute)) {
 		t.Fatal("claim window did not reset")
+	}
+}
+
+func TestPacketLANRetentionRefusesLiveInvitation(t *testing.T) {
+	ctx := context.Background()
+	directory := t.TempDir()
+	events, err := service.NewEventManager(directory, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(events.Close)
+	fixture, err := os.Open("../../service/testdata/event-export.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := events.ImportExport(ctx, fixture); err != nil {
+		fixture.Close()
+		t.Fatal(err)
+	}
+	fixture.Close()
+	installPacketRoster(t, events)
+	server, err := New(events, log.New(io.Discard, "", 0), directory, DefaultPort,
+		"https://www.run5.run/stopwatch/", []string{"https://www.run5.run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invitation, err := events.CreatePacketLANInvitation(ctx, "ev-100", "site:authority:ev-100", "Планшет", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.Compact(ctx, "ev-100", true); err == nil || !strings.Contains(err.Error(), "отзовите действующие") {
+		t.Fatalf("active invitation compaction error=%v", err)
+	}
+	if err := events.RevokePacketLAN(ctx, "ev-100", invitation.ConnectionID, "тест", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	result, err := server.Compact(ctx, "ev-100", true)
+	if err != nil || result.Executed || result.Candidate != 0 {
+		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }
 

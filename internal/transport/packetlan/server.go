@@ -62,12 +62,13 @@ type claimWindow struct {
 }
 
 type Status struct {
-	Running       bool                         `json:"running"`
-	EventID       string                       `json:"event_id,omitempty"`
-	Port          int                          `json:"port"`
-	APIBaseURL    string                       `json:"api_base_url,omitempty"`
-	CAFingerprint string                       `json:"ca_fingerprint"`
-	Connections   []sqlite.PacketLANConnection `json:"connections"`
+	Running       bool                              `json:"running"`
+	EventID       string                            `json:"event_id,omitempty"`
+	Port          int                               `json:"port"`
+	APIBaseURL    string                            `json:"api_base_url,omitempty"`
+	CAFingerprint string                            `json:"ca_fingerprint"`
+	Connections   []sqlite.PacketLANConnection      `json:"connections"`
+	Retention     service.PacketFeedRetentionResult `json:"retention"`
 }
 
 type Invitation struct {
@@ -213,6 +214,14 @@ func (s *Server) Status(ctx context.Context, eventID string) (Status, error) {
 		return Status{}, err
 	}
 	status.Connections = connections
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		return Status{}, err
+	}
+	status.Retention, err = service.CompactPacketIssuanceFeed(ctx, store, eventID, 10_000, false, s.now())
+	if err != nil {
+		return Status{}, err
+	}
 	return status, nil
 }
 
@@ -261,6 +270,34 @@ func (s *Server) CreateInvitation(ctx context.Context, eventID, label string) (I
 
 func (s *Server) Revoke(ctx context.Context, eventID, connectionID, reason string) error {
 	return s.events.RevokePacketLAN(ctx, eventID, connectionID, reason, s.now())
+}
+
+func (s *Server) Compact(ctx context.Context, eventID string, execute bool) (service.PacketFeedRetentionResult, error) {
+	s.mu.Lock()
+	running := s.httpServer != nil && s.eventID == eventID
+	s.mu.Unlock()
+	if execute && running {
+		return service.PacketFeedRetentionResult{}, errors.New("сначала остановите локальную выдачу")
+	}
+	now := s.now()
+	connections, err := s.events.ListPacketLANConnections(ctx, eventID)
+	if err != nil {
+		return service.PacketFeedRetentionResult{}, err
+	}
+	if execute {
+		for _, connection := range connections {
+			activeClaim := connection.ClaimedAt != nil && connection.RevokedAt == nil && connection.ExpiresAt.After(now)
+			activeInvitation := connection.ClaimedAt == nil && connection.RevokedAt == nil && connection.InvitationExpiry.After(now)
+			if activeClaim || activeInvitation {
+				return service.PacketFeedRetentionResult{}, errors.New("отзовите действующие подключения планшетов перед архивацией")
+			}
+		}
+	}
+	store, err := s.events.Open(eventID)
+	if err != nil {
+		return service.PacketFeedRetentionResult{}, err
+	}
+	return service.CompactPacketIssuanceFeed(ctx, store, eventID, 10_000, execute, now)
 }
 
 func (s *Server) activeEvent() string {
@@ -415,6 +452,8 @@ func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, http.StatusUnprocessableEntity, "invalid_feed_query")
 		case errors.Is(err, service.ErrPacketFeedCursorAhead):
 			s.writeError(w, http.StatusConflict, "cursor_ahead")
+		case errors.Is(err, service.ErrPacketFeedCursorExpired):
+			s.writeError(w, http.StatusConflict, "cursor_expired")
 		case errors.Is(err, service.ErrPacketFeedScope):
 			s.writeError(w, http.StatusConflict, "scope_mismatch")
 		default:

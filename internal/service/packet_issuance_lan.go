@@ -12,9 +12,10 @@ import (
 )
 
 var (
-	ErrInvalidPacketFeedQuery = errors.New("invalid packet feed query")
-	ErrPacketFeedCursorAhead  = errors.New("packet feed cursor ahead")
-	ErrPacketFeedScope        = errors.New("packet feed scope mismatch")
+	ErrInvalidPacketFeedQuery  = errors.New("invalid packet feed query")
+	ErrPacketFeedCursorAhead   = errors.New("packet feed cursor ahead")
+	ErrPacketFeedCursorExpired = errors.New("packet feed cursor expired")
+	ErrPacketFeedScope         = errors.New("packet feed scope mismatch")
 )
 
 func PacketIssuanceBootstrap(ctx context.Context, events *EventService, eventID string) (packetissuance.Bootstrap, error) {
@@ -86,12 +87,15 @@ func PacketIssuanceFeedPage(ctx context.Context, store *sqlite.Store, eventID, s
 		if err != nil || scope.ScopeID != scopeID {
 			return ErrPacketFeedScope
 		}
-		head, err := txStore.PacketFeedHead(ctx, eventID)
+		bounds, err := txStore.PacketFeedBounds(ctx, eventID)
 		if err != nil {
 			return err
 		}
-		if cursor > head {
+		if cursor > bounds.Head {
 			return ErrPacketFeedCursorAhead
+		}
+		if cursor < bounds.FirstAvailable-1 {
+			return ErrPacketFeedCursorExpired
 		}
 		rows, err := txStore.ListPacketFeedRows(ctx, eventID, cursor, limit)
 		if err != nil {
@@ -116,7 +120,7 @@ func PacketIssuanceFeedPage(ctx context.Context, store *sqlite.Store, eventID, s
 		}
 		envelope := packetLANFeedEnvelope{SchemaVersion: 1, ScopeID: scopeID,
 			Cursor: packetissuance.FeedCursor{After: after, Next: strconv.FormatInt(next, 10),
-				Head: strconv.FormatInt(head, 10), HasMore: next < head}, Actions: actions,
+				Head: strconv.FormatInt(bounds.Head, 10), HasMore: next < bounds.Head}, Actions: actions,
 		}
 		raw, err := json.Marshal(envelope)
 		if err != nil {

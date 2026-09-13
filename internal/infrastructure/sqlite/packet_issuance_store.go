@@ -1,6 +1,8 @@
 package sqlite
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -30,6 +32,24 @@ type PacketRegistrationRecord struct {
 	Heads   []string
 	Found   bool
 	Deleted bool
+}
+
+type PacketSiteRegistrationRecord struct {
+	Value   packetissuance.Registration
+	Found   bool
+	Deleted bool
+}
+
+type PacketSnapshotRebaseRecord struct {
+	EventID          string
+	ScopeID          string
+	BeforeBaselineID string
+	AfterBaselineID  string
+	BeforeCursor     string
+	AfterCursor      string
+	SnapshotJSON     []byte
+	ApplicationsJSON []byte
+	RecordedAt       int64
 }
 
 type PacketSiteFeedRecord struct {
@@ -77,6 +97,16 @@ type PacketFeedRow struct {
 	RecordedAt    int64
 }
 
+type PacketFeedBounds struct {
+	Head           int64
+	FirstAvailable int64
+}
+
+type PacketFeedArchiveResult struct {
+	Archived       int
+	FirstAvailable int64
+}
+
 func (s *Store) PacketFeedHead(ctx context.Context, eventID string) (int64, error) {
 	var head int64
 	err := s.db.QueryRowContext(ctx, `SELECT last_sequence FROM packet_issuance_feed_heads WHERE event_id=?`, eventID).Scan(&head)
@@ -84,6 +114,98 @@ func (s *Store) PacketFeedHead(ctx context.Context, eventID string) (int64, erro
 		return 0, nil
 	}
 	return head, err
+}
+
+func (s *Store) PacketFeedBounds(ctx context.Context, eventID string) (PacketFeedBounds, error) {
+	var bounds PacketFeedBounds
+	err := s.db.QueryRowContext(ctx, `SELECT last_sequence,first_available_sequence
+		FROM packet_issuance_feed_heads WHERE event_id=?`, eventID).Scan(&bounds.Head, &bounds.FirstAvailable)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PacketFeedBounds{FirstAvailable: 1}, nil
+	}
+	if err != nil {
+		return PacketFeedBounds{}, fmt.Errorf("read packet feed bounds: %w", err)
+	}
+	if bounds.FirstAvailable < 1 || bounds.FirstAvailable > bounds.Head+1 {
+		return PacketFeedBounds{}, errors.New("invalid packet feed bounds")
+	}
+	return bounds, nil
+}
+
+// ArchivePacketFeedPrefix moves one contiguous bounded prefix out of the live
+// transport table. Callers own the transaction and operational safety checks.
+func (s *Store) ArchivePacketFeedPrefix(ctx context.Context, eventID string, through, archivedAt int64) (PacketFeedArchiveResult, error) {
+	bounds, err := s.PacketFeedBounds(ctx, eventID)
+	if err != nil {
+		return PacketFeedArchiveResult{}, err
+	}
+	if through < bounds.FirstAvailable || through > bounds.Head || through-bounds.FirstAvailable+1 > 100 || archivedAt <= 0 {
+		return PacketFeedArchiveResult{}, errors.New("invalid packet feed archive range")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT action_id,event_sequence,kind,source_code,source_operation_id,
+		outcome,outcome_code,changes_json,recorded_at FROM packet_issuance_feed_actions
+		WHERE event_id=? AND event_sequence BETWEEN ? AND ? ORDER BY event_sequence`, eventID, bounds.FirstAvailable, through)
+	if err != nil {
+		return PacketFeedArchiveResult{}, err
+	}
+	type archiveRow struct {
+		actionID, kind, sourceCode, outcome string
+		sequence, recordedAt                int64
+		sourceOperationID, outcomeCode      sql.NullString
+		changes                             []byte
+	}
+	batch := make([]archiveRow, 0, through-bounds.FirstAvailable+1)
+	for rows.Next() {
+		var row archiveRow
+		if err := rows.Scan(&row.actionID, &row.sequence, &row.kind, &row.sourceCode, &row.sourceOperationID,
+			&row.outcome, &row.outcomeCode, &row.changes, &row.recordedAt); err != nil {
+			rows.Close()
+			return PacketFeedArchiveResult{}, err
+		}
+		batch = append(batch, row)
+	}
+	if err := rows.Close(); err != nil {
+		return PacketFeedArchiveResult{}, err
+	}
+	want := int(through - bounds.FirstAvailable + 1)
+	if len(batch) != want {
+		return PacketFeedArchiveResult{}, errors.New("packet feed archive gap")
+	}
+	for index, row := range batch {
+		if row.sequence != bounds.FirstAvailable+int64(index) {
+			return PacketFeedArchiveResult{}, errors.New("packet feed archive gap")
+		}
+		var compressed bytes.Buffer
+		writer := gzip.NewWriter(&compressed)
+		if _, err := writer.Write(row.changes); err != nil {
+			return PacketFeedArchiveResult{}, err
+		}
+		if err := writer.Close(); err != nil {
+			return PacketFeedArchiveResult{}, err
+		}
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_feed_archives
+			(action_id,event_id,event_sequence,kind,source_code,source_operation_id,outcome,outcome_code,
+			changes_gzip,recorded_at,archived_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, row.actionID, eventID,
+			row.sequence, row.kind, row.sourceCode, row.sourceOperationID, row.outcome, row.outcomeCode,
+			compressed.Bytes(), row.recordedAt, archivedAt); err != nil {
+			return PacketFeedArchiveResult{}, fmt.Errorf("archive packet feed action: %w", err)
+		}
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM packet_issuance_feed_actions
+		WHERE event_id=? AND event_sequence BETWEEN ? AND ?`, eventID, bounds.FirstAvailable, through); err != nil {
+		return PacketFeedArchiveResult{}, err
+	}
+	next := through + 1
+	result, err := s.db.ExecContext(ctx, `UPDATE packet_issuance_feed_heads SET first_available_sequence=?
+		WHERE event_id=? AND first_available_sequence=? AND last_sequence=?`, next, eventID, bounds.FirstAvailable, bounds.Head)
+	if err != nil {
+		return PacketFeedArchiveResult{}, err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return PacketFeedArchiveResult{}, errors.New("packet feed bounds changed")
+	}
+	return PacketFeedArchiveResult{Archived: len(batch), FirstAvailable: next}, nil
 }
 
 func (s *Store) ListPacketFeedRows(ctx context.Context, eventID string, after int64, limit int) ([]PacketFeedRow, error) {
@@ -168,7 +290,12 @@ func (s *Store) InstallPacketIssuanceRoster(ctx context.Context, scope PacketIss
 	}
 	return s.WithinTx(ctx, func(txStore *Store) error {
 		var history int
-		if err := txStore.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM packet_issuance_operations WHERE event_id=?`, scope.EventID).Scan(&history); err != nil {
+		if err := txStore.db.QueryRowContext(ctx, `SELECT
+			(SELECT COUNT(*) FROM packet_issuance_operations WHERE event_id=?) +
+			(SELECT COUNT(*) FROM packet_issuance_site_feed_actions WHERE event_id=?) +
+			(SELECT COUNT(*) FROM packet_issuance_feed_actions WHERE event_id=?) +
+			(SELECT COUNT(*) FROM packet_issuance_feed_archives WHERE event_id=?)`,
+			scope.EventID, scope.EventID, scope.EventID, scope.EventID).Scan(&history); err != nil {
 			return fmt.Errorf("count packet issuance history: %w", err)
 		}
 		if history != 0 {
@@ -198,6 +325,9 @@ func (s *Store) InstallPacketIssuanceRoster(ctx context.Context, scope PacketIss
 		if _, err := txStore.db.ExecContext(ctx, `DELETE FROM packet_issuance_registrations WHERE event_id=?`, scope.EventID); err != nil {
 			return fmt.Errorf("clear packet issuance roster: %w", err)
 		}
+		if _, err := txStore.db.ExecContext(ctx, `DELETE FROM packet_issuance_site_registrations WHERE event_id=?`, scope.EventID); err != nil {
+			return fmt.Errorf("clear packet issuance site baseline: %w", err)
+		}
 		for _, row := range rows {
 			encoded, err := json.Marshal(row)
 			if err != nil {
@@ -206,6 +336,10 @@ func (s *Store) InstallPacketIssuanceRoster(ctx context.Context, scope PacketIss
 			if _, err := txStore.db.ExecContext(ctx, `INSERT INTO packet_issuance_registrations
 				(registration_id,event_id,value_json,heads_json,deleted) VALUES (?,?,?,'[]',0)`, row.ID, scope.EventID, encoded); err != nil {
 				return fmt.Errorf("insert packet registration %s: %w", row.ID, err)
+			}
+			if _, err := txStore.db.ExecContext(ctx, `INSERT INTO packet_issuance_site_registrations
+				(event_id,registration_id,value_json,deleted) VALUES (?,?,?,0)`, scope.EventID, row.ID, encoded); err != nil {
+				return fmt.Errorf("insert packet site baseline %s: %w", row.ID, err)
 			}
 		}
 		installedAt := scope.InstalledAt
@@ -395,6 +529,127 @@ func (s *Store) FindPacketRegistration(ctx context.Context, eventID, id string) 
 	return PacketRegistrationRecord{Value: value, Heads: heads, Found: true, Deleted: deleted}, nil
 }
 
+func (s *Store) FindPacketSiteRegistration(ctx context.Context, eventID, id string) (PacketSiteRegistrationRecord, error) {
+	var raw []byte
+	var deleted bool
+	err := s.db.QueryRowContext(ctx, `SELECT value_json,deleted FROM packet_issuance_site_registrations
+		WHERE event_id=? AND registration_id=?`, eventID, id).Scan(&raw, &deleted)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PacketSiteRegistrationRecord{}, nil
+	}
+	if err != nil {
+		return PacketSiteRegistrationRecord{}, fmt.Errorf("find packet site registration: %w", err)
+	}
+	var value packetissuance.Registration
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return PacketSiteRegistrationRecord{}, fmt.Errorf("decode packet site registration: %w", err)
+	}
+	return PacketSiteRegistrationRecord{Value: value, Found: true, Deleted: deleted}, nil
+}
+
+func (s *Store) ListPacketSiteRegistrations(ctx context.Context, eventID string) ([]PacketSiteRegistrationRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT value_json,deleted FROM packet_issuance_site_registrations
+		WHERE event_id=? ORDER BY registration_id`, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("list packet site registrations: %w", err)
+	}
+	defer rows.Close()
+	result := make([]PacketSiteRegistrationRecord, 0)
+	for rows.Next() {
+		var raw []byte
+		var deleted bool
+		if err := rows.Scan(&raw, &deleted); err != nil {
+			return nil, err
+		}
+		var value packetissuance.Registration
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, fmt.Errorf("decode packet site registration: %w", err)
+		}
+		result = append(result, PacketSiteRegistrationRecord{Value: value, Found: true, Deleted: deleted})
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) PacketSiteBaselineComplete(ctx context.Context, eventID string) (bool, error) {
+	var complete bool
+	err := s.db.QueryRowContext(ctx, `SELECT NOT EXISTS(
+		SELECT 1 FROM packet_issuance_registrations r
+		LEFT JOIN packet_issuance_site_registrations b
+		ON b.event_id=r.event_id AND b.registration_id=r.registration_id
+		WHERE r.event_id=? AND b.registration_id IS NULL)`, eventID).Scan(&complete)
+	if err != nil {
+		return false, fmt.Errorf("inspect packet site baseline: %w", err)
+	}
+	return complete, nil
+}
+
+func (s *Store) PutPacketSiteRegistration(ctx context.Context, eventID string, row *packetissuance.Registration) error {
+	if row == nil {
+		return errors.New("packet site deletion requires previous value")
+	}
+	if err := packetissuance.ValidateRegistration(*row); err != nil || row.EventID != eventID {
+		return errors.New("invalid packet site registration")
+	}
+	encoded, err := json.Marshal(row)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO packet_issuance_site_registrations
+		(event_id,registration_id,value_json,deleted) VALUES(?,?,?,0)
+		ON CONFLICT(event_id,registration_id) DO UPDATE SET value_json=excluded.value_json,deleted=0`,
+		eventID, row.ID, encoded)
+	return err
+}
+
+func (s *Store) DeletePacketSiteRegistration(ctx context.Context, eventID string, previous packetissuance.Registration) error {
+	if err := packetissuance.ValidateRegistration(previous); err != nil || previous.EventID != eventID {
+		return errors.New("invalid packet site registration")
+	}
+	encoded, err := json.Marshal(previous)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO packet_issuance_site_registrations
+		(event_id,registration_id,value_json,deleted) VALUES(?,?,?,1)
+		ON CONFLICT(event_id,registration_id) DO UPDATE SET value_json=excluded.value_json,deleted=1`,
+		eventID, previous.ID, encoded)
+	return err
+}
+
+func (s *Store) SavePacketSnapshotRebase(ctx context.Context, row PacketSnapshotRebaseRecord) error {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM packet_issuance_snapshot_rebases WHERE event_id=?`, row.EventID).Scan(&count); err != nil {
+		return err
+	}
+	if count >= 64 {
+		return errors.New("packet_snapshot_rebase_limit")
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_snapshot_rebases
+		(event_id,scope_id,before_baseline_id,after_baseline_id,before_cursor,after_cursor,
+		snapshot_json,applications_json,recorded_at) VALUES(?,?,?,?,?,?,?,?,?)`, row.EventID, row.ScopeID,
+		row.BeforeBaselineID, row.AfterBaselineID, row.BeforeCursor, row.AfterCursor,
+		row.SnapshotJSON, row.ApplicationsJSON, row.RecordedAt)
+	if err != nil {
+		return fmt.Errorf("save packet snapshot rebase: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CompletePacketSnapshotRebase(ctx context.Context, eventID, expectedBaseline,
+	nextBaseline, expectedCursor, nextCursor string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE packet_issuance_scopes
+		SET baseline_id=?,site_feed_cursor=? WHERE event_id=? AND baseline_id=? AND site_feed_cursor=?`,
+		nextBaseline, nextCursor, eventID, expectedBaseline, expectedCursor)
+	if err != nil {
+		return fmt.Errorf("complete packet snapshot rebase: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil || count != 1 {
+		return errors.New("packet_feed_cursor_changed")
+	}
+	return nil
+}
+
 func (s *Store) packetTimingEvidence(ctx context.Context, row packetissuance.Registration) (bool, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx, `SELECT CASE WHEN m.finish_time_ms IS NOT NULL OR m.clean_time IS NOT NULL
@@ -435,8 +690,9 @@ func (s *Store) PacketDependenciesApplied(ctx context.Context, eventID string, i
 		err := s.db.QueryRowContext(ctx, `SELECT EXISTS(
 			SELECT 1 FROM packet_issuance_operations WHERE event_id=? AND operation_id=? AND outcome IN ('applied','equivalent')
 			UNION ALL SELECT 1 FROM packet_issuance_feed_actions WHERE event_id=? AND action_id=? AND outcome IN ('applied','equivalent')
+			UNION ALL SELECT 1 FROM packet_issuance_feed_archives WHERE event_id=? AND action_id=? AND outcome IN ('applied','equivalent')
 			UNION ALL SELECT 1 FROM packet_issuance_site_feed_actions WHERE event_id=? AND action_id=? AND application IN ('applied','observed')
-		)`, eventID, id, eventID, id, eventID, id).Scan(&accepted)
+		)`, eventID, id, eventID, id, eventID, id, eventID, id).Scan(&accepted)
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -735,7 +991,10 @@ func (s *Store) PublishPacketOperation(ctx context.Context, operation packetissu
 		return nil
 	}
 	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM packet_issuance_feed_actions WHERE source_operation_id=?`, operation.OperationID).Scan(&exists); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM packet_issuance_feed_actions WHERE source_operation_id=?) +
+		(SELECT COUNT(*) FROM packet_issuance_feed_archives WHERE source_operation_id=?)`,
+		operation.OperationID, operation.OperationID).Scan(&exists); err != nil {
 		return err
 	}
 	if exists != 0 {

@@ -91,6 +91,26 @@ func (s *Server) handlePacketIssuanceLANRevoke(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]bool{"revoked": true})
 }
 
+func (s *Server) handlePacketIssuanceLANCompact(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Execute bool `json:"execute"`
+	}
+	if err := decodePacketLANRequest(w, r, &request); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if s.packetLAN == nil {
+		s.fail(w, errors.New("локальная выдача пакетов недоступна"))
+		return
+	}
+	result, err := s.packetLAN.Compact(r.Context(), r.PathValue("id"), request.Execute)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) handlePacketIssuanceLANCA(w http.ResponseWriter, _ *http.Request) {
 	if s.packetLAN == nil {
 		s.fail(w, errors.New("локальная выдача пакетов недоступна"))

@@ -259,6 +259,25 @@ occurrence evidence and is not duplicated in the LAN feed. Projection, both
 occurrence journals, resolution relation, LAN relay action and site cursor are
 one SQLite transaction.
 
+The current candidate also keeps the last authenticated site registration
+projection separately from the locally merged projection. Only an exact,
+bounded JSON `409 cursor_ahead` or `409 cursor_expired` response can request a
+fresh authenticated bootstrap. Rebase is a three-way merge from that separate
+site value: pending local operations and causal heads remain unchanged,
+same-field conflicts stay visible for review, and absence from a snapshot never
+deletes a registration. The new baseline, cursor, merged projection and private
+rebase evidence commit atomically; old databases with prior issuance history
+and no provable site baseline fail closed instead of inferring one.
+
+Desk's tablet feed has a monotonic `first_available_sequence`. Explicit local
+retention keeps the newest 10,000 live actions and moves at most 100 contiguous
+older actions per transaction into a compressed private archive. It preserves
+action identity, order, outcomes and causal dependency admission. Archive
+insertion, live deletion and floor advancement are atomic; a client below the
+floor receives exact `409 cursor_expired` and performs the same pending-safe
+bootstrap rebase. Execution is unavailable while the LAN listener or an
+unrevoked tablet grant/invitation is active. There is no automatic pruning.
+
 Ordinary Desk member edits now join that same active-scope boundary. A relevant
 profile/status/bib/EPC/race edit updates `members`, the legacy `local_changes`
 audit, the lossless packet projection and one `chrono_desk.local_edit`
