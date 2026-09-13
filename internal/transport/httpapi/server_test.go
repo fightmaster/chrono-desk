@@ -40,6 +40,7 @@ func startTestServer(t *testing.T) *Server {
 		service.NewPhotoManager(logger),
 		nil,
 		pub,
+		nil,
 		logger,
 		testAPIToken,
 	)

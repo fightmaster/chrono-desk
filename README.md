@@ -90,6 +90,29 @@ The embedded localhost control API is separate and requires a random memory-only
 token passed from Go to the Wails frontend at startup. That token does not apply to the
 read-only LAN server and is never included in its QR codes.
 
+## Packet issuance tablets (release candidate)
+
+After the event has been connected to chrono.events and its packet roster is
+installed, **Настройки события → Выдача пакетов** can start a separate HTTPS
+receiver for tablets. The first use on each phone/tablet requires installing the
+downloaded Chrono Desk CA certificate. Then the operator starts reception and
+creates one QR per tablet; the QR carries a short-lived pairing code, not the
+site sync token or Desk control token.
+
+The receiver uses `https://chrono-desk.local:8443/api/packet-issuance/v1`
+(`CHRONO_PACKET_LAN_PORT` overrides the port) and advertises that name by mDNS
+only while enabled. The enabled event resumes automatically when the Desk
+application restarts; restarting the computer or Desk does not require selecting
+the event again. Explicit **Остановить приём** closes both HTTPS and mDNS.
+Connection access lasts7 days, can be revoked individually, and already-downloaded
+offline data remain on that tablet after revoke.
+
+Only the packet bootstrap/operations/feed contract is reachable on this listener.
+The public results server and localhost control API remain separate. The
+installation CA and hashed grants live outside portable `.chrono` event files.
+Do not publish this candidate until Android and iPhone have both passed local
+certificate, `chrono-desk.local`, offline/reconnect and resource acceptance.
+
 ## Development
 
 CHR-SIDE-002 feature work adds an opt-in owned edge-v1 receiver next to native

@@ -101,6 +101,7 @@ type Bootstrap struct {
 	Races         []Race         `json:"races"`
 	Registrations []Registration `json:"registrations"`
 	BaselineID    string         `json:"baselineId"`
+	FeedCursor    string         `json:"feedCursor,omitempty"`
 }
 
 type FeedChange struct {

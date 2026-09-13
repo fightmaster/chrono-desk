@@ -98,7 +98,7 @@ func TestConnectPacketIssuanceSitePersistsGrantBeforeInstallingRoster(t *testing
 	}
 	expires := time.Now().UTC().Add(24 * time.Hour).Format("2006-01-02T15:04:05.000Z")
 	bootstrap := packetissuance.Bootstrap{
-		SchemaVersion: 1, ScopeID: "site:authority:ev-100", SourceKind: "site",
+		SchemaVersion: 2, ScopeID: "site:authority:ev-100", SourceKind: "site", FeedCursor: "7",
 		Event: packetissuance.Event{ID: "ev-100", Name: "Test Marathon", Date: "2026-06-07"},
 		Races: []packetissuance.Race{{ID: "race-10k", Name: "10 km"}}, BaselineID: "snapshot:test",
 		Registrations: []packetissuance.Registration{
@@ -131,8 +131,12 @@ func TestConnectPacketIssuanceSitePersistsGrantBeforeInstallingRoster(t *testing
 		t.Fatal(err)
 	}
 	rows, err := store.ListPacketRegistrations(context.Background(), "ev-100")
-	if err != nil || len(rows) != 2 || !status.RosterInstalled || status.RelayID == "" {
+	if err != nil || len(rows) != 2 || !status.RosterInstalled || status.RelayID == "" || status.FeedCursor != "7" {
 		t.Fatalf("status=%+v rows=%d err=%v", status, len(rows), err)
+	}
+	scope, err := store.GetPacketIssuanceScope(context.Background(), "ev-100")
+	if err != nil || scope.SiteFeedCursor != "7" {
+		t.Fatalf("scope=%+v err=%v", scope, err)
 	}
 	stored, found, err := manager.GetPacketRelay(context.Background(), "ev-100")
 	if err != nil || !found || stored.Credential == "" || stored.RelayID != status.RelayID {

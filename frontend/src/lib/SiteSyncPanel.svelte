@@ -21,6 +21,9 @@
   let saved = false
   let loaded = false
   let packetStatus = null
+  let packetLAN = null
+  let packetInvitation = null
+  let packetLabel = 'Планшет выдачи'
 
   async function loadConfig() {
     error = ''
@@ -31,6 +34,12 @@
       lastSyncedAt = cfg.last_synced_at
       storage = cfg.storage || null
       packetStatus = await call('GET', `/api/events/${eventId}/packet-issuance/site`)
+      try {
+        packetLAN = await call('GET', `/api/events/${eventId}/packet-issuance/lan`)
+      } catch (_) {
+        // Site sync remains available when the optional LAN receiver is absent.
+        packetLAN = null
+      }
       loaded = true
     } catch (e) { error = e.message }
   }
@@ -80,6 +89,43 @@
       packetStatus = await call('POST', `/api/events/${eventId}/packet-issuance/site/connect`, '{}')
     } catch (e) { error = `Выдача пакетов: ${e.message}` } finally { busy = '' }
   }
+
+  async function setPacketLAN(running) {
+    error = ''; busy = running ? 'Запуск локальной выдачи…' : 'Остановка локальной выдачи…'
+    try {
+      packetLAN = await call('POST', `/api/events/${eventId}/packet-issuance/lan/${running ? 'start' : 'stop'}`, '{}')
+      if (!running) packetInvitation = null
+    } catch (e) { error = `Локальная выдача: ${e.message}` } finally { busy = '' }
+  }
+
+  async function createPacketInvitation() {
+    error = ''; busy = 'Создание подключения планшета…'; packetInvitation = null
+    try {
+      packetInvitation = await call('POST', `/api/events/${eventId}/packet-issuance/lan/invitations`,
+        JSON.stringify({label: packetLabel.trim()}))
+      packetLAN = await call('GET', `/api/events/${eventId}/packet-issuance/lan`)
+    } catch (e) { error = `Подключение планшета: ${e.message}` } finally { busy = '' }
+  }
+
+  async function revokePacketConnection(connectionId) {
+    if (!confirm('Отозвать доступ этого планшета? Уже загруженный список останется на нём.')) return
+    error = ''; busy = 'Отзыв подключения…'
+    try {
+      await call('POST', `/api/events/${eventId}/packet-issuance/lan/connections/${connectionId}/revoke`,
+        JSON.stringify({reason: 'Отозвано оператором Chrono Desk'}))
+      packetLAN = await call('GET', `/api/events/${eventId}/packet-issuance/lan`)
+    } catch (e) { error = `Отзыв планшета: ${e.message}` } finally { busy = '' }
+  }
+
+  async function downloadPacketCA() {
+    error = ''
+    try {
+      const data = await call('GET', `/api/events/${eventId}/packet-issuance/lan/ca`)
+      const href = URL.createObjectURL(new Blob([data.certificate], {type: 'application/x-x509-ca-cert'}))
+      const link = document.createElement('a'); link.href = href; link.download = data.filename
+      link.click(); setTimeout(() => URL.revokeObjectURL(href), 60000)
+    } catch (e) { error = `Сертификат: ${e.message}` }
+  }
 </script>
 
 <div class="card">
@@ -120,6 +166,47 @@
     </label>
     <button class="btn primary" disabled={!!busy || !baseUrl || !tokenSet} on:click={push}>Отправить на сайт →</button>
   </div>
+
+  {#if packetStatus?.roster_installed}
+    <div class="packet-lan">
+      <div class="actions">
+        <span class="faint">
+          Планшеты в локальной сети: {packetLAN?.running ? `приём включён · ${packetLAN.api_base_url}` : 'приём выключен'}
+        </span>
+        <button class="btn" disabled={!!busy} on:click={downloadPacketCA}>Скачать сертификат Desk</button>
+        <button class="btn" disabled={!!busy} on:click={() => setPacketLAN(!packetLAN?.running)}>
+          {packetLAN?.running ? 'Остановить приём' : 'Включить приём'}
+        </button>
+      </div>
+      <p class="faint packet-help">
+        Сертификат устанавливается на каждом телефоне один раз. Затем создайте отдельный QR для планшета.
+        Сервер объявляется как chrono-desk.local только пока приём включён.
+      </p>
+      {#if packetLAN?.running}
+        <div class="actions">
+          <input class="input packet-label" aria-label="Название планшета" maxlength="160" bind:value={packetLabel}/>
+          <button class="btn primary" disabled={!!busy || !packetLabel.trim()} on:click={createPacketInvitation}>Создать QR планшета</button>
+        </div>
+      {/if}
+      {#if packetInvitation}
+        <div class="packet-invitation">
+          <img src={packetInvitation.qr_code} alt="QR подключения планшета к Chrono Desk"/>
+          <div><b>QR действует до {packetInvitation.expires_at}</b>
+            <p class="faint">Покажите его только нужному волонтёру. После успешного подключения код повторно не показывается.</p></div>
+        </div>
+      {/if}
+      {#if packetLAN?.connections?.length}
+        <div class="packet-peers">
+          {#each packetLAN.connections as peer}
+            <div class="packet-peer">
+              <span>{peer.label} · {peer.claimed_at ? 'подключён' : 'ожидает сканирования'}{peer.revoked_at ? ' · отозван' : ''}</span>
+              {#if !peer.revoked_at}<button class="btn link" disabled={!!busy} on:click={() => revokePacketConnection(peer.connection_id)}>отозвать</button>{/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <div class="actions">
     <span class="faint">
@@ -175,4 +262,12 @@
   .check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--dim); cursor: pointer; }
   .check input { accent-color: var(--accent); }
   .result { margin-top: 12px; font-size: 13px; }
+  .packet-lan { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .packet-help { margin: 8px 0; font-size: 12.5px; }
+  .packet-label { max-width: 20rem; }
+  .packet-invitation { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
+  .packet-invitation img { width: 190px; height: 190px; background: white; border-radius: 8px; }
+  .packet-peers { margin-top: 10px; }
+  .packet-peer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; }
+  @media (max-width: 560px) { .packet-invitation { align-items: flex-start; flex-direction: column; } }
 </style>

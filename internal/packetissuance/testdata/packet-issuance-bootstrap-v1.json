@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "snapshot": {
+    "schemaVersion": 1,
+    "scopeId": "site:11111111-1111-4111-8111-111111111111:621632",
+    "sourceKind": "site",
+    "event": {
+      "id": "621632",
+      "name": "Тестовый старт",
+      "date": "2026-09-12"
+    },
+    "races": [
+      {
+        "id": "100",
+        "name": "5 км"
+      }
+    ],
+    "registrations": [
+      {
+        "id": "700",
+        "eventId": "621632",
+        "raceId": "100",
+        "bib": "7",
+        "epc": "000ABC",
+        "person": {
+          "id": "member-person:700",
+          "firstName": "Анна",
+          "lastName": "Тестовая",
+          "birthDate": "1990-03-02",
+          "gender": "female",
+          "team": "Команда",
+          "city": "Город"
+        },
+        "reserve": false,
+        "issued": false,
+        "status": "registered",
+        "transferredTo": null,
+        "hasTimingEvidence": false
+      }
+    ]
+  }
+}

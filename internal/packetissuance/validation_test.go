@@ -158,3 +158,41 @@ func TestCanonicalPacketFeedFixtureChecksum(t *testing.T) {
 		t.Fatalf("page=%+v err=%v", page, err)
 	}
 }
+
+func TestCanonicalBootstrapFixtureAndNetworkCursor(t *testing.T) {
+	data, err := os.ReadFile("testdata/packet-issuance-bootstrap-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fmt.Sprintf("%x", sha256.Sum256(data)), "094fbf7718702c91d7153d1f42e4147fc97822daa45eeb0e140e9d446e08b368"; got != want {
+		t.Fatalf("canonical fixture checksum=%s want=%s", got, want)
+	}
+	var fixture struct {
+		Snapshot map[string]any `json:"snapshot"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	fixture.Snapshot["baselineId"] = "snapshot:094fbf7718702c91d7153d1f42e4147fc97822daa45eeb0e140e9d446e08b368"
+	v1, _ := json.Marshal(fixture.Snapshot)
+	parsed, err := ParseBootstrap(v1)
+	if err != nil || parsed.SchemaVersion != 1 || parsed.FeedCursor != "0" || parsed.Event.ID != "621632" {
+		t.Fatalf("v1=%+v err=%v", parsed, err)
+	}
+
+	fixture.Snapshot["schemaVersion"] = float64(2)
+	fixture.Snapshot["feedCursor"] = "17"
+	v2, _ := json.Marshal(fixture.Snapshot)
+	parsed, err = ParseBootstrap(v2)
+	if err != nil || parsed.SchemaVersion != 2 || parsed.FeedCursor != "17" {
+		t.Fatalf("v2=%+v err=%v", parsed, err)
+	}
+
+	for _, invalid := range []any{"017", "-1", float64(17), "9223372036854775808"} {
+		fixture.Snapshot["feedCursor"] = invalid
+		wire, _ := json.Marshal(fixture.Snapshot)
+		if _, err := ParseBootstrap(wire); err == nil {
+			t.Fatalf("invalid network cursor accepted: %#v", invalid)
+		}
+	}
+}

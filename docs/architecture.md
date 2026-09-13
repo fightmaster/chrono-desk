@@ -240,10 +240,21 @@ review records. Timing evidence is never accepted from the feed and registration
 deletion is a projection tombstone, not destructive timing-history deletion. A
 normal site pull and the existing live-session background pull also advance this
 feed; a manual site push performs the same serialized pull after delivering the
-local operation outbox. A
-dedicated authenticated HTTPS LAN adapter is still required before advertising
-this capability; neither the localhost control API nor the tokenless read-only
-results server may be reused for tablet writes.
+local operation outbox. Network bootstrap-v2 stores the roster and the receiver's
+committed feed cursor from one SQLite transaction, so a newly connected tablet
+does not replay history already present in its snapshot.
+
+The dedicated `internal/transport/packetlan` candidate exposes only packet
+issuance over TLS on `chrono-desk.local` (default port8443). It never mounts
+localhost controls or tokenless public results. One installation-owned CA is
+created atomically outside portable event files; owner-only Unix modes or
+Windows ACLs protect both private keys. The operator enables exactly one event.
+That enabled choice survives a Desk application restart, while stop closes HTTPS
+and mDNS before persisting disabled state. Each tablet has an event-scoped,
+hash-only, revocable10-minute invitation/7-day credential. Claim throttling,
+bounded headers/bodies/feed pages, exact CORS/preflight and real local TLS tests
+are part of the adapter. Physical Android/iPhone CA installation and mDNS
+resolution remain release gates; the localhost bearer is never sent to a tablet.
 
 ## Checkpoint semantics (inherited from run5 / rfid-sync)
 

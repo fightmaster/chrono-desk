@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
+	"gitlab.com/fightmaster1/chrono-desk/internal/transport/packetlan"
 	"gitlab.com/fightmaster1/chrono-desk/internal/transport/publicweb"
 )
 
@@ -26,6 +27,7 @@ type Server struct {
 	photos     *service.PhotoManager
 	photoCache *service.PhotoCache
 	public     *publicweb.Server
+	packetLAN  *packetlan.Server
 	logger     *log.Logger
 }
 
@@ -39,6 +41,7 @@ func New(
 	photos *service.PhotoManager,
 	photoCache *service.PhotoCache,
 	public *publicweb.Server,
+	packetLAN *packetlan.Server,
 	logger *log.Logger,
 	apiToken string,
 ) (*Server, error) {
@@ -57,6 +60,7 @@ func New(
 		photos:     photos,
 		photoCache: photoCache,
 		public:     public,
+		packetLAN:  packetLAN,
 		logger:     logger,
 	}
 	s.syncPull = service.NewSyncPullManager(events, logger, 5*time.Second)
@@ -89,5 +93,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.live.StopAll()
 	s.edgeRelay.StopAll()
 	s.photos.StopAll()
+	if s.packetLAN != nil {
+		_ = s.packetLAN.Shutdown(ctx)
+	}
 	return s.httpServer.Shutdown(ctx)
 }

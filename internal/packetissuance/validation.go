@@ -24,7 +24,6 @@ var (
 	datePattern            = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 	sourceCodePattern      = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 	canonicalCursorPattern = regexp.MustCompile(`^(0|[1-9][0-9]{0,19})$`)
-	positiveDecimalPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
 	timestampPattern       = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$`)
 )
 
@@ -76,10 +75,20 @@ func ParseBootstrap(data []byte) (Bootstrap, error) {
 		return Bootstrap{}, errors.New("invalid_bootstrap")
 	}
 	obj, ok := root.(map[string]any)
-	if !ok || !exactKeys(obj, "schemaVersion", "scopeId", "sourceKind", "event", "races", "registrations", "baselineId") ||
-		integer(obj["schemaVersion"]) != 1 || stringValue(obj["sourceKind"]) != "site" ||
+	version := integer(obj["schemaVersion"])
+	keysOK := version == 1 && exactKeys(obj, "schemaVersion", "scopeId", "sourceKind", "event", "races", "registrations", "baselineId") ||
+		version == 2 && exactKeys(obj, "schemaVersion", "scopeId", "sourceKind", "event", "races", "registrations", "baselineId", "feedCursor")
+	if !ok || !keysOK || stringValue(obj["sourceKind"]) != "site" ||
 		!identifierPattern.MatchString(stringValue(obj["scopeId"])) || !identifierPattern.MatchString(stringValue(obj["baselineId"])) {
 		return Bootstrap{}, errors.New("invalid_bootstrap")
+	}
+	feedAfter := "0"
+	if version == 2 {
+		var valid bool
+		feedAfter, _, valid = feedCursor(obj["feedCursor"])
+		if !valid {
+			return Bootstrap{}, errors.New("invalid_bootstrap")
+		}
 	}
 	eventObj, ok := obj["event"].(map[string]any)
 	if !ok || !exactKeys(eventObj, "id", "name", "date") {
@@ -124,8 +133,8 @@ func ParseBootstrap(data []byte) (Bootstrap, error) {
 		}
 	}
 	return Bootstrap{
-		SchemaVersion: 1, ScopeID: stringValue(obj["scopeId"]), SourceKind: "site",
-		Event: event, Races: races, Registrations: rows, BaselineID: stringValue(obj["baselineId"]),
+		SchemaVersion: int(version), ScopeID: stringValue(obj["scopeId"]), SourceKind: "site",
+		Event: event, Races: races, Registrations: rows, BaselineID: stringValue(obj["baselineId"]), FeedCursor: feedAfter,
 	}, nil
 }
 
@@ -172,7 +181,7 @@ func ParseFeedPage(data []byte, scopeID, expectedAfter string) (FeedPage, error)
 		Cursor: FeedCursor{After: after, Next: next, Head: head, HasMore: hasMore}, Actions: actions}, nil
 }
 
-func parseFeedAction(value any, scopeID, eventID string, expectedSequence uint64) (FeedAction, error) {
+func parseFeedAction(value any, scopeID, eventID string, expectedSequence int64) (FeedAction, error) {
 	obj, ok := value.(map[string]any)
 	if !ok || !exactKeys(obj, "actionId", "kind", "sequence", "recordedAt", "sourceCode", "outcome", "code", "operation", "changes") {
 		return FeedAction{}, errors.New("invalid")
@@ -276,18 +285,18 @@ func parseFeedRegistration(value any) (Registration, error) {
 	return parseRegistration(copy)
 }
 
-func feedCursor(value any) (string, uint64, bool) {
+func feedCursor(value any) (string, int64, bool) {
 	text, ok := value.(string)
 	if !ok || !canonicalCursorPattern.MatchString(text) {
 		return "", 0, false
 	}
-	number, err := strconv.ParseUint(text, 10, 64)
+	number, err := strconv.ParseInt(text, 10, 64)
 	return text, number, err == nil
 }
 
 func feedEventID(scopeID string) string {
 	parts := strings.Split(scopeID, ":")
-	if len(parts) != 3 || parts[0] != "site" || !positiveDecimalPattern.MatchString(parts[2]) {
+	if len(parts) != 3 || parts[0] != "site" || !identifierPattern.MatchString(parts[2]) {
 		return ""
 	}
 	return parts[2]

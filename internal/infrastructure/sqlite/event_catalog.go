@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // EventCatalog owns the event-file directory and lazily opens one SQLite store
@@ -61,6 +62,36 @@ func (c *EventCatalog) CompletePacketRelay(ctx context.Context, state PacketRela
 
 func (c *EventCatalog) GetPacketRelay(ctx context.Context, eventID string) (PacketRelayState, bool, error) {
 	return c.relays.Get(ctx, eventID)
+}
+
+func (c *EventCatalog) EnablePacketLAN(ctx context.Context, eventID string) error {
+	return c.relays.EnableLAN(ctx, eventID)
+}
+
+func (c *EventCatalog) DisablePacketLAN(ctx context.Context) error { return c.relays.DisableLAN(ctx) }
+
+func (c *EventCatalog) ActivePacketLAN(ctx context.Context) (string, bool, error) {
+	return c.relays.ActiveLAN(ctx)
+}
+
+func (c *EventCatalog) CreatePacketLANInvitation(ctx context.Context, eventID, scopeID, label string, now time.Time) (PacketLANInvitation, error) {
+	return c.relays.CreateLANInvitation(ctx, eventID, scopeID, label, now)
+}
+
+func (c *EventCatalog) ClaimPacketLAN(ctx context.Context, connectionID, pairingCode, origin, credential string, now time.Time) (PacketLANConnection, error) {
+	return c.relays.ClaimLAN(ctx, connectionID, pairingCode, origin, credential, now)
+}
+
+func (c *EventCatalog) AuthenticatePacketLAN(ctx context.Context, connectionID, credential string, now time.Time) (PacketLANConnection, error) {
+	return c.relays.AuthenticateLAN(ctx, connectionID, credential, now)
+}
+
+func (c *EventCatalog) ListPacketLANConnections(ctx context.Context, eventID string) ([]PacketLANConnection, error) {
+	return c.relays.ListLANConnections(ctx, eventID)
+}
+
+func (c *EventCatalog) RevokePacketLAN(ctx context.Context, eventID, connectionID, reason string, now time.Time) error {
+	return c.relays.RevokeLAN(ctx, eventID, connectionID, reason, now)
 }
 
 func (c *EventCatalog) eventPath(eventID string) string {

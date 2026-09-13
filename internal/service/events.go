@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"sort"
+	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
@@ -66,6 +67,38 @@ func (s *EventService) CompletePacketRelay(ctx context.Context, state sqlite.Pac
 
 func (s *EventService) GetPacketRelay(ctx context.Context, eventID string) (sqlite.PacketRelayState, bool, error) {
 	return s.catalog.GetPacketRelay(ctx, eventID)
+}
+
+func (s *EventService) EnablePacketLAN(ctx context.Context, eventID string) error {
+	return s.catalog.EnablePacketLAN(ctx, eventID)
+}
+
+func (s *EventService) DisablePacketLAN(ctx context.Context) error {
+	return s.catalog.DisablePacketLAN(ctx)
+}
+
+func (s *EventService) ActivePacketLAN(ctx context.Context) (string, bool, error) {
+	return s.catalog.ActivePacketLAN(ctx)
+}
+
+func (s *EventService) CreatePacketLANInvitation(ctx context.Context, eventID, scopeID, label string, now time.Time) (sqlite.PacketLANInvitation, error) {
+	return s.catalog.CreatePacketLANInvitation(ctx, eventID, scopeID, label, now)
+}
+
+func (s *EventService) ClaimPacketLAN(ctx context.Context, connectionID, pairingCode, origin, credential string, now time.Time) (sqlite.PacketLANConnection, error) {
+	return s.catalog.ClaimPacketLAN(ctx, connectionID, pairingCode, origin, credential, now)
+}
+
+func (s *EventService) AuthenticatePacketLAN(ctx context.Context, connectionID, credential string, now time.Time) (sqlite.PacketLANConnection, error) {
+	return s.catalog.AuthenticatePacketLAN(ctx, connectionID, credential, now)
+}
+
+func (s *EventService) ListPacketLANConnections(ctx context.Context, eventID string) ([]sqlite.PacketLANConnection, error) {
+	return s.catalog.ListPacketLANConnections(ctx, eventID)
+}
+
+func (s *EventService) RevokePacketLAN(ctx context.Context, eventID, connectionID, reason string, now time.Time) error {
+	return s.catalog.RevokePacketLAN(ctx, eventID, connectionID, reason, now)
 }
 
 // ImportExport parses a run5 event export and applies it to the event's

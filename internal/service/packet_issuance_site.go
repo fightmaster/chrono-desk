@@ -88,13 +88,13 @@ func ConnectPacketIssuanceSite(ctx context.Context, events *EventService, eventI
 	}
 	if err := store.InstallPacketIssuanceRoster(ctx, sqlite.PacketIssuanceScope{
 		EventID: bootstrap.Event.ID, ScopeID: bootstrap.ScopeID, BaselineID: bootstrap.BaselineID,
-		SourceKind: bootstrap.SourceKind,
+		SourceKind: bootstrap.SourceKind, SiteFeedCursor: bootstrap.FeedCursor,
 	}, bootstrap.Registrations); err != nil {
 		return PacketRelayStatus{}, err
 	}
 	return PacketRelayStatus{
 		Configured: true, RelayID: state.RelayID, ScopeID: state.ScopeID,
-		ExpiresAt: state.ExpiresAt, FeedCursor: "0", RosterInstalled: true,
+		ExpiresAt: state.ExpiresAt, FeedCursor: bootstrap.FeedCursor, RosterInstalled: true,
 	}, nil
 }
 

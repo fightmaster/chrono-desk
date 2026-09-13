@@ -55,6 +55,54 @@ type PacketOperationRecord struct {
 	RecordedAt       int64
 }
 
+type PacketFeedRow struct {
+	ActionID      string
+	Sequence      int64
+	Kind          string
+	SourceCode    string
+	OperationJSON []byte
+	Outcome       string
+	OutcomeCode   *string
+	ChangesJSON   []byte
+	RecordedAt    int64
+}
+
+func (s *Store) PacketFeedHead(ctx context.Context, eventID string) (int64, error) {
+	var head int64
+	err := s.db.QueryRowContext(ctx, `SELECT last_sequence FROM packet_issuance_feed_heads WHERE event_id=?`, eventID).Scan(&head)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return head, err
+}
+
+func (s *Store) ListPacketFeedRows(ctx context.Context, eventID string, after int64, limit int) ([]PacketFeedRow, error) {
+	if after < 0 || limit < 1 || limit > 100 {
+		return nil, errors.New("invalid packet feed query")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT f.action_id,f.event_sequence,f.kind,f.source_code,
+		COALESCE(o.operation_json,''),f.outcome,f.outcome_code,f.changes_json,f.recorded_at
+		FROM packet_issuance_feed_actions f
+		LEFT JOIN packet_issuance_operations o ON o.operation_id=f.source_operation_id
+		WHERE f.event_id=? AND f.event_sequence>? ORDER BY f.event_sequence LIMIT ?`, eventID, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []PacketFeedRow{}
+	for rows.Next() {
+		var row PacketFeedRow
+		var operation string
+		if err := rows.Scan(&row.ActionID, &row.Sequence, &row.Kind, &row.SourceCode, &operation,
+			&row.Outcome, &row.OutcomeCode, &row.ChangesJSON, &row.RecordedAt); err != nil {
+			return nil, err
+		}
+		row.OperationJSON = []byte(operation)
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) ListPendingPacketOperations(ctx context.Context, eventID string, limit int) ([]packetissuance.Operation, error) {
 	if limit < 1 || limit > 64 {
 		return nil, fmt.Errorf("invalid packet operation delivery limit")
@@ -101,7 +149,11 @@ func (s *Store) MarkPacketOperationSiteReceipt(ctx context.Context, receipt pack
 // authenticated bootstrap. It refuses replacement once any issuance history
 // exists; later changes must arrive through the feed rather than a snapshot.
 func (s *Store) InstallPacketIssuanceRoster(ctx context.Context, scope PacketIssuanceScope, rows []packetissuance.Registration) error {
-	if scope.EventID == "" || scope.ScopeID == "" || scope.BaselineID == "" || scope.SourceKind != "site" || len(rows) > 20_000 {
+	if scope.SiteFeedCursor == "" {
+		scope.SiteFeedCursor = "0"
+	}
+	if scope.EventID == "" || scope.ScopeID == "" || scope.BaselineID == "" || scope.SourceKind != "site" ||
+		!validPacketFeedCursor(scope.SiteFeedCursor) || len(rows) > 20_000 {
 		return fmt.Errorf("invalid packet issuance roster")
 	}
 	return s.WithinTx(ctx, func(txStore *Store) error {
@@ -151,15 +203,20 @@ func (s *Store) InstallPacketIssuanceRoster(ctx context.Context, scope PacketIss
 			installedAt = time.Now().UnixMilli()
 		}
 		_, err := txStore.db.ExecContext(ctx, `INSERT INTO packet_issuance_scopes
-			(event_id,scope_id,baseline_id,source_kind,installed_at) VALUES (?,?,?,?,?)
+			(event_id,scope_id,baseline_id,source_kind,installed_at,site_feed_cursor) VALUES (?,?,?,?,?,?)
 			ON CONFLICT(event_id) DO UPDATE SET scope_id=excluded.scope_id,baseline_id=excluded.baseline_id,
-			source_kind=excluded.source_kind,installed_at=excluded.installed_at`,
-			scope.EventID, scope.ScopeID, scope.BaselineID, scope.SourceKind, installedAt)
+			source_kind=excluded.source_kind,installed_at=excluded.installed_at,site_feed_cursor=excluded.site_feed_cursor`,
+			scope.EventID, scope.ScopeID, scope.BaselineID, scope.SourceKind, installedAt, scope.SiteFeedCursor)
 		if err != nil {
 			return fmt.Errorf("save packet issuance scope: %w", err)
 		}
 		return nil
 	})
+}
+
+func validPacketFeedCursor(value string) bool {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	return err == nil && parsed >= 0 && strconv.FormatInt(parsed, 10) == value
 }
 
 func (s *Store) matchPacketMember(ctx context.Context, row packetissuance.Registration) error {

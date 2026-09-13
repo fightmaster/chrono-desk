@@ -57,6 +57,10 @@ func loadOrCreatePacketRelayState(dataDir string) (*packetRelayState, error) {
 		db.Close()
 		return nil, fmt.Errorf("create packet relay state: %w", err)
 	}
+	if err := createPacketLANTables(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &packetRelayState{db: db}, nil
 }
 
