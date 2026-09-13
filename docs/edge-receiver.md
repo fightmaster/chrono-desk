@@ -47,18 +47,17 @@ The canonical contract is `chrono-docs/contracts/edge-observation-v1.md`.
 Internet device administration is outside this work. The combined input below
 preserves ordinary vendor heartbeat monitoring; it adds no Edge heartbeat wire.
 
-The existing native Feibot listener stays on default port **5084** with its
-existing protocol and limits. The new independent listener defaults to **5085**;
-neither starts merely because an event is opened. Both can run simultaneously.
+The existing native Feibot port remains **5084**. The ordinary **Запустить приём**
+action selects the shared Feibot/Edge adapter on that same port whenever Edge
+sources are configured; without such sources it preserves the native-only input.
+The separate Edge listener on **5085** remains an API-compatible advanced path;
+neither listener starts merely because an event is opened.
 Edge limits are 16 connections, 10,240 bytes per message, 30-second read and
 5-second write timeouts, a 256-item bounded queue and one publisher worker.
 These are initial limits, not a measured sustained throughput guarantee.
 
-Local unpublished combined-input correction: the operator can instead select
-**Feibot + RFID Edge / plate**, authorize sources and start the combined input on
-the vendor's existing Desk port (default5084). Stop the old native input first;
-port conflicts are rejected, not resolved by silently stopping another session.
-The opt-in `combined=true` start flag uses shared `tcp.FeibotEdgeAdapter` and
+The combined-input correction keeps one normal start/stop workflow. After source
+authorization, the normal start action uses shared `tcp.FeibotEdgeAdapter` and
 native/Edge publishers with separate admission and journals. Vendor arrays keep
 a 64KiB framing limit; owned objects still pass the codec's 10KiB limit. Other
 Edge connection/queue/deadline limits remain bounded as above. Existing API
@@ -75,19 +74,19 @@ per-process bearer token. No new account, role or SSO system is introduced.
 1. Import the intended RUN5/Chrono event. Its ID must be a canonical positive
    decimal ID. Explicit board/session authorization admits raw input even before
    logical checkpoints are configured.
-2. Open **LIVE → Feibot + RFID Edge / plate**.
+2. Open **LIVE → RFID Edge / plate — источники**.
 3. Use **Добавить Feibot** and enter the exact `Feibot:<DeviceCode>` board, then
    save. The authenticated provisioning service resolves an omitted Feibot
    session to the explicitly selected canonical numeric event ID, matching the
    Feibot CSV profile. No sidecar screen or copied session text is required.
    Generic/plate boards still require an explicit capture session; an explicit
    historical session is never overwritten. At most64 boards can be provisioned,
-   one accepted session per board. Inbound packets cannot self-enrol, and unsaved
-   binding edits disable Start.
-4. For combined reception use the same address entered in Feibot, enable the
-   matching sender's `follow_vendor_endpoint` setting once during installation,
-   and start the combined input after stopping the old native listener. Separate
-   Edge-only reception remains an advanced alternative. Confirm counters and
+   one accepted session per board. Inbound packets cannot self-enrol.
+4. Save sources, then use the ordinary **Запустить приём** button and the same
+   address already entered in Feibot. RFID Edge automatically follows that vendor
+   host and port; there is no second Desk endpoint, port, session or Edge-start
+   control in the normal UI. Separate Edge-only reception remains an advanced API
+   alternative. Confirm counters and
    the actual local result; an edge ACK is not a central RUN5 result receipt.
 5. Stop edge input before changing a binding. Stop closes active connections and
    joins their handlers/publisher before returning. It does not stop the native
@@ -225,7 +224,7 @@ localhost bearer token.
 | --- | --- |
 | `GET /config` | Explicit bindings and count of unacknowledged relay rows |
 | `PUT /config` | Audited replacement: `{"bindings":[{"board":"plate-test","source_session_id":"session-one"}]}`; stopped input only |
-| `POST /start` | Optional `{"port":"5085"}`; numeric event, nonempty bindings and unoccupied port required |
+| `POST /start` | Advanced separate input: optional `{"port":"5085"}`; numeric event, nonempty bindings and unoccupied port required |
 | `POST /stop` | Stop/join edge only; leave the event's site pull running if native ingest remains active |
 | `GET /journal?after=0` | Read-only envelope export, at most 500 rows, `next_after` and `may_have_more` |
 | `GET /relay` | Saved relay config, worker state and durable queue/attempt counters |
@@ -234,6 +233,8 @@ localhost bearer token.
 `GET /api/events/{id}/live/status` retains native fields and adds `edge` and
 `any_running`. The header uses the combined state; the edge input adds no extra
 frontend polling loop. Configuration, export and counter refresh are explicit.
+The ordinary `/api/events/{id}/live/start` selects the combined adapter when the
+event has Edge bindings, so the desktop UI has one start and one stop action.
 `GET /api/version` advertises `edge_observation_version: 1` separately from the
 unchanged event-export, native reader and v3 synchronization versions.
 
