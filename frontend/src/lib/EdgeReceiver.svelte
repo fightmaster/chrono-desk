@@ -1,14 +1,10 @@
 <script>
-  import {createEventDispatcher, onMount} from 'svelte'
+  import {onMount} from 'svelte'
   import {call} from './api.js'
   import EdgeRelay from './EdgeRelay.svelte'
 
   export let eventId
   export let status = {}
-  export let ips = []
-  const dispatch = createEventDispatcher()
-  let combined = status.running ? !!status.combined : true
-  let port = status.port || '5084'
   let bindings = []
   let pending = 0
   let error = ''
@@ -26,15 +22,10 @@
   }
   onMount(() => { load().catch(e => error = e.message) })
 
-  async function act(operation) {
+  async function save() {
     error = ''; busy = true
     try {
-      if (operation === 'save') {
-        await call('PUT', `/api/events/${eventId}/live/edge/config`, JSON.stringify({bindings}))
-      } else {
-        const current = await call('POST', `/api/events/${eventId}/live/edge/${operation}`, JSON.stringify({port, combined}))
-        dispatch('status', current)
-      }
+      await call('PUT', `/api/events/${eventId}/live/edge/config`, JSON.stringify({bindings}))
       await load()
     } catch (e) { error = e.message }
     finally { busy = false }
@@ -42,9 +33,9 @@
 </script>
 
 <details class="edge">
-  <summary>Feibot + RFID Edge / plate {status.running ? '· приём включён' : ''}</summary>
-  <p>Совместный вход принимает штатный Feibot и Edge на одном адресе. Перед его запуском остановите прежний отдельный вход. Только доверенная локальная сеть: не открывайте этот порт в интернет.</p>
-  <p>Адрес Desk в настройках Feibot: <strong>{ips[0] || 'IP компьютера'}:{status.port || port}</strong>. Edge с включённым следованием настройкам Feibot использует этот же адрес. Чекпоинты нужны для расчёта, но не для сохранения сырых отметок; один прибор может обслуживать несколько точек.</p>
+  <summary>RFID Edge / plate — источники {status.running ? '· общий приём включён' : ''}</summary>
+  <p>Для Feibot укажите только код прибора. Сессией автоматически станет ID открытого события, а Edge возьмёт адрес и порт Desk из штатной настройки Feibot.</p>
+  <p>После сохранения используйте обычную кнопку «Запустить приём»: Desk сам включит общий Feibot + Edge вход на указанном сверху порту. Чекпоинт для сохранения сырых отметок не требуется.</p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if status.last_error}<p class="error">Последняя ошибка приёма: {status.last_error}</p>{/if}
   <fieldset disabled={busy || status.running || !loaded}>
@@ -52,7 +43,7 @@
       <div class="binding">
         <label>Board<input class="input mono" bind:value={binding.board} maxlength="128" /></label>
         {#if binding.board.startsWith('Feibot:') && (!binding.source_session_id || binding.source_session_id === eventId)}
-          <label>Сессия Feibot<input class="input mono" value={eventId} readonly /><small>Из выбранного события; копировать из sidecar не нужно.</small></label>
+          <small>Сессия Feibot: событие {eventId}; вручную вводить её не нужно.</small>
         {:else}
           <label>Сессия plate / явная историческая сессия<input class="input mono" bind:value={binding.source_session_id} maxlength="96" /></label>
         {/if}
@@ -61,24 +52,22 @@
     {/each}
     <button class="btn" disabled={bindings.length >= 64} on:click={() => bindings = [...bindings, {board: '', source_session_id: ''}]}>Добавить прибор</button>
     <button class="btn" disabled={bindings.length >= 64} on:click={() => bindings = [...bindings, {board: 'Feibot:', source_session_id: ''}]}>Добавить Feibot</button>
-    <button class="btn" on:click={() => act('save')}>Сохранить привязки</button>
-    <label>TCP-порт<input class="input mono" bind:value={port} inputmode="numeric" /></label>
-    <label><input type="checkbox" bind:checked={combined} /> Принимать штатный Feibot на этом же порту</label>
+    <button class="btn" on:click={save}>Сохранить источники</button>
   </fieldset>
-  {#if bindingsDirty}<p role="status">Перед запуском сохраните изменённые привязки.</p>{/if}
-  {#if status.running}
-    <button class="btn" disabled={busy} on:click={() => act('stop')}>Остановить edge-вход</button>
-  {:else}
-    <button class="btn primary" disabled={busy || !loaded || bindingsDirty || bindings.length === 0} on:click={() => act('start')}>Запустить edge-вход</button>
-  {/if}
+  {#if bindingsDirty}<p role="status">Сохраните источники, затем запустите общий приём обычной кнопкой сверху.</p>{/if}
   <p>Принято сообщений: {status.received || 0} · новых: {status.inserted || 0} · повторов: {status.duplicates || 0} · ошибок сохранения: {status.errors || 0}.</p>
   <p>В отдельном журнале ожидают пересылки: {pending}. Исходные пакеты сохраняют своё происхождение и не преобразуются в прежний формат Desk.</p>
   <button class="btn" disabled={busy} on:click={() => load().catch(e => error = e.message)}>Обновить настройки и очередь</button>
-  <EdgeRelay {eventId} />
+  <details class="advanced">
+    <summary>Расширенные настройки: резервная досылка в Hub</summary>
+    <p>Нужны только когда источник не отправляет данные в Hub самостоятельно. Обычный RFID Edge ведёт собственную независимую очередь на сайт.</p>
+    <EdgeRelay {eventId} />
+  </details>
 </details>
 
 <style>
   .edge{border:1px solid var(--border, #777);border-radius:8px;padding:12px;margin:12px 0}
+  .advanced{margin-top:16px}
   summary{cursor:pointer;font-weight:600}fieldset{border:0;padding:0;margin-bottom:12px}
   .binding{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:12px 0}
   label{display:block;margin:8px 0}input{display:block;max-width:100%}.binding label{flex:1;min-width:160px}

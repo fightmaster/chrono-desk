@@ -124,6 +124,35 @@ func TestCombinedListenerKeepsSourceAdmissionAndOutboxesSeparate(t *testing.T) {
 	}
 }
 
+func TestDefaultLiveStartSelectsCombinedInputOnlyForConfiguredEdgeSources(t *testing.T) {
+	store, source := edgeLiveFixture(t)
+	manager := NewLiveManager(log.New(io.Discard, "", 0))
+	defer manager.StopAll()
+
+	if err := manager.ConfigureEdge(t.Context(), store, "100", []domain.EdgeBinding{{Board: source.Board}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Start(store, "100", edgeTestPort(t)); err != nil {
+		t.Fatal(err)
+	}
+	status := manager.Status("100")
+	if !status.AnyRunning || status.Running || !status.Edge.Running || !status.Edge.Combined {
+		t.Fatalf("default start did not select the shared Feibot/Edge input: %+v", status)
+	}
+
+	manager.Stop("100")
+	if err := manager.ConfigureEdge(t.Context(), store, "100", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Start(store, "100", edgeTestPort(t)); err != nil {
+		t.Fatal(err)
+	}
+	status = manager.Status("100")
+	if !status.AnyRunning || !status.Running || status.Edge.Running {
+		t.Fatalf("default start stopped preserving native compatibility without bindings: %+v", status)
+	}
+}
+
 func TestFeibotSessionResolutionDoesNotInferGenericOrPlateSessions(t *testing.T) {
 	store, source := edgeLiveFixture(t)
 	manager := NewLiveManager(log.New(io.Discard, "", 0))

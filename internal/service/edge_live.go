@@ -23,6 +23,7 @@ type EdgeLiveStatus struct {
 	Inserted   int64                        `json:"inserted"`
 	Duplicates int64                        `json:"duplicates"`
 	Errors     int64                        `json:"errors"`
+	LastReadMs int64                        `json:"last_read_ms"`
 	LastError  string                       `json:"last_error"`
 	Listeners  []telemetry.ListenerSnapshot `json:"listeners"`
 }
@@ -31,7 +32,7 @@ func edgeSessionStatus(s *liveSession) EdgeLiveStatus {
 	if s == nil {
 		return EdgeLiveStatus{}
 	}
-	return EdgeLiveStatus{Running: !s.isFinished(), Combined: s.combined, Port: s.port, Received: s.stats.Received.Load(), Inserted: s.stats.Inserted.Load(), Duplicates: s.stats.Duplicates.Load(), Errors: s.stats.Errors.Load(), LastError: s.lastError(), Listeners: s.metrics.Snapshot()}
+	return EdgeLiveStatus{Running: !s.isFinished(), Combined: s.combined, Port: s.port, Received: s.stats.Received.Load(), Inserted: s.stats.Inserted.Load(), Duplicates: s.stats.Duplicates.Load(), Errors: s.stats.Errors.Load(), LastReadMs: s.stats.LastReadMs.Load(), LastError: s.lastError(), Listeners: s.metrics.Snapshot()}
 }
 
 func (m *LiveManager) StartEdge(store *sqlite.Store, eventID, port string) error {

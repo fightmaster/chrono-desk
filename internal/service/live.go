@@ -88,8 +88,27 @@ func NewLiveManager(logger *log.Logger) *LiveManager {
 	return &LiveManager{logger: logger, sessions: map[string]*liveSession{}, edgeSessions: map[string]*liveSession{}}
 }
 
-// Start launches a Feibot TCP listener for the event on 0.0.0.0:port.
+// Start launches the event's normal reader input on 0.0.0.0:port. Events with
+// explicit Edge source bindings use the shared Feibot/Edge adapter, so the
+// operator still has one start button and one address. Events without bindings
+// preserve the legacy Feibot-only listener.
 func (m *LiveManager) Start(store *sqlite.Store, eventID, port string) error {
+	m.mu.Lock()
+	edgeSession := m.edgeSessions[eventID]
+	edgeAlreadyRunning := edgeSession != nil && !edgeSession.isFinished()
+	m.mu.Unlock()
+	// Preserve the advanced legacy layout where an explicit Edge-only input
+	// already occupies its own port and native Feibot is started beside it.
+	if edgeAlreadyRunning {
+		return m.startListener(store, eventID, port, false, false)
+	}
+	bindings, err := store.EdgeBindings(context.Background(), eventID)
+	if err != nil {
+		return err
+	}
+	if len(bindings) > 0 {
+		return m.startListener(store, eventID, port, true, true)
+	}
 	return m.startListener(store, eventID, port, false, false)
 }
 

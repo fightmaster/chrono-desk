@@ -18,6 +18,9 @@
   let error = ''
   let timer = null
 
+  $: receiving = status.any_running ?? status.running
+  $: activeInput = status.running ? status : (status.edge?.running ? status.edge : status)
+
   // Feed view: chip reads (default) or the photo-finish wall (recent finishes
   // pulled from the phones — same /photos/recent the panel uses).
   let feedView = 'chips' // 'chips' | 'photos'
@@ -71,6 +74,7 @@
         finishesTotal = pstatus.finishes_count || 0
       } catch (_) { /* photos best-effort */ }
       if (status.port) port = status.port
+      else if (status.edge?.running && status.edge.port) port = status.edge.port
       dispatch('status', status)
     } catch (e) {
       error = e.message
@@ -251,9 +255,9 @@
   <div class="topline">
     <div class="title"><span class="lt">Live</span><span class="lt dim">· финишный судья</span></div>
     <div class="ctrl">
-      <span class="stats mono dim">прочтений {status.received ?? 0} · новых {status.inserted ?? 0} · дублей {status.duplicates ?? 0} · ошибок {status.errors ?? 0}{#if status.last_read_ms} · последнее {fmtTime(status.last_read_ms)}{/if}</span>
-      {#if !status.running}<input class="input mono port" bind:value={port}/>{/if}
-      {#if status.running}
+      <span class="stats mono dim">прочтений {activeInput.received ?? 0} · новых {activeInput.inserted ?? 0} · дублей {activeInput.duplicates ?? 0} · ошибок {activeInput.errors ?? 0}{#if activeInput.last_read_ms} · последнее {fmtTime(activeInput.last_read_ms)}{/if}</span>
+      {#if !receiving}<input class="input mono port" bind:value={port}/>{/if}
+      {#if receiving}
         <button class="btn" on:click={stop}>Остановить все входы</button>
       {:else}
         <button class="btn primary" on:click={start}>Запустить приём</button>
@@ -263,22 +267,21 @@
 
   {#if error}<p class="error">{error}</p>{/if}
 
-  <EdgeReceiver {eventId} status={status.edge || {}} ips={status.ips || []}
-                on:status={e => { status = e.detail; dispatch('status', status) }} />
+  <EdgeReceiver {eventId} status={status.edge || {}} />
 
   <div class="statusbar">
-    <span class="dot" class:pulsing={status.running}></span>
+    <span class="dot" class:pulsing={receiving}></span>
     <span class="dim">
-      {status.running ? `Приём на порту ${status.port}` : 'Ожидание heartbeat от считывателей…'}
+      {receiving ? `Приём на порту ${activeInput.port}` : 'Ожидание heartbeat от считывателей…'}
       {#if status.ips?.length}
-        · Нативный Feibot: <b class="mono full">{status.ips[0]}:{status.port || port}</b>
+        · Feibot: <b class="mono full">{status.ips[0]}:{activeInput.port || port}</b>
         {#if status.ips.length > 1}<span class="faint">(или {status.ips.slice(1).join(', ')})</span>{/if}
       {/if}
     </span>
   </div>
 
-  {#if !status.running && status.last_error && !/cancel|closed|EOF/i.test(status.last_error)}
-    <p class="error">Приём остановлен с ошибкой: {status.last_error}</p>
+  {#if !receiving && activeInput.last_error && !/cancel|closed|EOF/i.test(activeInput.last_error)}
+    <p class="error">Приём остановлен с ошибкой: {activeInput.last_error}</p>
   {/if}
 
   {#if status.readers?.length}
