@@ -94,6 +94,127 @@ func TestApplyEditClearsNumberToNull(t *testing.T) {
 	}
 }
 
+func TestApplyEditPublishesActivePacketScopeChangeAtomically(t *testing.T) {
+	operation := packetFixtureOperation(t)
+	store := packetStore(t, operation)
+	ctx := context.Background()
+	row := operation.Changes[0].Before
+
+	if _, err := ApplyEdit(ctx, store, EditRequest{
+		Entity: "member", EntityID: row.ID, Field: "first_name", Value: json.RawMessage(`"Пётр"`),
+	}); err != nil {
+		t.Fatalf("edit packet member: %v", err)
+	}
+	registrations, err := store.ListPacketRegistrations(ctx, row.EventID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registrations) != 1 || registrations[0].Person == nil || registrations[0].Person.FirstName != "Пётр" {
+		t.Fatalf("packet registration = %+v", registrations)
+	}
+	if registrations[0].Bib != row.Bib {
+		t.Fatalf("unrelated edit changed string bib: got %q want %q", registrations[0].Bib, row.Bib)
+	}
+	page, err := PacketIssuanceFeedPage(ctx, store, row.EventID, operation.ScopeID, "0", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Actions) != 1 || page.Actions[0].Kind != "server_change" ||
+		page.Actions[0].SourceCode != "chrono_desk.local_edit" || len(page.Actions[0].Changes) != 1 {
+		t.Fatalf("packet feed = %+v", page.Actions)
+	}
+	feedChange := page.Actions[0].Changes[0]
+	if feedChange.Before == nil || feedChange.After == nil || feedChange.Before.Person == nil ||
+		feedChange.After.Person == nil || feedChange.Before.Person.FirstName == "Пётр" || feedChange.After.Person.FirstName != "Пётр" {
+		t.Fatalf("packet feed change = %+v", feedChange)
+	}
+	changes, err := store.ListLocalChanges(ctx)
+	if err != nil || len(changes) != 1 || changes[0].Field != "first_name" {
+		t.Fatalf("legacy journal = %+v, err=%v", changes, err)
+	}
+}
+
+func TestApplyEditRollsBackMemberAndBothJournalsWhenPacketFeedFails(t *testing.T) {
+	operation := packetFixtureOperation(t)
+	store := packetStore(t, operation)
+	ctx := context.Background()
+	row := operation.Changes[0].Before
+	if _, err := store.DB().Exec(`CREATE TRIGGER fail_desk_packet_feed BEFORE INSERT ON packet_issuance_feed_actions BEGIN SELECT RAISE(FAIL,'forced feed failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyEdit(ctx, store, EditRequest{
+		Entity: "member", EntityID: row.ID, Field: "last_name", Value: json.RawMessage(`"Ошибка"`),
+	}); err == nil {
+		t.Fatal("expected packet feed failure")
+	}
+	member, err := store.GetMember(ctx, row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.LastName != row.Person.LastName {
+		t.Fatalf("member edit survived rollback: %q", member.LastName)
+	}
+	registrations, err := store.ListPacketRegistrations(ctx, row.EventID)
+	if err != nil || registrations[0].Person == nil || registrations[0].Person.LastName != row.Person.LastName {
+		t.Fatalf("packet projection survived rollback: %+v, err=%v", registrations, err)
+	}
+	var legacy, feed, head int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM local_changes`).Scan(&legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM packet_issuance_feed_actions`).Scan(&feed); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM packet_issuance_feed_heads`).Scan(&head); err != nil {
+		t.Fatal(err)
+	}
+	if legacy != 0 || feed != 0 || head != 0 {
+		t.Fatalf("rollback counts local=%d feed=%d head=%d", legacy, feed, head)
+	}
+}
+
+func TestApplyEditDoesNotPublishTimingOnlyMemberChange(t *testing.T) {
+	operation := packetFixtureOperation(t)
+	store := packetStore(t, operation)
+	row := operation.Changes[0].Before
+	if _, err := ApplyEdit(context.Background(), store, EditRequest{
+		Entity: "member", EntityID: row.ID, Field: "start_time_ms", Value: json.RawMessage(`1780812000123`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var feeds int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM packet_issuance_feed_actions`).Scan(&feeds); err != nil {
+		t.Fatal(err)
+	}
+	if feeds != 0 {
+		t.Fatalf("timing-only edit published %d packet actions", feeds)
+	}
+}
+
+func TestApplyEditRejectsInvalidStatusInActivePacketScope(t *testing.T) {
+	operation := packetFixtureOperation(t)
+	store := packetStore(t, operation)
+	row := operation.Changes[0].Before
+	if _, err := ApplyEdit(context.Background(), store, EditRequest{
+		Entity: "member", EntityID: row.ID, Field: "status", Value: json.RawMessage(`99`),
+	}); err == nil {
+		t.Fatal("invalid packet status accepted")
+	}
+	member, err := store.GetMember(context.Background(), row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.Status != domain.StatusOK {
+		t.Fatalf("invalid status survived rollback: %d", member.Status)
+	}
+	var localChanges, feed int
+	_ = store.DB().QueryRow(`SELECT COUNT(*) FROM local_changes`).Scan(&localChanges)
+	_ = store.DB().QueryRow(`SELECT COUNT(*) FROM packet_issuance_feed_actions`).Scan(&feed)
+	if localChanges != 0 || feed != 0 {
+		t.Fatalf("invalid status left journals: local=%d feed=%d", localChanges, feed)
+	}
+}
+
 func TestApplyEditMarksStartAsManualAndClearingRemovesProvenance(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()

@@ -58,6 +58,13 @@ func CreateMember(ctx context.Context, store *sqlite.Store, eventID string, req 
 		return "", EditResult{}, fmt.Errorf("encode member: %w", err)
 	}
 	err = store.WithinTx(ctx, func(txStore *sqlite.Store) error {
+		scope, err := txStore.GetPacketIssuanceScope(ctx, eventID)
+		if err != nil {
+			return err
+		}
+		if scope.ScopeID != "" {
+			return fmt.Errorf("при активной выдаче добавляйте участника через резервный слот")
+		}
 		race, err := txStore.GetRace(ctx, req.RaceID)
 		if err != nil || race.EventID != eventID {
 			return fmt.Errorf("гонка %s не найдена в событии", req.RaceID)

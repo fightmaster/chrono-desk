@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
+	"gitlab.com/fightmaster1/chrono-desk/internal/packetissuance"
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
 	"gitlab.com/fightmaster1/chrono-desk/internal/ranking"
 )
@@ -29,6 +30,10 @@ type editTxStore interface {
 	GetEvent(ctx context.Context, id string) (domain.Event, error)
 	ListRaceCategories(ctx context.Context, raceID string) ([]domain.Category, error)
 	ShiftMemberStarts(ctx context.Context, raceID string, deltaMs int64) ([]sqlite.MemberStartShift, error)
+	GetPacketIssuanceScope(ctx context.Context, eventID string) (sqlite.PacketIssuanceScope, error)
+	FindPacketRegistration(ctx context.Context, eventID, id string) (sqlite.PacketRegistrationRecord, error)
+	PutPacketRegistration(ctx context.Context, row packetissuance.Registration, heads []string, categoryID *string) error
+	PublishPacketServerChange(ctx context.Context, eventID, actionID, sourceCode string, changes []packetissuance.Change, recordedAt int64) error
 }
 
 type editReplayStore interface {
@@ -153,7 +158,7 @@ func (s sqliteRecountTxStore) ProcessorRepository() processor.Repository {
 }
 
 type importStore interface {
-	ApplyEventImport(ctx context.Context, d sqlite.EventImportData) error
+	ApplyEventImport(ctx context.Context, d sqlite.EventImportData) (packetScopeActive bool, err error)
 	ReapplyLocalEdits(ctx context.Context) (int, error)
 }
 
@@ -165,7 +170,7 @@ func newSQLiteImportStore(store *sqlite.Store) importStore {
 	return sqliteImportStore{store: store}
 }
 
-func (s sqliteImportStore) ApplyEventImport(ctx context.Context, d sqlite.EventImportData) error {
+func (s sqliteImportStore) ApplyEventImport(ctx context.Context, d sqlite.EventImportData) (bool, error) {
 	return s.store.ApplyEventImport(ctx, d)
 }
 

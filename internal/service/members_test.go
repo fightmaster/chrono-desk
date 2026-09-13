@@ -132,6 +132,29 @@ func TestCreateMemberRequiresDOB(t *testing.T) {
 	}
 }
 
+func TestCreateMemberRejectsUnmappedIdentityWhenPacketScopeIsActive(t *testing.T) {
+	operation := packetFixtureOperation(t)
+	store := packetStore(t, operation)
+	row := operation.Changes[0].Before
+	number := int64(999)
+	if _, _, err := CreateMember(context.Background(), store, row.EventID, CreateMemberRequest{
+		RaceID: row.RaceID, FirstName: "Новый", LastName: "Участник", Number: &number,
+		Gender: sptrT("male"), DOB: sptrT("1990-05-01"),
+	}); err == nil || !strings.Contains(err.Error(), "резервный слот") {
+		t.Fatalf("active packet scope create error = %v", err)
+	}
+	var members, changes int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM members`).Scan(&members); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM local_changes`).Scan(&changes); err != nil {
+		t.Fatal(err)
+	}
+	if members != 1 || changes != 0 {
+		t.Fatalf("rejected create changed state: members=%d changes=%d", members, changes)
+	}
+}
+
 func TestCreateMemberAutoAssignsCategoryByEventAgeMode(t *testing.T) {
 	ctx := context.Background()
 

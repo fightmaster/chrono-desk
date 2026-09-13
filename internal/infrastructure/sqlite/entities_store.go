@@ -237,29 +237,33 @@ type EventImportData struct {
 // written before children (event → laps → races → categories → checkpoints →
 // members → logs) to satisfy foreign keys. The local-edits replay runs after
 // this commits (it touches only the now-consistent imported rows).
-func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) error {
+func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) (bool, error) {
 	tx, err := s.root.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin import: %w", err)
+		return false, fmt.Errorf("begin import: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after commit
 
+	var packetScopeExists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM packet_issuance_scopes WHERE event_id=?)`, d.Event.ID).Scan(&packetScopeExists); err != nil {
+		return false, fmt.Errorf("inspect packet issuance scope: %w", err)
+	}
 	if err := upsertEvent(ctx, tx, d.Event); err != nil {
-		return err
+		return packetScopeExists, err
 	}
 	for _, l := range d.Laps {
 		if err := upsertLap(ctx, tx, l); err != nil {
-			return err
+			return packetScopeExists, err
 		}
 	}
 	for _, r := range d.Races {
 		if err := upsertRace(ctx, tx, r); err != nil {
-			return err
+			return packetScopeExists, err
 		}
 	}
 	for _, c := range d.Categories {
 		if err := upsertCategory(ctx, tx, c); err != nil {
-			return err
+			return packetScopeExists, err
 		}
 	}
 	// Replace the event's race↔category pivot with the export's: the site owns
@@ -268,25 +272,46 @@ func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) error {
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM race_categories WHERE race_id IN (SELECT id FROM races WHERE event_id = ?)`,
 		d.Event.ID); err != nil {
-		return fmt.Errorf("clear race_categories: %w", err)
+		return packetScopeExists, fmt.Errorf("clear race_categories: %w", err)
 	}
 	for _, cr := range d.CategoryRaces {
 		if err := upsertRaceCategory(ctx, tx, cr.RaceID, cr.CategoryID); err != nil {
-			return err
+			return packetScopeExists, err
 		}
 	}
 	for _, cp := range d.Checkpoints {
 		if err := upsertCheckpoint(ctx, tx, cp); err != nil {
-			return err
+			return packetScopeExists, err
 		}
 	}
 	for _, m := range d.Members {
-		if err := upsertMember(ctx, tx, m); err != nil {
-			return err
+		if packetScopeExists {
+			if err := updateImportedMemberTiming(ctx, tx, m); err != nil {
+				return packetScopeExists, err
+			}
+		} else if err := upsertMember(ctx, tx, m); err != nil {
+			return packetScopeExists, err
 		}
 	}
 	if err := upsertRfidLogs(ctx, tx, d.RfidLogs); err != nil {
-		return err
+		return packetScopeExists, err
 	}
-	return tx.Commit()
+	return packetScopeExists, tx.Commit()
+}
+
+// updateImportedMemberTiming keeps the legacy event export useful for timing
+// while an issuance scope is active. Registration fields then advance only via
+// the packet feed; the older export has no issued/reserve/causal-head state and
+// cannot safely overwrite that projection.
+func updateImportedMemberTiming(ctx context.Context, tx *sql.Tx, member domain.Member) error {
+	_, err := tx.ExecContext(ctx, `UPDATE members SET rfid=?,start_time_ms=?,start_time_source='unknown',
+		start_observation_id=NULL,finish_time_ms=?,clean_time=?
+		WHERE id=? AND event_id=? AND EXISTS(
+			SELECT 1 FROM packet_issuance_registrations p
+			WHERE p.registration_id=members.id AND p.event_id=members.event_id AND p.deleted=0
+		)`, member.RFID, member.StartTimeMs, member.FinishTimeMs, member.CleanTime, member.ID, member.EventID)
+	if err != nil {
+		return fmt.Errorf("update imported member timing %s: %w", member.ID, err)
+	}
+	return nil
 }

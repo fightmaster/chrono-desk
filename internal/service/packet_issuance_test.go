@@ -139,6 +139,20 @@ func TestPacketIssuanceRosterRetainsStringBibAndRejectsPartialSnapshot(t *testin
 	}
 }
 
+func TestPacketIssuanceRosterRejectsUnreconciledDeskProfileEdit(t *testing.T) {
+	operation := packetFixtureOperation(t)
+	store := packetStore(t, operation)
+	row := operation.Changes[0].Before
+	if _, err := store.DB().Exec(`UPDATE members SET first_name='Несинхронизированный' WHERE id=?`, row.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InstallPacketIssuanceRoster(context.Background(), sqlite.PacketIssuanceScope{
+		EventID: row.EventID, ScopeID: operation.ScopeID, BaselineID: operation.BaselineID, SourceKind: "site",
+	}, []packetissuance.Registration{row}); err == nil {
+		t.Fatal("site roster replaced an unreconciled Desk profile edit")
+	}
+}
+
 func TestPacketIssuanceSiteOutboxKeepsOperationUntilMatchingTerminalReceipt(t *testing.T) {
 	operation := packetFixtureOperation(t)
 	store := packetStore(t, operation)

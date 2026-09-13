@@ -158,3 +158,39 @@ func TestParseEventExportAcceptsSchemaVersion3(t *testing.T) {
 		t.Error("UseRaceDateForAge = false, want true")
 	}
 }
+
+func TestEventReimportPreservesActivePacketRegistrationProjection(t *testing.T) {
+	operation := packetFixtureOperation(t)
+	store := packetStore(t, operation)
+	row := operation.Changes[0].Before
+	number := int64(99)
+	gender := "male"
+	dob := "1990-01-01"
+	export := &EventExport{
+		SchemaVersion: 3,
+		Timezone:      "UTC",
+		Event:         exportEvent{ID: row.EventID, Name: "Replacement", Date: "2026-09-14"},
+		Races: []exportRace{{
+			ID: row.RaceID, EventID: row.EventID, Name: "Changed race", Date: "2026-09-14 09:00:00",
+			Format: "FixedDistance",
+		}},
+		Members: []exportMember{{
+			ID: row.ID, EventID: row.EventID, RaceID: row.RaceID, Number: &number,
+			FirstName: "Changed", LastName: "Participant", Gender: &gender, DOB: &dob, Status: 0,
+		}},
+	}
+	if _, err := NewEventImporter(store).Import(context.Background(), export); err != nil {
+		t.Fatalf("safe active packet reimport: %v", err)
+	}
+	member, err := store.GetMember(context.Background(), row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.FirstName != row.Person.FirstName || member.Number == nil || *member.Number != 17 {
+		t.Fatalf("event reimport changed packet-owned member fields: %+v", member)
+	}
+	registrations, err := store.ListPacketRegistrations(context.Background(), row.EventID)
+	if err != nil || len(registrations) != 1 || registrations[0].Bib != row.Bib {
+		t.Fatalf("event reimport changed packet baseline: %+v, err=%v", registrations, err)
+	}
+}

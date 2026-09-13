@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
+	"github.com/google/uuid"
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
+	"gitlab.com/fightmaster1/chrono-desk/internal/packetissuance"
 )
 
 // Local offline edits ("старт задержали"): whitelisted fields are updated in
@@ -95,11 +98,165 @@ func applyEdit(ctx context.Context, store editStore, req EditRequest) (EditResul
 		return EditResult{}, err
 	}
 	if err := store.WithinTx(ctx, func(txStore editTxStore) error {
-		return applyValidatedEdit(ctx, txStore, req, spec, value)
+		packetChange, err := preparePacketMemberChange(ctx, txStore, req)
+		if err != nil {
+			return err
+		}
+		if err := applyValidatedEdit(ctx, txStore, req, spec, value); err != nil {
+			return err
+		}
+		return publishPacketMemberChange(ctx, txStore, packetChange)
 	}); err != nil {
 		return EditResult{}, err
 	}
 	return EditResult{RecountNeeded: spec.recountNeeded}, nil
+}
+
+type packetMemberChange struct {
+	eventID string
+	field   string
+	before  sqlite.PacketRegistrationRecord
+}
+
+var packetMemberFields = map[string]bool{
+	"status": true, "number": true, "epc": true, "category_id": true,
+	"first_name": true, "last_name": true, "gender": true, "dob": true,
+	"team": true, "city": true, "race_id": true,
+}
+
+// preparePacketMemberChange joins the legacy Desk editor to the packet journal
+// only when an issuance scope is installed. Timing-only member fields remain in
+// the timing/local_changes paths and never create issuance feed traffic.
+func preparePacketMemberChange(ctx context.Context, store editTxStore, req EditRequest) (*packetMemberChange, error) {
+	if req.Entity != "member" || !packetMemberFields[req.Field] {
+		return nil, nil
+	}
+	member, err := store.GetMember(ctx, req.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := store.GetPacketIssuanceScope(ctx, member.EventID)
+	if err != nil || scope.ScopeID == "" {
+		return nil, err
+	}
+	before, err := store.FindPacketRegistration(ctx, member.EventID, member.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !before.Found || before.Deleted {
+		return nil, fmt.Errorf("участник отсутствует в активном журнале выдачи; обновите подключение")
+	}
+	return &packetMemberChange{eventID: member.EventID, field: req.Field, before: before}, nil
+}
+
+func publishPacketMemberChange(ctx context.Context, store editTxStore, change *packetMemberChange) error {
+	if change == nil {
+		return nil
+	}
+	member, err := store.GetMember(ctx, change.before.Value.ID)
+	if err != nil {
+		return err
+	}
+	race, err := store.GetRace(ctx, member.RaceID)
+	if err != nil {
+		return err
+	}
+	if race.EventID != member.EventID {
+		return fmt.Errorf("дистанция участника не принадлежит событию выдачи")
+	}
+	after, err := packetRegistrationFromMember(change.before.Value, member, change.field)
+	if err != nil {
+		return err
+	}
+	actionID := uuid.NewString()
+	heads := uniquePacketHeads(append(append([]string(nil), change.before.Heads...), actionID))
+	if len(heads) > 64 {
+		return fmt.Errorf("история участника выдачи переполнена; требуется синхронизация и разбор")
+	}
+	if err := store.PutPacketRegistration(ctx, after, heads, member.CategoryID); err != nil {
+		return err
+	}
+	return store.PublishPacketServerChange(ctx, change.eventID, actionID, "chrono_desk.local_edit",
+		[]packetissuance.Change{{RegistrationID: after.ID, Before: change.before.Value, After: after}}, time.Now().UnixMilli())
+}
+
+func packetRegistrationFromMember(current packetissuance.Registration, member domain.Member, field string) (packetissuance.Registration, error) {
+	after := current
+	if field == "race_id" {
+		after.RaceID = member.RaceID
+	}
+	if field == "number" {
+		after.Bib = ""
+		if member.Number != nil {
+			after.Bib = strconv.FormatInt(*member.Number, 10)
+		}
+	}
+	if field == "epc" {
+		after.EPC = ""
+		if member.EPC != nil {
+			after.EPC = *member.EPC
+		}
+	}
+	if field == "status" {
+		status, err := mapPacketMemberStatus(member.Status)
+		if err != nil {
+			return packetissuance.Registration{}, err
+		}
+		after.Status = status
+	}
+	if packetPersonField(field) {
+		if member.FirstName == "" && member.LastName == "" {
+			after.Person = nil
+		} else {
+			personID := "desk-member:" + member.ID
+			if current.Person != nil {
+				personID = current.Person.ID
+			}
+			after.Person = &packetissuance.Person{
+				ID: personID, FirstName: member.FirstName, LastName: member.LastName,
+				BirthDate: packetString(member.DOB), Gender: packetString(member.Gender),
+				Team: packetString(member.Team), City: packetString(member.City),
+			}
+		}
+	}
+	if err := packetissuance.ValidateRegistration(after); err != nil {
+		if after.Reserve && after.Person != nil {
+			return packetissuance.Registration{}, fmt.Errorf("резервный слот изменяется через операцию передачи пакета")
+		}
+		return packetissuance.Registration{}, fmt.Errorf("правка несовместима с активным журналом выдачи: %w", err)
+	}
+	return after, nil
+}
+
+func packetPersonField(field string) bool {
+	switch field {
+	case "first_name", "last_name", "gender", "dob", "team", "city":
+		return true
+	default:
+		return false
+	}
+}
+
+func mapPacketMemberStatus(status domain.MemberStatus) (string, error) {
+	switch status {
+	case domain.StatusOK:
+		return "registered", nil
+	case domain.StatusDNS:
+		return "dns", nil
+	case domain.StatusDNF:
+		return "dnf", nil
+	case domain.StatusDSQ:
+		return "dsq", nil
+	default:
+		return "", fmt.Errorf("неизвестный статус участника: %d", status)
+	}
+}
+
+func packetString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func applyValidatedEdit(ctx context.Context, store editTxStore, req EditRequest, spec editableField, value any) error {

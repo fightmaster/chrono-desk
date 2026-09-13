@@ -133,6 +133,15 @@ The golden legacy export remains unchanged. The additional core-owned fixture
 `952e179f068c3027da3232f46bcd81b525aa3490580e741ed4d93015c670c83d`.
 This is source compatibility, not a published edge release or connected relay.
 
+When a site-backed packet-issuance scope is active, this legacy export is no
+longer authoritative for member registration fields: it does not carry packet
+issued/reserve state or causal heads. Re-import still refreshes event, race,
+category, checkpoint, raw-observation and existing-member timing data. It does
+not add or overwrite registration profiles, status, race, bib or EPC, and it
+does not replay the legacy local-wins member journal. Those changes arrive via
+the authenticated packet feed. Before packet issuance is installed, the v1-v3
+import and local-edit replay behavior is unchanged.
+
 ## What is intentionally NOT exported
 
 - `results` / `member_results` — derived data; chrono-desk recounts from `rfid_logs`.

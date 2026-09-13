@@ -182,7 +182,8 @@ func (i *EventImporter) Import(ctx context.Context, export *EventExport) (Import
 	if err != nil {
 		return stats, err
 	}
-	if err := i.store.ApplyEventImport(ctx, data); err != nil {
+	packetScopeActive, err := i.store.ApplyEventImport(ctx, data)
+	if err != nil {
 		return stats, err
 	}
 	stats.Races = len(data.Races)
@@ -191,9 +192,12 @@ func (i *EventImporter) Import(ctx context.Context, export *EventExport) (Import
 	stats.Members = len(data.Members)
 	stats.RfidLogs = len(data.RfidLogs)
 
-	// Conflict policy: local offline edits beat the re-imported site data —
-	// unless the caller asked for "site wins" (pull with overwrite).
-	if !i.skipLocalReplay {
+	// Once packet issuance is installed, its projection/feed owns registration
+	// convergence. Replaying the older local_changes policy over that state would
+	// bypass packet heads and could undo an explicit resolution.
+	// Outside packet issuance, preserve the established local-edits-win policy
+	// unless the caller explicitly requested the site snapshot.
+	if !packetScopeActive && !i.skipLocalReplay {
 		applied, err := i.store.ReapplyLocalEdits(ctx)
 		if err != nil {
 			return stats, err

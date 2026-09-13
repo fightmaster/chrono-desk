@@ -232,18 +232,42 @@ func validPacketFeedCursor(value string) bool {
 func (s *Store) matchPacketMember(ctx context.Context, row packetissuance.Registration) error {
 	var eventID, raceID string
 	var number sql.NullInt64
-	var epc sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT event_id,race_id,number,epc FROM members WHERE id=?`, row.ID).Scan(&eventID, &raceID, &number, &epc)
+	var epc, gender, dob, team, city sql.NullString
+	var firstName, lastName string
+	var status int
+	err := s.db.QueryRowContext(ctx, `SELECT event_id,race_id,number,epc,first_name,last_name,gender,dob,team,city,status
+		FROM members WHERE id=?`, row.ID).
+		Scan(&eventID, &raceID, &number, &epc, &firstName, &lastName, &gender, &dob, &team, &city, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("packet registration %s is not in event export", row.ID)
 	}
 	if err != nil {
 		return fmt.Errorf("read packet registration %s: %w", row.ID, err)
 	}
-	if eventID != row.EventID || raceID != row.RaceID || nullablePacketNumber(number) != normalizedPacketBib(row.Bib) || epc.String != row.EPC {
+	profileMatches := row.Person == nil && strings.TrimSpace(firstName+lastName) == ""
+	if row.Person != nil {
+		profileMatches = row.Person.FirstName == firstName && row.Person.LastName == lastName &&
+			row.Person.Gender == gender.String && row.Person.BirthDate == dob.String &&
+			row.Person.Team == team.String && row.Person.City == city.String
+	}
+	if eventID != row.EventID || raceID != row.RaceID || nullablePacketNumber(number) != normalizedPacketBib(row.Bib) ||
+		epc.String != row.EPC || packetStatusFromInt(status) != row.Status || !profileMatches {
 		return fmt.Errorf("packet registration %s does not match event export", row.ID)
 	}
 	return nil
+}
+
+func packetStatusFromInt(status int) string {
+	switch status {
+	case 1:
+		return "dns"
+	case 2:
+		return "dnf"
+	case 3:
+		return "dsq"
+	default:
+		return "registered"
+	}
 }
 
 func nullablePacketNumber(number sql.NullInt64) string {
@@ -730,6 +754,35 @@ func (s *Store) PublishPacketOperation(ctx context.Context, operation packetissu
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_feed_actions(action_id,event_id,event_sequence,kind,source_code,source_operation_id,outcome,outcome_code,changes_json,recorded_at) VALUES(?,?,?,'operation','pwa.packet_issuance',?,?,?,?,?)`, operation.OperationID, eventID, sequence, operation.OperationID, outcome, code, encoded, recordedAt); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE packet_issuance_feed_heads SET last_sequence=? WHERE event_id=?`, sequence, eventID)
+	return err
+}
+
+// PublishPacketServerChange exposes a Desk-owned registration edit to LAN
+// tablets. The caller owns the surrounding transaction and updates the member
+// plus packet projection before publishing this immutable action.
+func (s *Store) PublishPacketServerChange(ctx context.Context, eventID, actionID, sourceCode string, changes []packetissuance.Change, recordedAt int64) error {
+	if !validPacketLANUUID(actionID) || len(changes) < 1 || len(changes) > 20_000 ||
+		len(sourceCode) < 1 || len(sourceCode) > 64 {
+		return errors.New("invalid packet server change")
+	}
+	encoded, err := json.Marshal(withoutTimingEvidence(changes))
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_feed_heads(event_id,last_sequence)
+		VALUES(?,0) ON CONFLICT(event_id) DO NOTHING`, eventID); err != nil {
+		return err
+	}
+	var sequence int64
+	if err := s.db.QueryRowContext(ctx, `SELECT last_sequence+1 FROM packet_issuance_feed_heads WHERE event_id=?`, eventID).Scan(&sequence); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_feed_actions
+		(action_id,event_id,event_sequence,kind,source_code,source_operation_id,outcome,outcome_code,changes_json,recorded_at)
+		VALUES(?,?,?,'server_change',?,NULL,'applied',NULL,?,?)`, actionID, eventID, sequence, sourceCode, encoded, recordedAt); err != nil {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `UPDATE packet_issuance_feed_heads SET last_sequence=? WHERE event_id=?`, sequence, eventID)

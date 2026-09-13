@@ -259,6 +259,20 @@ occurrence evidence and is not duplicated in the LAN feed. Projection, both
 occurrence journals, resolution relation, LAN relay action and site cursor are
 one SQLite transaction.
 
+Ordinary Desk member edits now join that same active-scope boundary. A relevant
+profile/status/bib/EPC/race edit updates `members`, the legacy `local_changes`
+audit, the lossless packet projection and one `chrono_desk.local_edit`
+`server_change` in a single SQLite transaction; a feed failure rolls everything
+back. Timing-only fields do not create packet traffic. A local walk-in cannot be
+created after a site-backed issuance scope is installed because the legacy sync
+cannot safely replace its `local-*` identity with the server registration ID;
+the operator uses an existing reserve slot instead. Before scope installation,
+the existing walk-in workflow remains unchanged. A subsequent legacy event
+export may refresh timing/configuration, but registration fields advance only
+through the packet feed and the old local-wins replay is disabled for that active
+scope. This prevents an export lacking issued/reserve/causal-head data from
+silently replacing or resurrecting issuance state.
+
 The dedicated `internal/transport/packetlan` candidate exposes only packet
 issuance over TLS on `chrono-desk.local` (default port8443). It never mounts
 localhost controls or tokenless public results. One installation-owned CA is
