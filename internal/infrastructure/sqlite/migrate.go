@@ -10,6 +10,13 @@ import (
 // schema.sql only creates missing objects; structural changes to existing
 // tables live here.
 func migrate(db *sql.DB) error {
+	// Existing explicit bindings/revocations must never become automatic input
+	// merely because this version adds a default Feibot compatibility path.
+	if _, err := db.Exec(`INSERT OR IGNORE INTO edge_input_policy(event_id,explicit_only)
+		SELECT event_id,1 FROM edge_bindings
+		UNION SELECT entity_id,1 FROM local_changes WHERE entity='edge_binding'`); err != nil {
+		return err
+	}
 	if err := relaxResultsCheckpointNotNull(db); err != nil {
 		return err
 	}

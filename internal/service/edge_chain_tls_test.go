@@ -33,6 +33,7 @@ type edgeChainTLS struct {
 	replacementKey                  string
 	relayDir                        string
 	allowRelay                      bool
+	automaticFeibot                 bool
 }
 
 func (f *edgeChainTLS) copyServerBundle(t *testing.T, hub *edgeChainHub) {

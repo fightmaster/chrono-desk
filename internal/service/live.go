@@ -88,10 +88,9 @@ func NewLiveManager(logger *log.Logger) *LiveManager {
 	return &LiveManager{logger: logger, sessions: map[string]*liveSession{}, edgeSessions: map[string]*liveSession{}}
 }
 
-// Start launches the event's normal reader input on 0.0.0.0:port. Events with
-// explicit Edge source bindings use the shared Feibot/Edge adapter, so the
-// operator still has one start button and one address. Events without bindings
-// preserve the legacy Feibot-only listener.
+// Start launches ordinary trusted-LAN Feibot input. Numeric events accept both
+// native and canonical vendor-bound Edge, with no manual source configuration.
+// Generic/plate input and prior explicit restrictions remain separately scoped.
 func (m *LiveManager) Start(store *sqlite.Store, eventID, port string) error {
 	m.mu.Lock()
 	edgeSession := m.edgeSessions[eventID]
@@ -100,19 +99,15 @@ func (m *LiveManager) Start(store *sqlite.Store, eventID, port string) error {
 	// Preserve the advanced legacy layout where an explicit Edge-only input
 	// already occupies its own port and native Feibot is started beside it.
 	if edgeAlreadyRunning {
-		return m.startListener(store, eventID, port, false, false)
+		return m.startListener(store, eventID, port, false, false, false)
 	}
-	bindings, err := store.EdgeBindings(context.Background(), eventID)
-	if err != nil {
-		return err
+	if id, err := strconv.ParseInt(eventID, 10, 64); err == nil && id > 0 && strconv.FormatInt(id, 10) == eventID {
+		return m.startListener(store, eventID, port, true, true, true)
 	}
-	if len(bindings) > 0 {
-		return m.startListener(store, eventID, port, true, true)
-	}
-	return m.startListener(store, eventID, port, false, false)
+	return m.startListener(store, eventID, port, false, false, false)
 }
 
-func (m *LiveManager) startListener(store *sqlite.Store, eventID, port string, edgeMode, combined bool) error {
+func (m *LiveManager) startListener(store *sqlite.Store, eventID, port string, edgeMode, combined, automaticFeibot bool) error {
 	if port == "" {
 		port = "5084"
 		if edgeMode && !combined {
@@ -140,7 +135,7 @@ func (m *LiveManager) startListener(store *sqlite.Store, eventID, port string, e
 		if err != nil {
 			return err
 		}
-		if len(bindings) == 0 {
+		if len(bindings) == 0 && !automaticFeibot {
 			return fmt.Errorf("сначала задайте board и сессию sidecar для события")
 		}
 	}
@@ -180,7 +175,7 @@ func (m *LiveManager) startListener(store *sqlite.Store, eventID, port string, e
 		cfg.MaxConnections = 16
 		cfg.ReadTimeout = 30 * time.Second
 		cfg.WriteTimeout = 5 * time.Second
-		publisher = &edgePublisher{store: store, eventID: eventID, stats: session.stats, logger: m.logger, onError: session.recordError}
+		publisher = &edgePublisher{store: store, eventID: eventID, stats: session.stats, logger: m.logger, onError: session.recordError, automaticFeibot: automaticFeibot}
 		if combined {
 			cfg.Name = "chrono-desk-feibot-edge:" + eventID
 			cfg.Adapter = tcp.FeibotEdgeAdapter{}

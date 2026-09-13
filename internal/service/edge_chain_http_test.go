@@ -159,15 +159,18 @@ func TestEdgeChainCentralHTTPSourceAdministration(t *testing.T) {
 	})
 }
 
-func (c *edgeChainCentral) startHTTP(t *testing.T) {
+func (c *edgeChainCentral) startHTTP(t *testing.T, extraEnv ...string) {
 	t.Helper()
 	build := filepath.Join(os.Getenv("EDGE_RUN5_ROOT"), "public", "build")
 	if _, err := os.Stat(filepath.Join(build, "manifest.json")); err != nil {
 		t.Fatal("HTTP fixture requires the real RUN5 production frontend build")
 	}
 	c.hub.docker(t, "cp", build, c.phpID+":/fixture/public/build")
-	c.hub.docker(t, "exec", "-d", "--env", "SESSION_DRIVER=file", "--env", "SESSION_SECURE_COOKIE=false", c.phpID,
-		"/bin/sh", "-c", "exec php -S 127.0.0.1:8098 -t /fixture/public /fixture/public/index.php > /tmp/edge-http.log 2>&1")
+	args := []string{"exec", "-d", "--env", "SESSION_DRIVER=file", "--env", "SESSION_SECURE_COOKIE=false"}
+	for _, value := range extraEnv {
+		args = append(args, "--env", value)
+	}
+	c.hub.docker(t, append(args, c.phpID, "/bin/sh", "-c", "exec php -S 127.0.0.1:8098 -t /fixture/public /fixture/public/index.php > /tmp/edge-http.log 2>&1")...)
 	t.Cleanup(func() {
 		if t.Failed() {
 			out, _ := edgeChainDocker("exec", c.phpID, "tail", "-60", "/tmp/edge-http.log")

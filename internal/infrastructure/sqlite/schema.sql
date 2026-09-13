@@ -139,6 +139,13 @@ CREATE INDEX IF NOT EXISTS idx_observation_outbox_state_sequence
     ON observation_outbox(state, origin_sequence);
 
 -- Explicit local provisioning; never inferred from the event currently open.
+-- Absence means ordinary trusted-LAN Feibot input. Explicit configuration,
+-- including an empty revoked list, persists across restart and upgrades.
+CREATE TABLE IF NOT EXISTS edge_input_policy (
+    event_id TEXT PRIMARY KEY REFERENCES events(id),
+    explicit_only INTEGER NOT NULL CHECK (explicit_only IN (0, 1))
+);
+
 CREATE TABLE IF NOT EXISTS edge_bindings (
     event_id TEXT NOT NULL REFERENCES events(id),
     board TEXT NOT NULL,
