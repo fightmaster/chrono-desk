@@ -33,6 +33,17 @@ func (s *Store) EdgeBindings(ctx context.Context, eventID string) ([]domain.Edge
 	return bindings, rows.Err()
 }
 
+// AutomaticFeibotInput is the default only for events never explicitly
+// restricted. This is LAN input policy, not central device authorization.
+func (s *Store) AutomaticFeibotInput(ctx context.Context, eventID string) (bool, error) {
+	var explicit bool
+	err := s.db.QueryRowContext(ctx, `SELECT explicit_only FROM edge_input_policy WHERE event_id=?`, eventID).Scan(&explicit)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	return !explicit, err
+}
+
 // SetEdgeBindings journals local provisioning atomically. No site edit or
 // observation binding is inferred from these settings on later retransmission.
 func (s *Store) SetEdgeBindings(ctx context.Context, eventID string, bindings []domain.EdgeBinding) error {
@@ -57,6 +68,10 @@ func (s *Store) SetEdgeBindings(ctx context.Context, eventID string, bindings []
 		if err != nil {
 			return err
 		}
+		if _, err := tx.db.ExecContext(ctx, `INSERT INTO edge_input_policy(event_id,explicit_only) VALUES(?,1)
+			ON CONFLICT(event_id) DO UPDATE SET explicit_only=1`, eventID); err != nil {
+			return err
+		}
 		before, _ := json.Marshal(previous)
 		after, _ := json.Marshal(bindings)
 		if _, err := tx.db.ExecContext(ctx, `DELETE FROM edge_bindings WHERE event_id=?`, eventID); err != nil {
@@ -79,6 +94,16 @@ type EdgeAcceptance struct {
 // AcceptEdgeObservation must join the publisher's transaction so source facts,
 // relay journal and initial projection have one commit/ACK boundary.
 func (s *Store) AcceptEdgeObservation(ctx context.Context, eventID string, event ingest.Event) (EdgeAcceptance, error) {
+	return s.acceptEdgeObservation(ctx, eventID, event, false)
+}
+
+// AcceptFeibotOrEdgeObservation is used only by ordinary trusted-LAN input.
+// Explicit-only policy is rechecked inside the same transaction as raw/ACK.
+func (s *Store) AcceptFeibotOrEdgeObservation(ctx context.Context, eventID string, event ingest.Event) (EdgeAcceptance, error) {
+	return s.acceptEdgeObservation(ctx, eventID, event, true)
+}
+
+func (s *Store) acceptEdgeObservation(ctx context.Context, eventID string, event ingest.Event, automaticFeibot bool) (EdgeAcceptance, error) {
 	if s.tx == nil {
 		return EdgeAcceptance{}, errors.New("edge acceptance requires an event transaction")
 	}
@@ -90,7 +115,18 @@ func (s *Store) AcceptEdgeObservation(ctx context.Context, eventID string, event
 		return EdgeAcceptance{}, errors.New("edge observation belongs to another event")
 	}
 	var session string
-	if err := s.db.QueryRowContext(ctx, `SELECT source_session_id FROM edge_bindings WHERE event_id=? AND board=?`, eventID, event.Board).Scan(&session); err != nil {
+	err = s.db.QueryRowContext(ctx, `SELECT source_session_id FROM edge_bindings WHERE event_id=? AND board=?`, eventID, event.Board).Scan(&session)
+	if errors.Is(err, sql.ErrNoRows) && automaticFeibot && event.SourceSessionID == eventID &&
+		strings.HasPrefix(event.Board, "Feibot:") && edge.ValidToken(strings.TrimPrefix(event.Board, "Feibot:")) && event.IdentityProfile == edge.IdentityRFID {
+		allowed, policyErr := s.AutomaticFeibotInput(ctx, eventID)
+		if policyErr != nil {
+			return EdgeAcceptance{}, policyErr
+		}
+		if allowed {
+			session, err = eventID, nil
+		}
+	}
+	if err != nil {
 		return EdgeAcceptance{}, fmt.Errorf("edge board is not provisioned: %w", err)
 	}
 	if session != event.SourceSessionID {

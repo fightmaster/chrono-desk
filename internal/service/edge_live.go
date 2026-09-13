@@ -36,13 +36,13 @@ func edgeSessionStatus(s *liveSession) EdgeLiveStatus {
 }
 
 func (m *LiveManager) StartEdge(store *sqlite.Store, eventID, port string) error {
-	return m.startListener(store, eventID, port, true, false)
+	return m.startListener(store, eventID, port, true, false, false)
 }
 
 // StartCombined is opt-in: the native-only input remains unchanged unless the
 // operator authorizes Edge bindings and deliberately selects the shared input.
 func (m *LiveManager) StartCombined(store *sqlite.Store, eventID, port string) error {
-	return m.startListener(store, eventID, port, true, true)
+	return m.startListener(store, eventID, port, true, true, false)
 }
 
 func (m *LiveManager) StopEdge(eventID string) {
@@ -93,11 +93,12 @@ func (p combinedPublisher) Publish(ctx context.Context, event ingest.Event) erro
 }
 
 type edgePublisher struct {
-	store   *sqlite.Store
-	eventID string
-	stats   *LiveStats
-	logger  *log.Logger
-	onError func(error)
+	store           *sqlite.Store
+	eventID         string
+	stats           *LiveStats
+	logger          *log.Logger
+	onError         func(error)
+	automaticFeibot bool
 }
 
 func (p *edgePublisher) Publish(ctx context.Context, event ingest.Event) error {
@@ -106,7 +107,11 @@ func (p *edgePublisher) Publish(ctx context.Context, event ingest.Event) error {
 	var accepted sqlite.EdgeAcceptance
 	err := p.store.WithinTx(ctx, func(tx *sqlite.Store) error {
 		var err error
-		accepted, err = tx.AcceptEdgeObservation(ctx, p.eventID, event)
+		accept := tx.AcceptEdgeObservation
+		if p.automaticFeibot {
+			accept = tx.AcceptFeibotOrEdgeObservation
+		}
+		accepted, err = accept(ctx, p.eventID, event)
 		if err != nil {
 			return err
 		}

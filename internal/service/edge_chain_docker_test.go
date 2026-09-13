@@ -84,6 +84,10 @@ func newEdgeChainHubTopology(t *testing.T, eventID int64, board, session, networ
 		// Another admitted board demonstrates that a signed device key cannot
 		// impersonate every tuple on a shared listener.
 		topology[0]["edge_bindings"] = []map[string]any{{"board": board, "event_id": eventID, "source_session_id": session}, {"board": "Feibot:other-synthetic", "event_id": eventID, "source_session_id": session}}
+		if fixture.automaticFeibot {
+			delete(topology[0], "edge_bindings")
+			topology[0]["automatic_feibot"] = true
+		}
 	}
 	if mixed {
 		topology = append(topology,
@@ -101,6 +105,7 @@ func newEdgeChainHubTopology(t *testing.T, eventID int64, board, session, networ
 		"--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/data:rw,noexec,nosuid,size=32m",
 		"--workdir", "/data",
 		"--env", "REDIS_ADDR=127.0.0.1:6379", "--env", "REDIS_STREAM=synthetic-edge-chain", "--env", "TCP_LISTENERS_JSON="+string(listeners),
+		"--env", "FEIBOT_ADMISSION_URL=http://127.0.0.1:8098/api/internal/rfid/feibot/admit", "--env", "PWA_AUTH_INTERNAL_KEY=synthetic-hub-only-key",
 		"--entrypoint", "/bin/sh", image, "-c", startup)
 	t.Cleanup(func() {
 		if t.Failed() {

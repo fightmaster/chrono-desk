@@ -48,8 +48,10 @@ Internet device administration is outside this work. The combined input below
 preserves ordinary vendor heartbeat monitoring; it adds no Edge heartbeat wire.
 
 The existing native Feibot port remains **5084**. The ordinary **Запустить приём**
-action selects the shared Feibot/Edge adapter on that same port whenever Edge
-sources are configured; without such sources it preserves the native-only input.
+action selects the shared Feibot/Edge adapter on that same port for a canonical
+numeric event, without a manual source binding. Non-numeric/local legacy event
+IDs keep native input. The opened event authorizes this trusted-LAN input;
+canonical Feibot Edge must still match that exact event and vendor session.
 The separate Edge listener on **5085** remains an API-compatible advanced path;
 neither listener starts merely because an event is opened.
 Edge limits are 16 connections, 10,240 bytes per message, 30-second read and
@@ -71,24 +73,18 @@ per-process bearer token. No new account, role or SSO system is introduced.
 
 ## Operator workflow
 
-1. Import the intended RUN5/Chrono event. Its ID must be a canonical positive
-   decimal ID. Explicit board/session authorization admits raw input even before
-   logical checkpoints are configured.
-2. Open **LIVE → RFID Edge / plate — источники**.
-3. Use **Добавить Feibot** and enter the exact `Feibot:<DeviceCode>` board, then
-   save. The authenticated provisioning service resolves an omitted Feibot
-   session to the explicitly selected canonical numeric event ID, matching the
-   Feibot CSV profile. No sidecar screen or copied session text is required.
-   Generic/plate boards still require an explicit capture session; an explicit
-   historical session is never overwritten. At most64 boards can be provisioned,
-   one accepted session per board. Inbound packets cannot self-enrol.
-4. Save sources, then use the ordinary **Запустить приём** button and the same
-   address already entered in Feibot. RFID Edge automatically follows that vendor
-   host and port; there is no second Desk endpoint, port, session or Edge-start
-   control in the normal UI. Separate Edge-only reception remains an advanced API
-   alternative. Confirm counters and
+1. Import/open the intended RUN5/Chrono event, matching the ID selected in Feibot.
+2. Press the ordinary **Запустить приём** button on the native Feibot port.
+   There is no **Добавить Feibot** step, copied session, Edge token, extra port
+   or source-settings visit. Edge automatically follows the vendor Desk IP/port.
+   RAW is accepted without checkpoints; another event/session is rejected.
+3. Confirm counters and
    the actual local result; an edge ACK is not a central RUN5 result receipt.
-5. Stop edge input before changing a binding. Stop closes active connections and
+4. Only for generic/plate, historical sessions or explicit source restriction,
+   open **Расширенные настройки**. Saving that list enables explicit-only policy,
+   including an empty list that denies all Edge. At most64 boards, one accepted
+   session per board; it is not an installation step for ordinary Feibot.
+   Stop edge input before changing a binding. Stop closes active connections and
    joins their handlers/publisher before returning. It does not stop the native
    Feibot input. **Остановить все входы** stops both profiles for this event.
 
@@ -118,6 +114,14 @@ The per-event SQLite database gains two additive tables:
 - `edge_bindings`: explicit locally audited board/session provisioning;
 - `edge_observation_outbox`: the original normalized source envelope plus local
   relay sequence/state, created only for a newly accepted local edge observation.
+
+The automatic-input correction adds `edge_input_policy` locally. Migration
+preserves explicit restrictions from existing bindings and their local audit,
+including an already emptied/revoked list. A fresh event defaults to automatic
+canonical Feibot input; an existing explicit board/session entry still takes
+precedence. The API reports `automatic_feibot`, and the advanced UI explains a
+retained restriction rather than silently widening access. This trusted-LAN
+policy is not mTLS device authentication and must not be exposed publicly.
 
 The raw row, full edge envelope and initial shared-engine projection commit in
 one transaction before the shared core can send its scoped ACK. A raw, journal

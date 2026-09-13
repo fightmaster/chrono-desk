@@ -4,8 +4,8 @@ export function edgeSmokeFixture() {
   let running = false
   let combined = false
   let port = ''
-  let bindings = [{board: 'Feibot:U659', source_session_id: '100'}]
-  const calls = {save: 0, start: 0, stop: 0, relay: 0}
+  let bindings = []
+  const calls = {save: 0, start: 0, stop: 0, relay: 0, startWithoutBindings: 0}
   let relay = {endpoint: '', enabled: false, revision: 0}
   const status = () => ({running: false, port: '', any_running: running, ips: ['127.0.0.1'], readers: [], edge: {running, port, combined, received: 0, inserted: 0, duplicates: 0, errors: 0}})
   return {
@@ -27,7 +27,7 @@ export function edgeSmokeFixture() {
           bindings = bindings.map(b => b.board.startsWith('Feibot:') && !b.source_session_id ? {...b, source_session_id: '100'} : b)
           calls.save++
         }
-        value = {bindings, relay_pending: 0}
+        value = {bindings, relay_pending: 0, automatic_feibot: calls.save === 0}
       }
       if (path.endsWith('/edge/relay')) {
         if (request.method === 'PUT') {
@@ -54,7 +54,8 @@ export function edgeSmokeFixture() {
         let body = ''
         for await (const chunk of request) body += chunk
         port = JSON.parse(body).port
-        combined = bindings.length > 0
+        combined = true
+        if (!bindings.length && !calls.save) calls.startWithoutBindings++
         running = true; calls.start++; value = status()
       }
       if (path.endsWith('/live/stop')) { running = false; calls.stop++; value = status() }
@@ -63,7 +64,7 @@ export function edgeSmokeFixture() {
       return true
     },
     verify(html) {
-      if (!html.includes('data-edge-smoke="passed"') || calls.save !== 2 || calls.start !== 1 || calls.stop !== 1 || calls.relay !== 2 || relay.enabled || relay.endpoint !== 'tls://hub.test:44004' || relay.tls_bundle !== '/synthetic/desk-only' || bindings[0]?.board !== 'Feibot:U659A' || bindings[0]?.source_session_id !== '100' || bindings[1]?.board !== 'Feibot:U660' || bindings[1]?.source_session_id !== '100' || combined !== true || port !== '5084') {
+      if (!html.includes('data-edge-smoke="passed"') || calls.save !== 2 || calls.start !== 1 || calls.startWithoutBindings !== 1 || calls.stop !== 1 || calls.relay !== 2 || relay.enabled || relay.endpoint !== 'tls://hub.test:44004' || relay.tls_bundle !== '/synthetic/desk-only' || bindings[0]?.board !== 'Feibot:U659A' || bindings[0]?.source_session_id !== '100' || bindings[1]?.board !== 'Feibot:U660' || bindings[1]?.source_session_id !== '100' || combined !== true || port !== '5084') {
         throw new Error(`Edge UI did not complete save/start/stop: ${JSON.stringify(calls)}\n${html.slice(-4000)}`)
       }
     }
@@ -87,24 +88,25 @@ window.addEventListener('DOMContentLoaded', async () => {
   try {
     (await wait(() => document.querySelector('button.event'))).click();
     (await wait(() => document.querySelector('button.live'))).click();
+    (await wait(() => button('Запустить приём') && !button('Запустить приём').disabled && button('Запустить приём'))).click();
+    await wait(() => button('Остановить все входы') && !button('Остановить все входы').disabled);
     (await wait(() => document.querySelector('details.edge summary'))).click();
+    if (!document.querySelector('details.edge fieldset').disabled) throw new Error('Active bindings remained editable');
+    button('Остановить все входы').click();
+    await wait(() => button('Запустить приём') && !button('Запустить приём').disabled && !document.querySelector('details.edge fieldset').disabled);
+    edgeButton('Добавить прибор').click();
     const input = await wait(() => document.querySelector('details.edge .binding input'));
     input.value = 'Feibot:U659A'; input.dispatchEvent(new Event('input', {bubbles:true}));
     edgeButton('Сохранить источники').click();
     await Promise.resolve();
     await wait(() => !edgeButton('Сохранить источники').matches(':disabled'));
-    edgeButton('Добавить Feibot').click();
+    edgeButton('Добавить прибор').click();
     const added = await wait(() => document.querySelectorAll('details.edge .binding')[1]);
     const board = added.querySelector('input');
     board.value = 'Feibot:U660'; board.dispatchEvent(new Event('input', {bubbles:true}));
     await wait(() => added.textContent.includes('Сессия Feibot: событие 100'));
     edgeButton('Сохранить источники').click();
     await wait(() => !edgeButton('Сохранить источники').matches(':disabled'));
-    button('Запустить приём').click();
-    await wait(() => button('Остановить все входы') && !button('Остановить все входы').disabled);
-    if (!document.querySelector('details.edge fieldset').disabled) throw new Error('Active bindings remained editable');
-    button('Остановить все входы').click();
-    await wait(() => button('Запустить приём') && !button('Запустить приём').disabled);
     const relaySection = await wait(() => document.querySelector('section[aria-label="Досылка sidecar в Hub"]'));
     const relayAddress = await wait(() => {
       const element = relaySection.querySelector('input[type="text"], input.input');

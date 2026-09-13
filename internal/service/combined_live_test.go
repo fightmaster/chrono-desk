@@ -124,7 +124,7 @@ func TestCombinedListenerKeepsSourceAdmissionAndOutboxesSeparate(t *testing.T) {
 	}
 }
 
-func TestDefaultLiveStartSelectsCombinedInputOnlyForConfiguredEdgeSources(t *testing.T) {
+func TestDefaultLiveStartKeepsExplicitRestrictionsWithCombinedInput(t *testing.T) {
 	store, source := edgeLiveFixture(t)
 	manager := NewLiveManager(log.New(io.Discard, "", 0))
 	defer manager.StopAll()
@@ -148,8 +148,83 @@ func TestDefaultLiveStartSelectsCombinedInputOnlyForConfiguredEdgeSources(t *tes
 		t.Fatal(err)
 	}
 	status = manager.Status("100")
-	if !status.AnyRunning || !status.Running || status.Edge.Running {
-		t.Fatalf("default start stopped preserving native compatibility without bindings: %+v", status)
+	if !status.AnyRunning || status.Running || !status.Edge.Running || !status.Edge.Combined {
+		t.Fatalf("default start lost combined input after explicit revoke: %+v", status)
+	}
+}
+
+func TestOrdinaryFeibotInputNeedsNoBindingAndKeepsEventAndRevocationFences(t *testing.T) {
+	store, source := edgeLiveFixture(t)
+	if _, err := store.DB().Exec(`DELETE FROM edge_bindings; DELETE FROM edge_input_policy; DELETE FROM local_changes; DELETE FROM checkpoints`); err != nil {
+		t.Fatal(err)
+	}
+	source.SourceSessionID = "100"
+	manager := NewLiveManager(log.New(io.Discard, "", 0))
+	defer manager.StopAll()
+	port := edgeTestPort(t)
+	if err := manager.Start(store, "100", port); err != nil {
+		t.Fatal(err)
+	}
+	roundTrip := func(event ingest.Event, accepted bool) {
+		t.Helper()
+		payload, err := edge.Encode(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn := edgeDial(t, port)
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(time.Second))
+		if _, err := conn.Write(append(payload, '\n')); err != nil {
+			t.Fatal(err)
+		}
+		if !accepted {
+			_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		}
+		ack, err := bufio.NewReader(conn).ReadString('\n')
+		if accepted && (err != nil || ack != string(edge.ACK(event))) {
+			t.Fatalf("ACK %q err=%v", ack, err)
+		}
+		if !accepted && (err == nil || ack != "") {
+			t.Fatalf("unauthorized ACK %q err=%v", ack, err)
+		}
+	}
+	for ant := 1; ant <= 5; ant++ {
+		reading := source
+		reading.Ant, reading.OriginSequence = ant, uint64(ant)
+		reading.ID = ingest.RFIDReadID(reading.Board, reading.EPC, reading.Time, reading.Ant)
+		roundTrip(reading, true)
+		roundTrip(reading, true)
+	}
+	for _, change := range []func(*ingest.Event){
+		func(e *ingest.Event) { e.ExternalEventID = 200; e.SourceSessionID = "200" },
+		func(e *ingest.Event) { e.SourceSessionID = "another" },
+		func(e *ingest.Event) { e.Board = "plate-unknown" },
+		func(e *ingest.Event) { e.Board = "feibot:U659" },
+	} {
+		wrong := source
+		change(&wrong)
+		wrong.ID = ingest.RFIDReadID(wrong.Board, wrong.EPC, wrong.Time, wrong.Ant)
+		roundTrip(wrong, false)
+	}
+	manager.Stop("100")
+	if err := manager.Start(store, "100", port); err != nil {
+		t.Fatal(err)
+	}
+	roundTrip(source, true)
+	manager.Stop("100")
+	if err := manager.ConfigureEdge(t.Context(), store, "100", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Start(store, "100", port); err != nil {
+		t.Fatal(err)
+	}
+	roundTrip(source, false)
+	var raw, journal, bindings, results int
+	if err := store.DB().QueryRow(`SELECT (SELECT COUNT(*) FROM rfid_logs),(SELECT COUNT(*) FROM edge_observation_outbox),(SELECT COUNT(*) FROM edge_bindings),(SELECT COUNT(*) FROM results)`).Scan(&raw, &journal, &bindings, &results); err != nil {
+		t.Fatal(err)
+	}
+	if raw != 5 || journal != 5 || bindings != 0 || results != 0 {
+		t.Fatalf("raw=%d journal=%d bindings=%d results=%d", raw, journal, bindings, results)
 	}
 }
 

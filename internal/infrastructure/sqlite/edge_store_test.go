@@ -234,3 +234,48 @@ func TestEdgeAdditiveTablesAndRestartPreserveRawAndPendingWire(t *testing.T) {
 		t.Fatalf("migration/restart changed old row: %+v %v", stored, err)
 	}
 }
+
+func TestAutomaticFeibotMigrationPreservesExplicitAndRevokedHistory(t *testing.T) {
+	for _, state := range []string{"fresh", "explicit", "revoked"} {
+		t.Run(state, func(t *testing.T) {
+			s, _ := edgeStoreFixture(t)
+			if state == "revoked" {
+				if err := s.SetEdgeBindings(t.Context(), "100", nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if state == "fresh" {
+				if _, err := s.DB().Exec(`DELETE FROM edge_bindings; DELETE FROM local_changes WHERE entity='edge_binding'`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.DB().Exec(`DROP TABLE edge_input_policy`); err != nil {
+				t.Fatal(err)
+			}
+			for n := 0; n < 2; n++ {
+				migrated, err := New(s.DB())
+				if err != nil {
+					t.Fatal(err)
+				}
+				allowed, err := migrated.AutomaticFeibotInput(t.Context(), "100")
+				if err != nil || allowed != (state == "fresh") {
+					t.Fatalf("migration %s: allowed=%v error=%v", state, allowed, err)
+				}
+			}
+		})
+	}
+}
+
+func TestFailedExplicitRestrictionDoesNotDisableAutomaticFeibot(t *testing.T) {
+	s, _ := edgeStoreFixture(t)
+	if _, err := s.DB().Exec(`DELETE FROM edge_bindings; DELETE FROM edge_input_policy; DELETE FROM local_changes WHERE entity='edge_binding';
+		CREATE TRIGGER reject_policy_audit BEFORE INSERT ON local_changes WHEN NEW.entity='edge_binding' BEGIN SELECT RAISE(ABORT,'fixture audit failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetEdgeBindings(t.Context(), "100", nil); err == nil {
+		t.Fatal("failed audit accepted restriction")
+	}
+	if allowed, err := s.AutomaticFeibotInput(t.Context(), "100"); err != nil || !allowed {
+		t.Fatal("failed transaction changed automatic policy")
+	}
+}

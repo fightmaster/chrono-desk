@@ -185,7 +185,7 @@ func newEdgeChainCentral(t *testing.T, hub *edgeChainHub, board, session string,
 	hub.docker(t, "cp", filepath.Join(root, "vendor"), c.phpID+":/fixture/vendor")
 	hub.docker(t, "cp", filepath.Join(root, "tests/Support/edge-chain.php"), c.phpID+":/fixture/tests/Support/edge-chain.php")
 	setupAction := "setup"
-	if len(setupActions) == 1 && setupActions[0] == "setup-raw" {
+	if len(setupActions) == 1 && (setupActions[0] == "setup-raw" || setupActions[0] == "setup-auto") {
 		setupAction = setupActions[0]
 	} else if len(setupActions) != 0 {
 		t.Fatal("unknown central fixture setup")

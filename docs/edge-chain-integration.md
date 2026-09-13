@@ -3,6 +3,16 @@
 Task: CHR-SIDE-002
 Docs-Impact: CROSS_PROJECT
 
+`TestAutomaticFeibotVendorDeskAndCentralRawWithoutBindings` exercises the actual
+Edge executable's vendor-file discovery and mTLS sender, ordinary Desk Start
+without any source configuration, actual Hub automatic-admission HTTP client,
+RUN5 owner-scoped grant and existing Redis/sync/MySQL RAW path. It seeds no board,
+source grant or checkpoint. Five independent antenna/port facts reach Desk while
+the site's API is offline; bringing up the protected synthetic API drains Hub's
+queue without a new read. It verifies one automatic audit, preserved source
+metadata, no derived results, and source restart following a vendor Desk-port
+change. It uses the same isolated prerequisites below, not a physical Feibot.
+
 ## Website management integration
 
 `TestEdgeManagementActualHTTPSMySQLAndSidecar` uses the `edgeintegration` and

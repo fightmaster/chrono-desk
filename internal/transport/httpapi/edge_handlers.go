@@ -27,7 +27,12 @@ func (s *Server) handleEdgeConfig(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"bindings": bindings, "relay_pending": pending})
+	automatic, err := store.AutomaticFeibotInput(r.Context(), eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"bindings": bindings, "relay_pending": pending, "automatic_feibot": automatic})
 }
 
 func (s *Server) handleEdgeConfigure(w http.ResponseWriter, r *http.Request) {
