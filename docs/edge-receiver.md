@@ -1,7 +1,7 @@
 # Owned edge observation receiver
 
-Task: CHR-SIDE-002  
-Docs-Impact: CROSS_PROJECT  
+Task: CHR-SIDE-002
+Docs-Impact: CROSS_PROJECT
 Status: local unpublished implementation; receiver acceptance is not end-to-end release acceptance
 
 ## Scope
