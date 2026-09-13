@@ -6,11 +6,14 @@ an event exported from the run5 site, ingests RFID logs from files and live
 Feibot TCP, recalculates results offline, shows live standings and
 top-3, and exports printable protocols to Excel.
 
-The unpublished 0.5.1/build175 candidate (CHR-SIDE-002) adds the owned edge-v1 receiver,
-source-preserving relay and local controls. Its native bundle version matches
-`VERSION`; it is not a moved or reissued 0.5.0 release. Native Feibot input and existing
-site schema versions stay supported. See [edge receiver](docs/edge-receiver.md)
-for the required core publication and receiver-first rollout boundaries.
+The unpublished 0.6.0/build189 candidate combines the 0.5.1 ordinary
+Feibot/RFID Edge receiver baseline with the packet-issuance LAN receiver,
+site journal and pending-safe snapshot recovery (CHR-SIDE-002, CHR-SW-009).
+Its native bundle version matches `VERSION`; it does not move or reissue an
+existing tag. Native Feibot input and existing site schema versions stay
+supported. See [0.6.0 release notes](docs/releases/0.6.0.md),
+[edge receiver](docs/edge-receiver.md) and the packet-tablet section below for
+the receiver-first rollout and remaining physical gates.
 
 The site stays the source of truth. Synchronization is bidirectional: the desktop pulls
 the current event export and pushes local edits/manual finishes plus only the raw
