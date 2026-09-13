@@ -71,7 +71,7 @@ github.com/wailsapp/mimetype v1.4.1 h1:pQN9ycO7uo4vsUUuPeHEYoUkLVkaRntMnHJxVwYhw
 github.com/wailsapp/mimetype v1.4.1/go.mod h1:9aV5k31bBOv5z6u+QP8TltzvNGJPmNJD4XlAL3U+j3o=
 github.com/wailsapp/wails/v2 v2.11.0 h1:seLacV8pqupq32IjS4Y7V8ucab0WZwtK6VvUVxSBtqQ=
 github.com/wailsapp/wails/v2 v2.11.0/go.mod h1:jrf0ZaM6+GBc1wRmXsM8cIvzlg0karYin3erahI4+0k=
-gitlab.com/fightmaster1/rfid-core v0.4.2 h1:1C87VYzchSDNY4j0yefOpDpJLw4p/OOPt+zlRsAuc0A=
+gitlab.com/fightmaster1/rfid-core v0.4.2 h1:jrUM3epxlT1+O8zhE5GIs/Fhz1ZAv3ic30R4/s6mlq4=
 gitlab.com/fightmaster1/rfid-core v0.4.2/go.mod h1:gdqqSnDz8jV6fIkg7CYJsdQ7ej5Z1xyasTqDplL0qGQ=
 gitlab.com/fightmaster1/timing-core v0.8.0 h1:jVJO90LQ1sZvArdn7p8SYzXtiPPguTwXEYUsDKDSMBc=
 gitlab.com/fightmaster1/timing-core v0.8.0/go.mod h1:n2oVRF1zRI7/kp8GWad9bRlo/FPi0UGwtqv6rOfubmQ=
