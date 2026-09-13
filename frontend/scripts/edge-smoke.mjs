@@ -7,7 +7,7 @@ export function edgeSmokeFixture() {
   let bindings = []
   const calls = {save: 0, start: 0, stop: 0, relay: 0, startWithoutBindings: 0}
   let relay = {endpoint: '', enabled: false, revision: 0}
-  const status = () => ({running: false, port: '', any_running: running, ips: ['127.0.0.1'], readers: [], edge: {running, port, combined, received: 0, inserted: 0, duplicates: 0, errors: 0}})
+  const status = () => ({running: false, port: '', any_running: running, ips: ['127.0.0.1'], readers: [], edge: {running, port, combined, received: 0, inserted: 0, duplicates: 0, errors: 0, last_error: running ? 'Проверочная ошибка привязки события' : ''}})
   return {
     async handle(request, response, path) {
       if (!path.startsWith('/api/')) return false
@@ -53,7 +53,9 @@ export function edgeSmokeFixture() {
       if (path.endsWith('/live/start')) {
         let body = ''
         for await (const chunk of request) body += chunk
-        port = JSON.parse(body).port
+        const requested = JSON.parse(body)
+        if (Object.keys(requested).join(',') !== 'port') throw new Error('Ordinary Start supplied Edge provisioning')
+        port = requested.port
         combined = true
         if (!bindings.length && !calls.save) calls.startWithoutBindings++
         running = true; calls.start++; value = status()
@@ -88,19 +90,30 @@ window.addEventListener('DOMContentLoaded', async () => {
   try {
     (await wait(() => document.querySelector('button.event'))).click();
     (await wait(() => document.querySelector('button.live'))).click();
+    const advanced = await wait(() => document.querySelector('details.edge'));
+    if (advanced.open || button('Добавить Feibot')) throw new Error('Ordinary Feibot requires an Edge setup visit');
+    const guidance = await wait(() => document.querySelector('.edge-status'));
+    if (guidance.closest('details') || !guidance.textContent.includes('копировать сессию')) throw new Error('Ordinary workflow guidance hidden');
+    // Closed details can retain layout boxes in Chromium; test actual paint
+    // visibility, not getClientRects(), for its content-visibility boundary.
+    if ([...advanced.querySelectorAll('input, button')].some(element => element.checkVisibility())) throw new Error('Advanced source inputs visible before Start');
     (await wait(() => button('Запустить приём') && !button('Запустить приём').disabled && button('Запустить приём'))).click();
     await wait(() => button('Остановить все входы') && !button('Остановить все входы').disabled);
+    const inputError = await wait(() => guidance.querySelector('[role="alert"]'));
+    if (inputError.closest('details') || !inputError.checkVisibility() || advanced.open) throw new Error('Live admission error hidden in advanced controls');
     (await wait(() => document.querySelector('details.edge summary'))).click();
     if (!document.querySelector('details.edge fieldset').disabled) throw new Error('Active bindings remained editable');
     button('Остановить все входы').click();
     await wait(() => button('Запустить приём') && !button('Запустить приём').disabled && !document.querySelector('details.edge fieldset').disabled);
-    edgeButton('Добавить прибор').click();
+    edgeButton('Добавить явный источник').click();
     const input = await wait(() => document.querySelector('details.edge .binding input'));
     input.value = 'Feibot:U659A'; input.dispatchEvent(new Event('input', {bubbles:true}));
     edgeButton('Сохранить источники').click();
     await Promise.resolve();
     await wait(() => !edgeButton('Сохранить источники').matches(':disabled'));
-    edgeButton('Добавить прибор').click();
+    const restriction = await wait(() => guidance.querySelector('[role="status"]'));
+    if (restriction.closest('details')) throw new Error('Explicit-only policy warning hidden');
+    edgeButton('Добавить явный источник').click();
     const added = await wait(() => document.querySelectorAll('details.edge .binding')[1]);
     const board = added.querySelector('input');
     board.value = 'Feibot:U660'; board.dispatchEvent(new Event('input', {bubbles:true}));

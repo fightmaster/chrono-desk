@@ -34,13 +34,16 @@
   }
 </script>
 
+<section class="edge-status" aria-label="Приём Feibot и RFID Edge">
+  <p>Feibot и RFID Edge принимаются обычной кнопкой «Запустить приём» на штатном порту. Выберите в Feibot то же событие, что открыто в Desk, и укажите штатный адрес Desk. Добавлять прибор, копировать сессию или сохранять Edge-настройки не нужно.</p>
+  {#if loaded && !automaticFeibot}<p class="error" role="status">Для этого события ранее задан явный список источников. Он сохранён, включая запрет удалённых источников; автоматический приём новых Feibot ограничен этим списком. Изменение ограничений доступно только в расширенных настройках ниже.</p>{/if}
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if status.last_error}<p class="error" role="alert">Последняя ошибка приёма: {status.last_error}</p>{/if}
+</section>
 <details class="edge">
   <summary>Расширенные настройки: plate, исторические источники и резервная досылка</summary>
   <p>Обычный Feibot с RFID Edge не нужно добавлять здесь: кнопка «Запустить приём» принимает оба формата на штатном порту. ID события и адрес Desk задаются только в Feibot; отметки другого события не принимаются. Чекпоинт для сохранения сырых отметок не требуется.</p>
-  {#if !automaticFeibot}<p class="error" role="status">Для этого события ранее задан явный список источников. Он сохранён, включая запрет удалённых источников; автоматический приём новых Feibot ограничен этим списком.</p>{/if}
   <p>Сохранение списка ниже включает явное ограничение Edge-источников, в том числе Feibot. Это экспертная настройка для plate, исторических сессий и отзыва доступа, а не шаг подключения обычного Feibot.</p>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#if status.last_error}<p class="error">Последняя ошибка приёма: {status.last_error}</p>{/if}
   <fieldset disabled={busy || status.running || !loaded}>
     {#each bindings as binding, i}
       <div class="binding">
@@ -53,7 +56,7 @@
         <button class="btn" on:click={() => bindings = bindings.filter((_, index) => index !== i)}>Убрать</button>
       </div>
     {/each}
-    <button class="btn" disabled={bindings.length >= 64} on:click={() => bindings = [...bindings, {board: '', source_session_id: ''}]}>Добавить прибор</button>
+    <button class="btn" disabled={bindings.length >= 64} on:click={() => bindings = [...bindings, {board: '', source_session_id: ''}]}>Добавить явный источник</button>
     <button class="btn" on:click={save}>Сохранить источники</button>
   </fieldset>
   {#if bindingsDirty}<p role="status">Сохраните источники, затем запустите общий приём обычной кнопкой сверху.</p>{/if}

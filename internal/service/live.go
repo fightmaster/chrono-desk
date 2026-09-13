@@ -21,8 +21,9 @@ import (
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
 )
 
-// Native Feibot and owned edge transports use separate opt-in listeners on the
-// venue LAN. Both reuse core framing; source provenance differs by protocol.
+// Ordinary Feibot input combines native and vendor-bound Edge on the venue LAN.
+// Explicit generic/plate input can retain a separate advanced listener. Both
+// reuse core framing; source provenance differs by protocol.
 
 // LiveStats are monotonic counters for the status panel.
 type LiveStats struct {
