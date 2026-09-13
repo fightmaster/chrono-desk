@@ -110,6 +110,10 @@ offline data remain on that tablet after revoke.
 Only the packet bootstrap/operations/feed contract is reachable on this listener.
 The public results server and localhost control API remain separate. The
 installation CA and hashed grants live outside portable `.chrono` event files.
+Changes pulled from chrono.events are relayed into the same local tablet feed.
+This includes administrator conflict decisions: Desk consumes their trusted
+schema-v2 operation, closes the referenced review durably and never uploads the
+received decision back to the site. Ordinary tablet uploads remain schema v1.
 Do not publish this candidate until Android and iPhone have both passed local
 certificate, `chrono-desk.local`, offline/reconnect and resource acceptance.
 

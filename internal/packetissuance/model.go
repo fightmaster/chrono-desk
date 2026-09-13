@@ -40,6 +40,8 @@ type Command struct {
 	IssuePacket    *bool
 	TargetID       string
 	OperationID    string
+	Inputs         []string
+	Keep           []string
 	raw            json.RawMessage
 }
 

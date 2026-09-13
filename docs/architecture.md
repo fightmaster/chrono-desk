@@ -220,8 +220,8 @@ searchable protocol), auto-refreshing; the Призёры tab copies a Telegram-
 winners list for SMM. Operator toggles it per event from the settings screen; the port is
 open only while on.
 
-Packet issuance (CHR-SW-009 local candidate, not released): the independent
-`internal/packetissuance` domain validates the shared operation-v1 envelope and
+Packet issuance (CHR-SW-009/CHR-SW-010 local candidate, not released): the independent
+`internal/packetissuance` domain validates the shared ordinary operation-v1 envelope and
 canonical hash without HTTP or SQLite dependencies. The event database stores a
 lossless registration projection, immutable operation outcomes and an ordered
 issuance feed in tables separate from both legacy `local_changes` and timing
@@ -243,6 +243,21 @@ feed; a manual site push performs the same serialized pull after delivering the
 local operation outbox. Network bootstrap-v2 stores the roster and the receiver's
 committed feed cursor from one SQLite transaction, so a newly connected tablet
 does not replay history already present in its snapshot.
+
+The trusted incoming feed additionally accepts the frozen schema-v2
+`resolve_conflict` operation; tablet uploads and the Desk outbound journal remain
+schema v1 only. Desk verifies that the referenced conflict occurrence is already
+present, applies the complete convergence transition with the existing three-way
+merge, stores a unique immutable resolution-to-input relation, and closes that
+input without rewriting it. A conflicting third local branch remains a review.
+Received site operations are marked acknowledged and never enter the site
+outbox. Site-only actions, including resolutions and ordinary server changes,
+are copied into the Desk-local ordered feed with their original action identity
+and a new local sequence, so LAN-only tablets can converge through Desk. A site
+echo of an operation already published locally is retained as separate site
+occurrence evidence and is not duplicated in the LAN feed. Projection, both
+occurrence journals, resolution relation, LAN relay action and site cursor are
+one SQLite transaction.
 
 The dedicated `internal/transport/packetlan` candidate exposes only packet
 issuance over TLS on `chrono-desk.local` (default port8443). It never mounts

@@ -286,6 +286,17 @@ CREATE TABLE IF NOT EXISTS packet_issuance_site_feed_actions (
 CREATE INDEX IF NOT EXISTS idx_packet_site_feed_event
     ON packet_issuance_site_feed_actions(event_id, recorded_at, action_id);
 
+CREATE TABLE IF NOT EXISTS packet_issuance_resolutions (
+    resolution_operation_id TEXT PRIMARY KEY REFERENCES packet_issuance_operations(operation_id),
+    event_id                TEXT NOT NULL REFERENCES events(id),
+    input_operation_id      TEXT NOT NULL UNIQUE REFERENCES packet_issuance_operations(operation_id),
+    keep_input              INTEGER NOT NULL,
+    reason                  TEXT NOT NULL,
+    recorded_at             INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_packet_issuance_resolutions_event
+    ON packet_issuance_resolutions(event_id, recorded_at, resolution_operation_id);
+
 -- «Зафиксировать время»: wall-clock finishes the judge captured before a
 -- participant number is known. They persist here so a restart doesn't lose
 -- them (the bug: they used to live only in frontend state). Binding a number

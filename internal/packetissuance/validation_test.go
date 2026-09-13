@@ -38,6 +38,41 @@ func TestCanonicalOperationFixture(t *testing.T) {
 	}
 }
 
+func TestCanonicalResolutionFixtureIsTrustedFeedOnly(t *testing.T) {
+	data, err := os.ReadFile("testdata/packet-issuance-resolution-operation-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fmt.Sprintf("%x", sha256.Sum256(data)), "257e9103ca7f6caca148c35b81064a49cb1cbd03bb534747cdc1cb16c42ca54e"; got != want {
+		t.Fatalf("canonical resolution fixture checksum=%s want=%s", got, want)
+	}
+	var fixture struct {
+		ResolutionOperation json.RawMessage `json:"resolutionOperation"`
+		ExpectedContentHash string          `json:"expectedContentHash"`
+		InputOperationID    string          `json:"inputOperationId"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	operation, err := ParseTrustedOperation(fixture.ResolutionOperation)
+	if err != nil {
+		t.Fatalf("parse trusted resolution: %v", err)
+	}
+	if operation.SchemaVersion != 2 || operation.Command.Type != "resolve_conflict" ||
+		len(operation.Command.Inputs) != 1 || operation.Command.Inputs[0] != fixture.InputOperationID ||
+		ContentHash(operation) != fixture.ExpectedContentHash {
+		t.Fatalf("resolution=%+v hash=%s", operation, ContentHash(operation))
+	}
+	if _, err := ParseOperation(fixture.ResolutionOperation); err == nil {
+		t.Fatal("resolution crossed the ordinary operation boundary")
+	}
+	payload := append([]byte(`{"schemaVersion":1,"operations":[`), fixture.ResolutionOperation...)
+	payload = append(payload, []byte(`]}`)...)
+	if _, err := ParseBatch(payload); err == nil {
+		t.Fatal("resolution crossed the tablet upload boundary")
+	}
+}
+
 func TestOperationBoundaryRejectsUnsafeShapes(t *testing.T) {
 	data, err := os.ReadFile("testdata/packet-issuance-operations-v1.json")
 	if err != nil {

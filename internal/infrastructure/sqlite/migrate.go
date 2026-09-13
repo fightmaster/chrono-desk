@@ -37,7 +37,23 @@ func migrate(db *sql.DB) error {
 	if err := addPacketIssuanceSiteDelivery(db); err != nil {
 		return err
 	}
+	if err := addPacketIssuanceResolutions(db); err != nil {
+		return err
+	}
 	return nil
+}
+
+func addPacketIssuanceResolutions(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS packet_issuance_resolutions (
+		resolution_operation_id TEXT PRIMARY KEY REFERENCES packet_issuance_operations(operation_id),
+		event_id TEXT NOT NULL REFERENCES events(id),
+		input_operation_id TEXT NOT NULL UNIQUE REFERENCES packet_issuance_operations(operation_id),
+		keep_input INTEGER NOT NULL,reason TEXT NOT NULL,recorded_at INTEGER NOT NULL)`); err != nil {
+		return fmt.Errorf("create packet issuance resolutions: %w", err)
+	}
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_packet_issuance_resolutions_event
+		ON packet_issuance_resolutions(event_id,recorded_at,resolution_operation_id)`)
+	return err
 }
 
 func addPacketIssuanceSiteDelivery(db *sql.DB) error {

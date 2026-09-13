@@ -46,7 +46,7 @@ func ParseBatch(data []byte) ([]Operation, error) {
 		if err != nil {
 			return nil, errors.New("invalid_operation")
 		}
-		operation, err := parseOperation(item, canonical)
+		operation, err := parseOperation(item, canonical, false)
 		if err != nil {
 			return nil, err
 		}
@@ -58,15 +58,26 @@ func ParseBatch(data []byte) ([]Operation, error) {
 // ParseOperation validates one stored/feed operation using the same strict
 // boundary as an uploaded batch.
 func ParseOperation(data []byte) (Operation, error) {
-	var payload bytes.Buffer
-	payload.WriteString(`{"schemaVersion":1,"operations":[`)
-	payload.Write(data)
-	payload.WriteString(`]}`)
-	operations, err := ParseBatch(payload.Bytes())
+	return parseOperationJSON(data, false)
+}
+
+// ParseTrustedOperation accepts operation variants that may only arrive from
+// an authenticated feed. In particular, schema 2 conflict resolutions are not
+// valid tablet uploads and must never pass ParseOperation or ParseBatch.
+func ParseTrustedOperation(data []byte) (Operation, error) {
+	return parseOperationJSON(data, true)
+}
+
+func parseOperationJSON(data []byte, allowResolution bool) (Operation, error) {
+	value, err := decodeValue(data)
 	if err != nil {
-		return Operation{}, err
+		return Operation{}, errors.New("invalid_operation")
 	}
-	return operations[0], nil
+	canonical, err := canonicalJSON(value)
+	if err != nil {
+		return Operation{}, errors.New("invalid_operation")
+	}
+	return parseOperation(value, canonical, allowResolution)
 }
 
 func ParseBootstrap(data []byte) (Bootstrap, error) {
@@ -223,12 +234,15 @@ func parseFeedAction(value any, scopeID, eventID string, expectedSequence int64)
 		if err != nil {
 			return FeedAction{}, errors.New("invalid")
 		}
-		operation, err := ParseOperation(rawOperation)
+		operation, err := ParseTrustedOperation(rawOperation)
 		if err != nil || operation.OperationID != action.ActionID || operation.ScopeID != scopeID ||
 			(action.Outcome == "applied") != (len(action.Changes) > 0) {
 			return FeedAction{}, errors.New("invalid")
 		}
 		action.Operation = &operation
+		if operation.SchemaVersion == 2 && (action.Outcome != "applied" || !resolutionFeedChangesMatch(operation.Changes, action.Changes)) {
+			return FeedAction{}, errors.New("invalid")
+		}
 	} else if action.Kind != "server_change" || obj["operation"] != nil || action.Outcome != "applied" || len(action.Changes) == 0 {
 		return FeedAction{}, errors.New("invalid")
 	}
@@ -238,6 +252,24 @@ func parseFeedAction(value any, scopeID, eventID string, expectedSequence int64)
 	}
 	action.canonical = canonical
 	return action, nil
+}
+
+func resolutionFeedChangesMatch(operation []Change, feed []FeedChange) bool {
+	if len(operation) != len(feed) {
+		return false
+	}
+	for index, expected := range operation {
+		actual := feed[index]
+		if actual.Before == nil || actual.After == nil || actual.RegistrationID != expected.RegistrationID {
+			return false
+		}
+		before, after := expected.Before, expected.After
+		before.HasTimingEvidence, after.HasTimingEvidence = false, false
+		if !reflect.DeepEqual(before, *actual.Before) || !reflect.DeepEqual(after, *actual.After) {
+			return false
+		}
+	}
+	return true
 }
 
 func parseFeedChange(value any, eventID string) (FeedChange, error) {
@@ -315,7 +347,7 @@ func ContentHash(operation Operation) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func parseOperation(value any, canonical []byte) (Operation, error) {
+func parseOperation(value any, canonical []byte, allowResolution bool) (Operation, error) {
 	obj, ok := value.(map[string]any)
 	required := []string{"schemaVersion", "operationId", "scopeId", "baselineId", "originInstanceId", "originSequence", "createdAtMs", "claimedActor", "command", "bases", "changes"}
 	if !ok || !(exactKeys(obj, required...) || exactKeys(obj, append(required, "note")...)) {
@@ -330,13 +362,13 @@ func parseOperation(value any, canonical []byte) (Operation, error) {
 		OriginInstanceID: stringValue(obj["originInstanceId"]), OriginSequence: sequence,
 		CreatedAtMs: created, ClaimedActor: stringValue(obj["claimedActor"]), Note: note, canonical: canonical,
 	}
-	if operation.SchemaVersion != 1 || !uuidPattern.MatchString(operation.OperationID) ||
+	if (operation.SchemaVersion != 1 && !(allowResolution && operation.SchemaVersion == 2)) || !uuidPattern.MatchString(operation.OperationID) ||
 		!identifierPattern.MatchString(operation.ScopeID) || !identifierPattern.MatchString(operation.BaselineID) ||
 		!uuidPattern.MatchString(operation.OriginInstanceID) || !seqOK || !createdOK ||
 		!validText(operation.ClaimedActor, 160) || !noteOK {
 		return Operation{}, errors.New("invalid_operation")
 	}
-	command, err := parseCommand(obj["command"])
+	command, err := parseCommand(obj["command"], allowResolution && operation.SchemaVersion == 2)
 	if err != nil {
 		return Operation{}, err
 	}
@@ -378,7 +410,16 @@ func parseOperation(value any, canonical []byte) (Operation, error) {
 			return Operation{}, errors.New("invalid_operation_changes")
 		}
 	}
-	if command.Type == "correct_move" {
+	if operation.SchemaVersion == 2 {
+		if command.Type != "resolve_conflict" || command.Inputs[0] == operation.OperationID || len(operation.Bases) != len(operation.Changes) {
+			return Operation{}, errors.New("invalid_operation_changes")
+		}
+		for _, base := range operation.Bases {
+			if len(base.Heads) != 1 || base.Heads[0] != command.Inputs[0] {
+				return Operation{}, errors.New("invalid_operation_changes")
+			}
+		}
+	} else if command.Type == "correct_move" {
 		if len(changes) != 2 {
 			return Operation{}, errors.New("invalid_operation_changes")
 		}
@@ -394,7 +435,7 @@ func parseOperation(value any, canonical []byte) (Operation, error) {
 	return operation, nil
 }
 
-func parseCommand(value any) (Command, error) {
+func parseCommand(value any, allowResolution bool) (Command, error) {
 	obj, ok := value.(map[string]any)
 	if !ok {
 		return Command{}, errors.New("invalid_operation_command")
@@ -499,6 +540,28 @@ func parseCommand(value any) (Command, error) {
 		command.Reason = stringValue(obj["reason"])
 		if !uuidPattern.MatchString(command.OperationID) || !validReason(command.Reason) {
 			return Command{}, errors.New("invalid_operation_command")
+		}
+	case "resolve_conflict":
+		if !allowResolution || !exactKeys(obj, "type", "inputs", "keep", "reason") {
+			return Command{}, errors.New("invalid_operation_command")
+		}
+		inputs, inputsOK := obj["inputs"].([]any)
+		keep, keepOK := obj["keep"].([]any)
+		command.Reason = stringValue(obj["reason"])
+		if !inputsOK || !keepOK || len(inputs) != 1 || len(keep) > 1 || !validReason(command.Reason) {
+			return Command{}, errors.New("invalid_operation_command")
+		}
+		input, ok := inputs[0].(string)
+		if !ok || !uuidPattern.MatchString(input) {
+			return Command{}, errors.New("invalid_operation_command")
+		}
+		command.Inputs = []string{input}
+		if len(keep) == 1 {
+			kept, ok := keep[0].(string)
+			if !ok || kept != input {
+				return Command{}, errors.New("invalid_operation_command")
+			}
+			command.Keep = []string{kept}
 		}
 	default:
 		return Command{}, errors.New("invalid_operation_command")

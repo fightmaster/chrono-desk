@@ -56,8 +56,17 @@ func ApplyPacketFeedPage(ctx context.Context, store *sqlite.Store, eventID strin
 					return errors.New("packet_feed_action_identity_conflict")
 				}
 			}
+			recordedAt, err := time.Parse("2006-01-02T15:04:05.000Z", action.RecordedAt)
+			if err != nil {
+				return errors.New("invalid_feed_response")
+			}
 			application, code := "observed", action.Code
-			if action.Outcome == "conflict" {
+			if action.Operation != nil && action.Operation.SchemaVersion == 2 {
+				application, code, err = applyPacketResolution(ctx, txStore, eventID, action, recordedAt.UnixMilli())
+				if err != nil {
+					return err
+				}
+			} else if action.Outcome == "conflict" {
 				application = "review"
 			} else if action.Outcome == "applied" {
 				application, code, err = applyPacketFeedChanges(ctx, txStore, eventID, action)
@@ -65,9 +74,12 @@ func ApplyPacketFeedPage(ctx context.Context, store *sqlite.Store, eventID strin
 					return err
 				}
 			}
-			recordedAt, err := time.Parse("2006-01-02T15:04:05.000Z", action.RecordedAt)
-			if err != nil {
-				return errors.New("invalid_feed_response")
+			if action.Operation != nil && action.Operation.SchemaVersion != 2 {
+				if err := txStore.SaveReceivedPacketOperation(ctx, *action.Operation, eventID,
+					packetLocalOperationOutcome(application, action.Outcome), code, action.Outcome, action.Code,
+					recordedAt.UnixMilli()); err != nil {
+					return err
+				}
 			}
 			if err := txStore.SavePacketSiteFeedAction(ctx, sqlite.PacketSiteFeedRecord{
 				ActionID: action.ActionID, EventID: eventID, SiteSequence: action.Sequence,
@@ -76,12 +88,115 @@ func ApplyPacketFeedPage(ctx context.Context, store *sqlite.Store, eventID strin
 			}); err != nil {
 				return err
 			}
+			if err := txStore.RelayPacketSiteAction(ctx, eventID, action, recordedAt.UnixMilli()); err != nil {
+				return err
+			}
 			applications = append(applications, PacketFeedApplication{ActionID: action.ActionID,
 				Application: application, Code: code})
 		}
 		return txStore.AdvancePacketSiteCursor(ctx, eventID, page.Cursor.After, page.Cursor.Next)
 	})
 	return applications, err
+}
+
+func packetLocalOperationOutcome(application, siteOutcome string) string {
+	if application == "applied" {
+		return "applied"
+	}
+	if application == "observed" && siteOutcome == "equivalent" {
+		return "equivalent"
+	}
+	return "conflict"
+}
+
+func applyPacketResolution(ctx context.Context, store *sqlite.Store, eventID string, action packetissuance.FeedAction, recordedAt int64) (string, *string, error) {
+	operation := action.Operation
+	if operation == nil || operation.SchemaVersion != 2 || len(operation.Command.Inputs) != 1 {
+		return "", nil, errors.New("invalid_feed_response")
+	}
+	inputID := operation.Command.Inputs[0]
+	input, found, err := store.FindPacketOperation(ctx, inputID)
+	if err != nil {
+		return "", nil, err
+	}
+	if !found || input.EventID != eventID || input.ScopeID != operation.ScopeID || input.BaselineID != operation.BaselineID {
+		return "", nil, errors.New("packet_resolution_input_missing")
+	}
+	inputOccurrence, found, err := store.FindPacketSiteFeedAction(ctx, inputID)
+	if err != nil {
+		return "", nil, err
+	} else if !found || !packetConflictOccurrence(inputOccurrence, inputID) {
+		return "", nil, errors.New("packet_resolution_input_missing")
+	}
+	existing, resolved, err := store.FindPacketResolutionByInput(ctx, inputID)
+	if err != nil {
+		return "", nil, err
+	}
+	if resolved {
+		if existing.ResolutionOperationID == operation.OperationID {
+			return "observed", nil, nil
+		}
+		return "", nil, errors.New("packet_resolution_already_decided")
+	}
+	application, code, err := applyPacketResolutionChanges(ctx, store, eventID, action, inputID)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := store.SaveReceivedPacketOperation(ctx, *operation, eventID,
+		packetLocalOperationOutcome(application, action.Outcome), code, action.Outcome, action.Code, recordedAt); err != nil {
+		return "", nil, err
+	}
+	if err := store.SavePacketResolution(ctx, sqlite.PacketResolutionRecord{
+		ResolutionOperationID: operation.OperationID, EventID: eventID, InputOperationID: inputID,
+		KeepInput: len(operation.Command.Keep) == 1, Reason: operation.Command.Reason, RecordedAt: recordedAt,
+	}); err != nil {
+		return "", nil, err
+	}
+	return application, code, nil
+}
+
+func packetConflictOccurrence(record sqlite.PacketSiteFeedRecord, inputID string) bool {
+	var action struct {
+		ActionID  string `json:"actionId"`
+		Kind      string `json:"kind"`
+		Outcome   string `json:"outcome"`
+		Operation *struct {
+			OperationID string `json:"operationId"`
+		} `json:"operation"`
+	}
+	return json.Unmarshal(record.ActionJSON, &action) == nil && action.ActionID == inputID &&
+		action.Kind == "operation" && action.Outcome == "conflict" && action.Operation != nil &&
+		action.Operation.OperationID == inputID
+}
+
+func applyPacketResolutionChanges(ctx context.Context, store *sqlite.Store, eventID string, action packetissuance.FeedAction, inputID string) (string, *string, error) {
+	plans := make([]packetFeedPlan, 0, len(action.Changes))
+	for _, change := range action.Changes {
+		current, err := store.FindPacketRegistration(ctx, eventID, change.RegistrationID)
+		if err != nil {
+			return "", nil, err
+		}
+		merged, conflict := mergePacketFeedChange(current, change)
+		if conflict != "" {
+			return "review", &conflict, nil
+		}
+		heads := make([]string, 0, len(current.Heads)+1)
+		for _, head := range current.Heads {
+			if head != inputID {
+				heads = append(heads, head)
+			}
+		}
+		heads = uniquePacketHeads(append(heads, action.ActionID))
+		if len(heads) > 64 {
+			code := "feed_head_limit"
+			return "review", &code, nil
+		}
+		plans = append(plans, packetFeedPlan{change: change, before: current, after: merged, heads: heads})
+	}
+	if err := applyPacketFeedPlans(ctx, store, eventID, plans); err != nil {
+		return "", nil, err
+	}
+	return "applied", nil, nil
 }
 
 type packetFeedPlan struct {
@@ -111,20 +226,27 @@ func applyPacketFeedChanges(ctx context.Context, store *sqlite.Store, eventID st
 		}
 		plans = append(plans, packetFeedPlan{change: change, before: current, after: merged, heads: heads})
 	}
+	if err := applyPacketFeedPlans(ctx, store, eventID, plans); err != nil {
+		return "", nil, err
+	}
+	return "applied", nil, nil
+}
+
+func applyPacketFeedPlans(ctx context.Context, store *sqlite.Store, eventID string, plans []packetFeedPlan) error {
 	for _, plan := range plans {
 		if plan.after == nil {
 			if !plan.before.Found || plan.before.Deleted {
 				continue
 			}
 			if err := store.DeletePacketRegistration(ctx, eventID, plan.change.RegistrationID, plan.heads); err != nil {
-				return "", nil, err
+				return err
 			}
 			continue
 		}
 		member := packetMember(*plan.after)
 		categoryID, err := resolveCategoryIDForMember(ctx, store, member)
 		if err != nil {
-			return "", nil, fmt.Errorf("resolve packet category %s: %w", plan.change.RegistrationID, err)
+			return fmt.Errorf("resolve packet category %s: %w", plan.change.RegistrationID, err)
 		}
 		if !plan.before.Found {
 			err = store.InsertPacketRegistration(ctx, *plan.after, plan.heads, categoryID)
@@ -132,10 +254,10 @@ func applyPacketFeedChanges(ctx context.Context, store *sqlite.Store, eventID st
 			err = store.PutPacketRegistration(ctx, *plan.after, plan.heads, categoryID)
 		}
 		if err != nil {
-			return "", nil, err
+			return err
 		}
 	}
-	return "applied", nil, nil
+	return nil
 }
 
 func mergePacketFeedChange(current sqlite.PacketRegistrationRecord, change packetissuance.FeedChange) (*packetissuance.Registration, string) {

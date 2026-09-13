@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,6 +54,15 @@ type PacketOperationRecord struct {
 	Outcome          string
 	OutcomeCode      *string
 	RecordedAt       int64
+}
+
+type PacketResolutionRecord struct {
+	ResolutionOperationID string
+	EventID               string
+	InputOperationID      string
+	KeepInput             bool
+	Reason                string
+	RecordedAt            int64
 }
 
 type PacketFeedRow struct {
@@ -594,6 +604,108 @@ func (s *Store) SavePacketOperation(ctx context.Context, operation packetissuanc
 	return err
 }
 
+// SaveReceivedPacketOperation stores an authenticated feed operation without
+// making it eligible for the outbound site journal.
+func (s *Store) SaveReceivedPacketOperation(ctx context.Context, operation packetissuance.Operation, eventID,
+	localOutcome string, localCode *string, siteOutcome string, siteCode *string, recordedAt int64) error {
+	existing, found, err := s.FindPacketOperation(ctx, operation.OperationID)
+	if err != nil {
+		return err
+	}
+	hash := packetissuance.ContentHash(operation)
+	if found {
+		if existing.EventID != eventID || existing.ScopeID != operation.ScopeID || existing.ContentHash != hash ||
+			!reflect.DeepEqual(existing.OperationJSON, operation.CanonicalJSON()) {
+			return errors.New("packet_feed_action_identity_conflict")
+		}
+		_, err = s.db.ExecContext(ctx, `UPDATE packet_issuance_operations SET site_acknowledged=1,
+			site_outcome=?,site_outcome_code=? WHERE operation_id=?`, siteOutcome, siteCode, operation.OperationID)
+		return err
+	}
+	owner, occupied, err := s.FindPacketOriginSequence(ctx, operation.OriginInstanceID, operation.OriginSequence)
+	if err != nil {
+		return err
+	}
+	if occupied && owner.OperationID != operation.OperationID {
+		return errors.New("packet_feed_action_identity_conflict")
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO packet_issuance_operations
+		(operation_id,event_id,scope_id,baseline_id,origin_instance_id,origin_sequence,content_hash,
+		 operation_json,outcome,outcome_code,recorded_at,site_acknowledged,site_outcome,site_outcome_code)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?,?)`, operation.OperationID, eventID, operation.ScopeID,
+		operation.BaselineID, operation.OriginInstanceID, operation.OriginSequence, hash,
+		operation.CanonicalJSON(), localOutcome, localCode, recordedAt, siteOutcome, siteCode)
+	return err
+}
+
+func (s *Store) FindPacketResolutionByInput(ctx context.Context, inputOperationID string) (PacketResolutionRecord, bool, error) {
+	var row PacketResolutionRecord
+	err := s.db.QueryRowContext(ctx, `SELECT resolution_operation_id,event_id,input_operation_id,
+		keep_input,reason,recorded_at FROM packet_issuance_resolutions WHERE input_operation_id=?`, inputOperationID).
+		Scan(&row.ResolutionOperationID, &row.EventID, &row.InputOperationID, &row.KeepInput, &row.Reason, &row.RecordedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PacketResolutionRecord{}, false, nil
+	}
+	if err != nil {
+		return PacketResolutionRecord{}, false, err
+	}
+	return row, true, nil
+}
+
+func (s *Store) SavePacketResolution(ctx context.Context, row PacketResolutionRecord) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_resolutions
+		(resolution_operation_id,event_id,input_operation_id,keep_input,reason,recorded_at)
+		VALUES(?,?,?,?,?,?)`, row.ResolutionOperationID, row.EventID, row.InputOperationID,
+		row.KeepInput, row.Reason, row.RecordedAt)
+	if err != nil {
+		return fmt.Errorf("save packet resolution: %w", err)
+	}
+	return nil
+}
+
+// RelayPacketSiteAction exposes a site-only action to LAN tablets using the
+// Desk-local cursor. An operation already published locally is merely the
+// site's occurrence of the same immutable action and is not duplicated.
+func (s *Store) RelayPacketSiteAction(ctx context.Context, eventID string, action packetissuance.FeedAction, recordedAt int64) error {
+	var kind string
+	var sourceOperation sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT kind,source_operation_id FROM packet_issuance_feed_actions WHERE action_id=?`, action.ActionID).
+		Scan(&kind, &sourceOperation)
+	if err == nil {
+		if action.Kind == "operation" && kind == "operation" && sourceOperation.Valid && sourceOperation.String == action.ActionID {
+			return nil
+		}
+		return errors.New("packet_feed_action_identity_conflict")
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	changes, err := json.Marshal(withoutFeedTimingEvidence(action.Changes))
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_feed_heads(event_id,last_sequence)
+		VALUES(?,0) ON CONFLICT(event_id) DO NOTHING`, eventID); err != nil {
+		return err
+	}
+	var sequence int64
+	if err := s.db.QueryRowContext(ctx, `SELECT last_sequence+1 FROM packet_issuance_feed_heads WHERE event_id=?`, eventID).Scan(&sequence); err != nil {
+		return err
+	}
+	var sourceOperationID any
+	if action.Operation != nil {
+		sourceOperationID = action.ActionID
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_feed_actions
+		(action_id,event_id,event_sequence,kind,source_code,source_operation_id,outcome,outcome_code,changes_json,recorded_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?)`, action.ActionID, eventID, sequence, action.Kind, action.SourceCode,
+		sourceOperationID, action.Outcome, action.Code, changes, recordedAt); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE packet_issuance_feed_heads SET last_sequence=? WHERE event_id=?`, sequence, eventID)
+	return err
+}
+
 func (s *Store) PublishPacketOperation(ctx context.Context, operation packetissuance.Operation, outcome string, code *string, changes []packetissuance.Change, recordedAt int64) error {
 	if outcome == "waiting_dependency" || outcome == "rejected" {
 		return nil
@@ -642,6 +754,12 @@ type packetFeedChange struct {
 	After          packetFeedRegistration `json:"after"`
 }
 
+type packetRelayedFeedChange struct {
+	RegistrationID string                  `json:"registrationId"`
+	Before         *packetFeedRegistration `json:"before"`
+	After          *packetFeedRegistration `json:"after"`
+}
+
 func withoutTimingEvidence(changes []packetissuance.Change) []packetFeedChange {
 	out := make([]packetFeedChange, 0, len(changes))
 	for _, c := range changes {
@@ -649,6 +767,23 @@ func withoutTimingEvidence(changes []packetissuance.Change) []packetFeedChange {
 			return packetFeedRegistration{r.ID, r.EventID, r.RaceID, r.Bib, r.EPC, r.Person, r.Reserve, r.Issued, r.Status, r.TransferredTo}
 		}
 		out = append(out, packetFeedChange{c.RegistrationID, convert(c.Before), convert(c.After)})
+	}
+	return out
+}
+
+func withoutFeedTimingEvidence(changes []packetissuance.FeedChange) []packetRelayedFeedChange {
+	convert := func(row *packetissuance.Registration) *packetFeedRegistration {
+		if row == nil {
+			return nil
+		}
+		value := packetFeedRegistration{row.ID, row.EventID, row.RaceID, row.Bib, row.EPC, row.Person,
+			row.Reserve, row.Issued, row.Status, row.TransferredTo}
+		return &value
+	}
+	out := make([]packetRelayedFeedChange, 0, len(changes))
+	for _, change := range changes {
+		out = append(out, packetRelayedFeedChange{RegistrationID: change.RegistrationID,
+			Before: convert(change.Before), After: convert(change.After)})
 	}
 	return out
 }
