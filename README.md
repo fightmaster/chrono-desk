@@ -4,9 +4,9 @@ Offline-first desktop companion for the run5 race-timing platform. When there is
 internet at a competition site, chrono-desk acts as a local "server analogue": it imports
 an event exported from the run5 site, ingests RFID logs from files and live
 Feibot TCP, recalculates results offline, shows live standings and
-top-3, and exports printable protocols to Excel.
+top-3, and exports printable CSV protocols for spreadsheet applications.
 
-The unpublished 0.5.1/build175 candidate (CHR-SIDE-002) adds the owned edge-v1 receiver,
+The unpublished 0.5.1 release candidate (CHR-SIDE-002) adds the owned edge-v1 receiver,
 source-preserving relay and local controls. Its native bundle version matches
 `VERSION`; it is not a moved or reissued 0.5.0 release. Native Feibot input and existing
 site schema versions stay supported. See [edge receiver](docs/edge-receiver.md)
@@ -136,7 +136,7 @@ unchanged. `/api/version` and the version tooltip identify the reader module;
 diagnostics expose `reader_transport_version: 1`.
 
 `timing-core` is pinned to `v0.8.0` and canonical GitLab `rfid-core` to
-`v0.4.1`; release builds never use mutable sibling replacements. The core pin
+`v0.4.2`; release builds never use mutable sibling replacements. The core pin
 now names a published tag, verified through Go's direct download and checksum,
 not a sibling checkout. The patch includes the existing core CI cache fix;
 reader/edge contracts remain unchanged. See
