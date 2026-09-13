@@ -78,8 +78,10 @@ per-process bearer token. No new account, role or SSO system is introduced.
    There is no **Добавить Feibot** step, copied session, Edge token, extra port
    or source-settings visit. Edge automatically follows the vendor Desk IP/port.
    RAW is accepted without checkpoints; another event/session is rejected.
-3. Confirm counters and
-   the actual local result; an edge ACK is not a central RUN5 result receipt.
+3. Confirm counters and the persisted RAW observation; a checkpoint or calculated
+   result is not required. An Edge ACK is not a central RUN5 result receipt.
+   Ordinary guidance, admission errors and retained explicit-only restriction
+   warnings remain visible even with advanced controls closed.
 4. Only for generic/plate, historical sessions or explicit source restriction,
    open **Расширенные настройки**. Saving that list enables explicit-only policy,
    including an empty list that denies all Edge. At most64 boards, one accepted
@@ -226,7 +228,7 @@ localhost bearer token.
 
 | Method/path | Behavior |
 | --- | --- |
-| `GET /config` | Explicit bindings and count of unacknowledged relay rows |
+| `GET /config` | Explicit bindings, `automatic_feibot` policy and count of unacknowledged relay rows |
 | `PUT /config` | Audited replacement: `{"bindings":[{"board":"plate-test","source_session_id":"session-one"}]}`; stopped input only |
 | `POST /start` | Advanced separate input: optional `{"port":"5085"}`; numeric event, nonempty bindings and unoccupied port required |
 | `POST /stop` | Stop/join edge only; leave the event's site pull running if native ingest remains active |
@@ -237,8 +239,11 @@ localhost bearer token.
 `GET /api/events/{id}/live/status` retains native fields and adds `edge` and
 `any_running`. The header uses the combined state; the edge input adds no extra
 frontend polling loop. Configuration, export and counter refresh are explicit.
-The ordinary `/api/events/{id}/live/start` selects the combined adapter when the
-event has Edge bindings, so the desktop UI has one start and one stop action.
+The ordinary `/api/events/{id}/live/start` selects the combined adapter for a
+canonical numeric event even with no Edge bindings, so the desktop UI has one
+start and one stop action. Its request needs only the existing native port;
+Board/session/provisioning fields are not prerequisites. Generic explicit
+restrictions and persisted revocations remain enforced at RAW admission.
 `GET /api/version` advertises `edge_observation_version: 1` separately from the
 unchanged event-export, native reader and v3 synchronization versions.
 
@@ -251,10 +256,11 @@ backlog delivery after a sidecar process restart. The Hub connection uses a
 transparent Docker byte tunnel, not synthetic ACKs. This is not central MySQL/
 RUN5 feed, field, UI-rendering or throughput acceptance.
 
-Use pinned Go 1.24.13 for Desk. The manifest now pins published core v0.4.1,
+Use pinned Go 1.24.13 for Desk. Historical published releases pinned core v0.4.1,
 exact source `4cdf7dd1fc689d854bf3bf498bcc7298022e8afe`, with module checksum
 `h1:S+wdjZvUiK23ZMINngxXleRYLqNNmCK7ESh1hV6En3o=`. Go's direct module download
 verified the published GitLab tag through existing SSH authentication.
+The current local candidate pin is recorded at the top of this document.
 Standalone checks use `GOWORK=off`, without a sibling replacement.
 Application CI and deployment still need verification.
 Verify the final artifact's `go version -m`, not just development
