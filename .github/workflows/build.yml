@@ -57,7 +57,7 @@ jobs:
       # the root package; the generated Wails bindings are tracked so this is
       # reproducible from a clean checkout without starting Wails.
       - name: Frontend quality gate
-        run: npm ci && npm run build
+        run: npm ci && npm audit --audit-level=high && npm run build
         working-directory: chrono-desk/frontend
 
       - name: Frontend runtime smoke

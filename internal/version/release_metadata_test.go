@@ -76,6 +76,7 @@ func TestReleaseMetadataIsVersionedChecksummedAndSigned(t *testing.T) {
 		"TIMING_MODULES_READ_TOKEN",
 		"bash scripts/ci/configure-private-timing-modules.sh",
 		"bash scripts/ci/configure-private-timing-modules.test.sh",
+		"npm audit --audit-level=high",
 		"npm run smoke",
 	} {
 		if !strings.Contains(workflow, required) {

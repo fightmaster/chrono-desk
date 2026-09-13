@@ -6,7 +6,7 @@ an event exported from the run5 site, ingests RFID logs from files and live
 Feibot TCP, recalculates results offline, shows live standings and
 top-3, and exports printable protocols to Excel.
 
-The unpublished 0.6.0/build189 candidate combines the 0.5.1 ordinary
+The unpublished 0.6.0/build190 candidate combines the 0.5.1 ordinary
 Feibot/RFID Edge receiver baseline with the packet-issuance LAN receiver,
 site journal and pending-safe snapshot recovery (CHR-SIDE-002, CHR-SW-009).
 Its native bundle version matches `VERSION`; it does not move or reissue an
