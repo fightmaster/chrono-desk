@@ -341,11 +341,12 @@ resolution remain release gates; the localhost bearer is never sent to a tablet.
   security window), so `govulncheck` permanently reports stdlib vulnerabilities fixed
   only in 1.25+. Accepted for an offline desktop app whose HTTP API binds to
   localhost/LAN; do NOT "fix" by bumping Go. Re-evaluate when the Mac constraint goes.
-- The 2026-08-21 audit also reports Excelize and `x/net` findings whose patched
-  releases require Go 1.25. They remain explicit in `make audit`; they are not
-  represented as a green security gate. Chrono Desk creates XLSX files but does
-  not parse uploaded workbooks, and its control API remains localhost-only. This
-  is mitigation, not remediation; upgrading the competition Mac and Go closes it.
+- The 2026-08-21 audit still reports `x/net` findings whose patched releases
+  require Go 1.25. They remain explicit in `make audit`; they are not represented
+  as a green security gate. The former Excelize dependency was removed by
+  replacing protocol XLSX generation with standard-library CSV generation. The
+  control API remains localhost/LAN-only. Upgrading the competition Mac and Go
+  is still required to close the remaining toolchain and network findings.
 - The authenticated site/packet client rejects redirects and explicitly disables
   HTTP/2, so event and relay credentials stay on the configured endpoint and the
   Go 1.24 compatibility build does not enter its known HTTP/2 client paths. All

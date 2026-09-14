@@ -4,9 +4,9 @@ Offline-first desktop companion for the run5 race-timing platform. When there is
 internet at a competition site, chrono-desk acts as a local "server analogue": it imports
 an event exported from the run5 site, ingests RFID logs from files and live
 Feibot TCP, recalculates results offline, shows live standings and
-top-3, and exports printable protocols to Excel.
+top-3, and exports printable CSV protocols for spreadsheet applications.
 
-The unpublished 0.6.0/build190 candidate combines the 0.5.1 ordinary
+The unpublished 0.6.0/build190 candidate combines the released 0.5.1 ordinary
 Feibot/RFID Edge receiver baseline with the packet-issuance LAN receiver,
 site journal and pending-safe snapshot recovery (CHR-SIDE-002, CHR-SW-009).
 Its native bundle version matches `VERSION`; it does not move or reissue an
@@ -45,7 +45,7 @@ ingest uses the shared `rfid-core` module.
 - Go 1.24 (pinned: newer Go drops macOS 11, the competition MacBook's OS), Wails v2,
   Svelte + Vite frontend (same pattern as RaceTorchApp)
 - SQLite via `modernc.org/sqlite` (pure Go, no CGO) — one event = one portable `.db` file
-- Excel export via `excelize`
+- protocol export as UTF-8 CSV for Excel, Numbers and LibreOffice
 - UI talks to the Go core through an embedded localhost HTTP API (not Wails bindings),
   so the same API can later be opened to the local network and run headless
 
@@ -175,7 +175,7 @@ unchanged. `/api/version` and the version tooltip identify the reader module;
 diagnostics expose `reader_transport_version: 1`.
 
 `timing-core` is pinned to `v0.8.0` and canonical GitLab `rfid-core` to
-`v0.4.1`; release builds never use mutable sibling replacements. The core pin
+`v0.4.2`; release builds never use mutable sibling replacements. The core pin
 now names a published tag, verified through Go's direct download and checksum,
 not a sibling checkout. The patch includes the existing core CI cache fix;
 reader/edge contracts remain unchanged. See

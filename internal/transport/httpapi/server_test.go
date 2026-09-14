@@ -215,6 +215,20 @@ func TestImportRecountProtocolFlow(t *testing.T) {
 	if second.MemberID != "mem-2" || second.Status != "dns" || second.Place != nil {
 		t.Fatalf("second row = %+v", second)
 	}
+
+	// 6. The downloadable protocol uses the dependency-free CSV contract.
+	resp = mustGet(t, base+"/api/events/ev-100/races/race-10k/protocol.csv")
+	if contentType := resp.Header.Get("Content-Type"); contentType != "text/csv; charset=utf-8" {
+		t.Fatalf("CSV content type=%q", contentType)
+	}
+	csvBody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(csvBody), "\xEF\xBB\xBFАбс;М/Ж;Кат;") || !strings.Contains(string(csvBody), "Petrov;Ivan") {
+		t.Fatalf("unexpected protocol CSV: %q", csvBody)
+	}
 }
 
 func TestEventAgeRuleEditShowsInEventList(t *testing.T) {

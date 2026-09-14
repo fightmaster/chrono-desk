@@ -71,8 +71,8 @@ func TestImportExternalExportFile(t *testing.T) {
 		}
 		t.Logf("race %q (%s): rows=%d finished=%d", race.Name, race.Format, len(protocol.Rows), finished)
 
-		if _, _, err := BuildProtocolXLSX(ctx, store, race.ID); err != nil {
-			t.Fatalf("xlsx %s: %v", race.Name, err)
+		if _, _, err := BuildProtocolCSV(ctx, store, race.ID); err != nil {
+			t.Fatalf("CSV %s: %v", race.Name, err)
 		}
 	}
 }

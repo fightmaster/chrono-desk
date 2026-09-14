@@ -2,16 +2,14 @@
 
 Task: CHR-SIDE-002
 Docs-Impact: CROSS_PROJECT
-Status: local unpublished implementation; receiver acceptance is not end-to-end release acceptance
+Status: release candidate; receiver acceptance is not end-to-end release acceptance
 
 ## Scope
 
-The coordinated candidate pins shared core
-`v0.4.2-0.20260912211744-9ded809cbeaf` from clean commit
-`9ded809cbeafc2c49b5b833d78040b281d530ac2`, without `replace` or `go.work`.
-Canonical docs' `scripts/local-core-proxy.go` reproduces its offline module
-snapshot. This is not a published module or field acceptance; later publication
-must reproduce the same canonical module checksum.
+The coordinated candidate pins published shared core `v0.4.2` from clean commit
+`8254f04d78ce0232abd32c68b88b9e10d43dce6f`, without `replace` or `go.work`.
+This is not field acceptance; application CI must reproduce the canonical module
+checksum before packaging.
 
 ## Protected Hub relay
 

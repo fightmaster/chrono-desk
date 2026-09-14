@@ -93,16 +93,16 @@
       (r.number != null && String(r.number).includes(q))
   }
 
-  async function exportExcel() {
+  async function exportCSV() {
     exportOpen = false
     exportMsg = ''
     error = ''
     if (!currentRace) return
     try {
-      const res = await call('POST', `/api/events/${eventId}/races/${currentRace.id}/export-xlsx`)
+      const res = await call('POST', `/api/events/${eventId}/races/${currentRace.id}/export-csv`)
       exportMsg = `Протокол сохранён: ${res.path}`
     } catch (err) {
-      error = `Экспорт Excel: ${err.message}`
+      error = `Экспорт CSV: ${err.message}`
     }
   }
 
@@ -206,7 +206,7 @@
           </button>
           {#if exportOpen}
             <div class="menu">
-              <button class="menu-item" on:click={exportExcel}>Протокол Excel (.xlsx)</button>
+              <button class="menu-item" on:click={exportCSV}>Протокол CSV (.csv)</button>
             </div>
           {/if}
         </div>

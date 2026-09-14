@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Offline-first Wails v2 desktop app (Go + Svelte) that substitutes the run5 site at
 competition venues without internet: import an event export, ingest RFID logs (flash
-drive CSV in v1, TCP later), recount results offline, show standings, export Excel
+drive CSV in v1, TCP later), recount results offline, show standings, export CSV
 protocols. The site remains the source of truth — sync is site → desktop. Read
 `docs/architecture.md` before structural changes; `docs/event-export-format.md` is the
 import contract.
