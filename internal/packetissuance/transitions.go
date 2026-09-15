@@ -79,6 +79,20 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 		} else {
 			after.Status = "registered"
 		}
+	case "release_to_reserve":
+		if err := requireEditable(source); err != nil {
+			return nil, err
+		}
+		if err := requireAssigned(source); err != nil {
+			return nil, err
+		}
+		if source.Issued {
+			return nil, errors.New("issued_packet_review_required")
+		}
+		after.Person = nil
+		after.Reserve = true
+		after.Issued = false
+		after.Status = "registered"
 	case "edit_person":
 		if err := requireEditable(source); err != nil {
 			return nil, err

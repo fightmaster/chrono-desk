@@ -476,6 +476,10 @@ func parseCommand(value any, allowResolution bool) (Command, error) {
 			return Command{}, errors.New("invalid_operation_command")
 		}
 		command.Value = &value
+	case "release_to_reserve":
+		if !identifierPattern.MatchString(command.RegistrationID) || !exactKeys(obj, "type", "registrationId") {
+			return Command{}, errors.New("invalid_operation_command")
+		}
 	case "edit_person":
 		if !identifierPattern.MatchString(command.RegistrationID) {
 			return Command{}, errors.New("invalid_operation_command")

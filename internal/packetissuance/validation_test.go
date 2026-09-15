@@ -133,6 +133,31 @@ func TestTransitionsKeepPacketAndParticipationIndependent(t *testing.T) {
 	}
 }
 
+func TestReleaseNoShowToReserveIsExplicitAndRejectsIssuedOrTimedRows(t *testing.T) {
+	person := &Person{ID: "person-1", FirstName: "Иван", LastName: "Тестов"}
+	row := Registration{ID: "17", EventID: "42", RaceID: "5", Bib: "0017", EPC: "000a", Person: person, Status: "dns"}
+	changes, err := Apply([]Registration{row}, Command{Type: "release_to_reserve", RegistrationID: "17"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := changes[0].After
+	if after.Person != nil || !after.Reserve || after.Issued || after.Status != "registered" || after.Bib != row.Bib || after.EPC != row.EPC {
+		t.Fatalf("unexpected reserve state: %+v", after)
+	}
+	for name, mutate := range map[string]func(*Registration){
+		"issued": func(value *Registration) { value.Issued = true },
+		"timed":  func(value *Registration) { value.HasTimingEvidence = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := row
+			mutate(&candidate)
+			if _, err := Apply([]Registration{candidate}, Command{Type: "release_to_reserve", RegistrationID: "17"}); err == nil {
+				t.Fatal("unsafe release was accepted")
+			}
+		})
+	}
+}
+
 func TestFeedPageRequiresContiguousCursorAndSeparatesTimingEvidence(t *testing.T) {
 	data, err := os.ReadFile("testdata/packet-issuance-operations-v1.json")
 	if err != nil {
