@@ -212,6 +212,23 @@ func TestReleaseToReserveClearsLegacyTransferAndRejectsTiming(t *testing.T) {
 	}
 }
 
+func TestReplacePersonRegistersNewParticipantOnReserveWithoutChangingPacket(t *testing.T) {
+	reserve := Registration{ID: "18", EventID: "42", RaceID: "5", Bib: "0132", EPC: "000b", Reserve: true, Status: "registered"}
+	person := &Person{ID: "local-person", FirstName: "Анна", LastName: "Новая", BirthDate: "1995-03-04", Gender: "female"}
+	issued := true
+	changes, err := Apply([]Registration{reserve}, Command{
+		Type: "replace_person", RegistrationID: reserve.ID, Person: person, IssuePacket: &issued,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 1 || changes[0].After.Person == nil || changes[0].After.Person.ID != person.ID ||
+		changes[0].After.Reserve || !changes[0].After.Issued || changes[0].After.Bib != reserve.Bib ||
+		changes[0].After.EPC != reserve.EPC || changes[0].After.RaceID != reserve.RaceID {
+		t.Fatalf("unexpected reserve registration: %+v", changes)
+	}
+}
+
 func TestMoveToReserveAllowsSameRaceAndReleasesSource(t *testing.T) {
 	person := &Person{ID: "person-1", FirstName: "Иван", LastName: "Тестов"}
 	source := Registration{ID: "17", EventID: "42", RaceID: "5", Bib: "131", EPC: "a", Person: person, Issued: true, Status: "registered"}
