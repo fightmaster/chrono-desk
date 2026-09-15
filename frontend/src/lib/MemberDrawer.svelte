@@ -97,6 +97,7 @@
     return opts
   })()
   $: selectedCategoryId = member?.category_id ?? ''
+  $: packetState = members.find(m => m.id === boundMemberId) ?? null
 
   $: passes = data ? data.passes : []
   $: hitCount = passes.filter(p => p.checkpoint_name).length
@@ -284,6 +285,15 @@
     <button class="x" on:click={closeDrawer}>×</button>
   </div>
   {#if error}<p class="error">{error}</p>{/if}
+  {#if packetState?.packet_tracked}
+    <div class="packet-state">
+      {#if packetState.reserve}<span>резервный номер</span>{/if}
+      {#if packetState.issued}<span class="issued">пакет выдан</span>{/if}
+      {#if packetState.status === 1}<span>не выйдет на старт</span>{/if}
+      {#if packetState.status === 2}<span>DNF</span>{/if}
+      {#if packetState.status === 3}<span>DSQ</span>{/if}
+    </div>
+  {/if}
 
   {#if manualMode}
     <div class="manual-form" class:is-bound={bound}>
@@ -440,6 +450,9 @@
   .dhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
   .dtitle { font-size: 20px; font-weight: 700; }
   .x { cursor: pointer; background: none; border: none; color: var(--faint); font-size: 22px; line-height: 1; padding: 4px; }
+  .packet-state { display:flex; flex-wrap:wrap; gap:6px; margin:-10px 0 16px; }
+  .packet-state span { font-size:11px; border:1px solid var(--border2); border-radius:999px; padding:3px 8px; color:var(--dim); }
+  .packet-state span.issued { border-color:var(--live); color:var(--live); }
 
   .manual-form {
     background: var(--surface2); border: 1px solid var(--border2);

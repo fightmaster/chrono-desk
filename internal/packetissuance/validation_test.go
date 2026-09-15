@@ -73,6 +73,47 @@ func TestCanonicalResolutionFixtureIsTrustedFeedOnly(t *testing.T) {
 	}
 }
 
+func TestCompetingResolutionIsAVisibleTerminalFeedConflict(t *testing.T) {
+	data, err := os.ReadFile("testdata/packet-issuance-resolution-operation-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		ResolutionOperation map[string]any `json:"resolutionOperation"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	operation := fixture.ResolutionOperation
+	scopeID := operation["scopeId"].(string)
+	page := map[string]any{
+		"schemaVersion": 1,
+		"scopeId":       scopeID,
+		"cursor": map[string]any{
+			"after": "18", "next": "19", "head": "19", "hasMore": false,
+		},
+		"actions": []any{map[string]any{
+			"actionId": operation["operationId"], "kind": "operation", "sequence": "19",
+			"recordedAt": "2026-09-13T08:10:00.123Z", "sourceCode": "admin.packet_issuance_resolution",
+			"outcome": "conflict", "code": "resolution_already_decided", "operation": operation,
+			"changes": []any{},
+		}},
+	}
+	wire, _ := json.Marshal(page)
+	parsed, err := ParseFeedPage(wire, scopeID, "18")
+	if err != nil || len(parsed.Actions) != 1 || parsed.Actions[0].Outcome != "conflict" ||
+		parsed.Actions[0].Operation == nil || parsed.Actions[0].Operation.SchemaVersion != 2 {
+		t.Fatalf("page=%+v err=%v", parsed, err)
+	}
+
+	page["actions"].([]any)[0].(map[string]any)["outcome"] = "equivalent"
+	page["actions"].([]any)[0].(map[string]any)["code"] = nil
+	wire, _ = json.Marshal(page)
+	if _, err := ParseFeedPage(wire, scopeID, "18"); err == nil {
+		t.Fatal("equivalent resolution outcome accepted")
+	}
+}
+
 func TestOperationBoundaryRejectsUnsafeShapes(t *testing.T) {
 	data, err := os.ReadFile("testdata/packet-issuance-operations-v1.json")
 	if err != nil {

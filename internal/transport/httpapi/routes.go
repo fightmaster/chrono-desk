@@ -65,6 +65,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/events/{id}/sync-pull", s.handleSyncPull)
 	mux.HandleFunc("GET /api/events/{id}/packet-issuance/site", s.handlePacketIssuanceSiteStatus)
 	mux.HandleFunc("POST /api/events/{id}/packet-issuance/site/connect", s.handlePacketIssuanceSiteConnect)
+	mux.HandleFunc("GET /api/events/{id}/packet-issuance/conflicts", s.handlePacketIssuanceConflicts)
+	mux.HandleFunc("POST /api/events/{id}/packet-issuance/conflicts/{operationID}/resolve", s.handlePacketIssuanceResolve)
 	mux.HandleFunc("GET /api/events/{id}/packet-issuance/lan", s.handlePacketIssuanceLANStatus)
 	mux.HandleFunc("POST /api/events/{id}/packet-issuance/lan/start", s.handlePacketIssuanceLANStart)
 	mux.HandleFunc("POST /api/events/{id}/packet-issuance/lan/stop", s.handlePacketIssuanceLANStop)

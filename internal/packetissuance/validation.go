@@ -240,8 +240,11 @@ func parseFeedAction(value any, scopeID, eventID string, expectedSequence int64)
 			return FeedAction{}, errors.New("invalid")
 		}
 		action.Operation = &operation
-		if operation.SchemaVersion == 2 && (action.Outcome != "applied" || !resolutionFeedChangesMatch(operation.Changes, action.Changes)) {
-			return FeedAction{}, errors.New("invalid")
+		if operation.SchemaVersion == 2 {
+			if action.Outcome == "equivalent" ||
+				(action.Outcome == "applied" && !resolutionFeedChangesMatch(operation.Changes, action.Changes)) {
+				return FeedAction{}, errors.New("invalid")
+			}
 		}
 	} else if action.Kind != "server_change" || obj["operation"] != nil || action.Outcome != "applied" || len(action.Changes) == 0 {
 		return FeedAction{}, errors.New("invalid")

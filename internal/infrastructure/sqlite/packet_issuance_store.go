@@ -85,6 +85,50 @@ type PacketResolutionRecord struct {
 	RecordedAt            int64
 }
 
+type PacketConflictRecord struct {
+	Operation PacketOperationRecord
+	Resolved  bool
+}
+
+func (s *Store) ListPacketConflicts(ctx context.Context, eventID string, unresolvedOnly bool, limit, offset int) ([]PacketConflictRecord, int, error) {
+	if limit < 1 || limit > 100 || offset < 0 {
+		return nil, 0, errors.New("invalid packet conflict page")
+	}
+	filter := ""
+	if unresolvedOnly {
+		filter = " AND r.input_operation_id IS NULL"
+	}
+	var total int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM packet_issuance_operations o
+		LEFT JOIN packet_issuance_resolutions r ON r.input_operation_id=o.operation_id
+		WHERE o.event_id=? AND o.outcome='conflict'`+filter, eventID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count packet conflicts: %w", err)
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT o.operation_id,o.event_id,o.scope_id,o.baseline_id,
+		o.origin_instance_id,o.origin_sequence,o.content_hash,o.operation_json,o.outcome,o.outcome_code,o.recorded_at,
+		CASE WHEN r.input_operation_id IS NULL THEN 0 ELSE 1 END
+		FROM packet_issuance_operations o
+		LEFT JOIN packet_issuance_resolutions r ON r.input_operation_id=o.operation_id
+		WHERE o.event_id=? AND o.outcome='conflict'`+filter+`
+		ORDER BY o.recorded_at DESC,o.operation_id DESC LIMIT ? OFFSET ?`, eventID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list packet conflicts: %w", err)
+	}
+	defer rows.Close()
+	result := make([]PacketConflictRecord, 0)
+	for rows.Next() {
+		var record PacketConflictRecord
+		if err := rows.Scan(&record.Operation.OperationID, &record.Operation.EventID, &record.Operation.ScopeID,
+			&record.Operation.BaselineID, &record.Operation.OriginInstanceID, &record.Operation.OriginSequence,
+			&record.Operation.ContentHash, &record.Operation.OperationJSON, &record.Operation.Outcome,
+			&record.Operation.OutcomeCode, &record.Operation.RecordedAt, &record.Resolved); err != nil {
+			return nil, 0, err
+		}
+		result = append(result, record)
+	}
+	return result, total, rows.Err()
+}
+
 type PacketFeedRow struct {
 	ActionID      string
 	Sequence      int64
@@ -252,7 +296,7 @@ func (s *Store) ListPendingPacketOperations(ctx context.Context, eventID string,
 		if err := rows.Scan(&raw); err != nil {
 			return nil, err
 		}
-		operation, err := packetissuance.ParseOperation(raw)
+		operation, err := packetissuance.ParseTrustedOperation(raw)
 		if err != nil {
 			return nil, fmt.Errorf("stored packet operation is invalid: %w", err)
 		}
@@ -943,9 +987,9 @@ func (s *Store) SavePacketResolution(ctx context.Context, row PacketResolutionRe
 	return nil
 }
 
-// RelayPacketSiteAction exposes a site-only action to LAN tablets using the
-// Desk-local cursor. An operation already published locally is merely the
-// site's occurrence of the same immutable action and is not duplicated.
+// RelayPacketSiteAction exposes a site action to LAN tablets using the
+// Desk-local cursor. An operation already published locally is merely another
+// occurrence of the same immutable action and is not duplicated.
 func (s *Store) RelayPacketSiteAction(ctx context.Context, eventID string, action packetissuance.FeedAction, recordedAt int64) error {
 	var kind string
 	var sourceOperation sql.NullString
@@ -1012,7 +1056,11 @@ func (s *Store) PublishPacketOperation(ctx context.Context, operation packetissu
 	if err := s.db.QueryRowContext(ctx, `SELECT last_sequence+1 FROM packet_issuance_feed_heads WHERE event_id=?`, eventID).Scan(&sequence); err != nil {
 		return err
 	}
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_feed_actions(action_id,event_id,event_sequence,kind,source_code,source_operation_id,outcome,outcome_code,changes_json,recorded_at) VALUES(?,?,?,'operation','pwa.packet_issuance',?,?,?,?,?)`, operation.OperationID, eventID, sequence, operation.OperationID, outcome, code, encoded, recordedAt); err != nil {
+	sourceCode := "pwa.packet_issuance"
+	if operation.SchemaVersion == 2 {
+		sourceCode = "admin.packet_issuance_resolution"
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_feed_actions(action_id,event_id,event_sequence,kind,source_code,source_operation_id,outcome,outcome_code,changes_json,recorded_at) VALUES(?,?,?,'operation',?,?,?,?,?,?)`, operation.OperationID, eventID, sequence, sourceCode, operation.OperationID, outcome, code, encoded, recordedAt); err != nil {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `UPDATE packet_issuance_feed_heads SET last_sequence=? WHERE event_id=?`, sequence, eventID)

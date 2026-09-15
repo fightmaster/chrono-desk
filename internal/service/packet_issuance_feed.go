@@ -196,6 +196,13 @@ func applyPacketResolution(ctx context.Context, store *sqlite.Store, eventID str
 	} else if !found || !packetConflictOccurrence(inputOccurrence, inputID) {
 		return "", nil, errors.New("packet_resolution_input_missing")
 	}
+	if action.Outcome == "conflict" {
+		if err := store.SaveReceivedPacketOperation(ctx, *operation, eventID,
+			"conflict", action.Code, action.Outcome, action.Code, recordedAt); err != nil {
+			return "", nil, err
+		}
+		return "review", action.Code, nil
+	}
 	existing, resolved, err := store.FindPacketResolutionByInput(ctx, inputID)
 	if err != nil {
 		return "", nil, err
@@ -204,7 +211,15 @@ func applyPacketResolution(ctx context.Context, store *sqlite.Store, eventID str
 		if existing.ResolutionOperationID == operation.OperationID {
 			return "observed", nil, nil
 		}
-		return "", nil, errors.New("packet_resolution_already_decided")
+		code := "packet_resolution_already_decided"
+		if err := store.SaveReceivedPacketOperation(ctx, *operation, eventID,
+			"conflict", &code, action.Outcome, action.Code, recordedAt); err != nil {
+			return "", nil, err
+		}
+		// A different decision may have been made while Desk was offline. Keep
+		// both immutable decisions visible, retain the first local projection,
+		// and advance this source cursor so later actions are not blocked.
+		return "review", &code, nil
 	}
 	application, code, err := applyPacketResolutionChanges(ctx, store, eventID, action, inputID)
 	if err != nil {

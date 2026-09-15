@@ -283,20 +283,23 @@ func TestApplyPacketResolutionRollsBackRelationProjectionAndCursor(t *testing.T)
 	}
 }
 
-func TestApplyPacketResolutionRejectsCompetingDecisionWithoutCursorAdvance(t *testing.T) {
+func TestApplyPacketResolutionRetainsCompetingDecisionForReviewAndAdvancesCursor(t *testing.T) {
 	store, _ := preparedPacketFeedStore(t)
 	ctx := context.Background()
 	if _, err := ApplyPacketFeedPage(ctx, store, "621632", packetResolutionFeedFixture(t)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyPacketFeedPage(ctx, store, "621632", competingPacketResolutionFeedFixture(t)); err == nil || err.Error() != "packet_resolution_already_decided" {
-		t.Fatalf("competing resolution error=%v", err)
+	applications, err := ApplyPacketFeedPage(ctx, store, "621632", competingPacketResolutionFeedFixture(t))
+	if err != nil || len(applications) != 1 || applications[0].Application != "review" ||
+		applications[0].Code == nil || *applications[0].Code != "packet_resolution_already_decided" {
+		t.Fatalf("applications=%+v error=%v", applications, err)
 	}
 	scope, _ := store.GetPacketIssuanceScope(ctx, "621632")
-	var resolutions, operations int
+	var resolutions, operations, actions int
 	_ = store.DB().QueryRow(`SELECT COUNT(*) FROM packet_issuance_resolutions`).Scan(&resolutions)
 	_ = store.DB().QueryRow(`SELECT COUNT(*) FROM packet_issuance_operations`).Scan(&operations)
-	if scope.SiteFeedCursor != "18" || resolutions != 1 || operations != 2 {
-		t.Fatalf("cursor=%s resolutions=%d operations=%d", scope.SiteFeedCursor, resolutions, operations)
+	_ = store.DB().QueryRow(`SELECT COUNT(*) FROM packet_issuance_site_feed_actions`).Scan(&actions)
+	if scope.SiteFeedCursor != "19" || resolutions != 1 || operations != 3 || actions != 3 {
+		t.Fatalf("cursor=%s resolutions=%d operations=%d actions=%d", scope.SiteFeedCursor, resolutions, operations, actions)
 	}
 }
