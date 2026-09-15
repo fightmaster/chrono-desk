@@ -519,7 +519,7 @@ func parseCommand(value any, allowResolution bool) (Command, error) {
 			return Command{}, errors.New("invalid_operation_command")
 		}
 		command.IssuePacket = &issue
-	case "move_race":
+	case "move_race", "move_to_reserve":
 		if !identifierPattern.MatchString(command.RegistrationID) {
 			return Command{}, errors.New("invalid_operation_command")
 		}

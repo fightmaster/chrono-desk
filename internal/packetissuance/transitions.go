@@ -80,19 +80,20 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 			after.Status = "registered"
 		}
 	case "release_to_reserve":
-		if err := requireEditable(source); err != nil {
-			return nil, err
+		if source.HasTimingEvidence {
+			return nil, errors.New("timing_review_required")
+		}
+		if source.Status != "registered" && source.Status != "dns" {
+			return nil, errors.New("status_review_required")
 		}
 		if err := requireAssigned(source); err != nil {
 			return nil, err
-		}
-		if source.Issued {
-			return nil, errors.New("issued_packet_review_required")
 		}
 		after.Person = nil
 		after.Reserve = true
 		after.Issued = false
 		after.Status = "registered"
+		after.TransferredTo = nil
 	case "edit_person":
 		if err := requireEditable(source); err != nil {
 			return nil, err
@@ -141,7 +142,7 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 		after.Reserve = false
 		after.Issued = *command.IssuePacket
 		after.Status = "registered"
-	case "move_race":
+	case "move_race", "move_to_reserve":
 		if err := requireEditable(source); err != nil {
 			return nil, err
 		}
@@ -149,15 +150,24 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 			return nil, err
 		}
 		target, ok := rows[command.TargetID]
-		if !ok || command.IssuePacket == nil || command.TargetID == source.ID || target.EventID != source.EventID || target.RaceID == source.RaceID {
+		if !ok || command.IssuePacket == nil || command.TargetID == source.ID || target.EventID != source.EventID ||
+			(command.Type == "move_race" && target.RaceID == source.RaceID) {
 			return nil, errors.New("invalid_target")
 		}
 		if !target.Reserve || target.Issued || target.HasTimingEvidence || target.Status != "registered" || target.TransferredTo != nil {
 			return nil, errors.New("target_not_available")
 		}
-		after.Status = "dns"
-		targetID := target.ID
-		after.TransferredTo = &targetID
+		if command.Type == "move_to_reserve" {
+			after.Person = nil
+			after.Reserve = true
+			after.Issued = false
+			after.Status = "registered"
+			after.TransferredTo = nil
+		} else {
+			after.Status = "dns"
+			targetID := target.ID
+			after.TransferredTo = &targetID
+		}
 		targetAfter := cloneRegistration(target)
 		targetAfter.Person = clonePerson(source.Person)
 		targetAfter.Reserve = false
@@ -179,13 +189,20 @@ func ReverseMove(records []Registration, original []Change, reason string) ([]Ch
 		return nil, errors.New("correction_review_required")
 	}
 	source, target := original[0], original[1]
-	if source.After.TransferredTo == nil || *source.After.TransferredTo != target.RegistrationID ||
-		source.After.Status != "dns" || !target.Before.Reserve || source.RegistrationID == target.RegistrationID {
+	releaseSource := source.After.Person == nil && source.After.Reserve && !source.After.Issued &&
+		source.After.Status == "registered" && source.After.TransferredTo == nil
+	legacySource := source.After.TransferredTo != nil && *source.After.TransferredTo == target.RegistrationID &&
+		source.After.Status == "dns" && !source.After.Reserve
+	if (!releaseSource && !legacySource) || !target.Before.Reserve || source.RegistrationID == target.RegistrationID {
 		return nil, errors.New("correction_review_required")
 	}
 	issuePacket := target.After.Issued
+	moveType := "move_race"
+	if releaseSource {
+		moveType = "move_to_reserve"
+	}
 	replayed, err := Apply([]Registration{source.Before, target.Before}, Command{
-		Type: "move_race", RegistrationID: source.RegistrationID,
+		Type: moveType, RegistrationID: source.RegistrationID,
 		TargetID: target.RegistrationID, IssuePacket: &issuePacket,
 	})
 	if err != nil || !equalChanges(replayed, original) {

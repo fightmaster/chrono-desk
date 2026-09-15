@@ -112,6 +112,20 @@ func TestOperationBoundaryRejectsUnsafeShapes(t *testing.T) {
 	}
 }
 
+func TestMoveToReserveCommandUsesStrictReceiverShape(t *testing.T) {
+	command, err := parseCommand(map[string]any{
+		"type": "move_to_reserve", "registrationId": "17", "targetId": "18", "issuePacket": true,
+	}, false)
+	if err != nil || command.Type != "move_to_reserve" || command.TargetID != "18" || command.IssuePacket == nil || !*command.IssuePacket {
+		t.Fatalf("command=%+v err=%v", command, err)
+	}
+	if _, err := parseCommand(map[string]any{
+		"type": "move_to_reserve", "registrationId": "17", "targetId": "18", "issuePacket": true, "unknown": true,
+	}, false); err == nil {
+		t.Fatal("unknown command field was accepted")
+	}
+}
+
 func TestTransitionsKeepPacketAndParticipationIndependent(t *testing.T) {
 	person := &Person{ID: "person-1", FirstName: "Иван", LastName: "Тестов", BirthDate: "2000-02-29", Gender: "male"}
 	row := Registration{ID: "17", EventID: "42", RaceID: "5", Bib: "0017", EPC: "000a", Person: person, Status: "registered"}
@@ -133,7 +147,7 @@ func TestTransitionsKeepPacketAndParticipationIndependent(t *testing.T) {
 	}
 }
 
-func TestReleaseNoShowToReserveIsExplicitAndRejectsIssuedOrTimedRows(t *testing.T) {
+func TestReleaseToReserveClearsLegacyTransferAndRejectsTiming(t *testing.T) {
 	person := &Person{ID: "person-1", FirstName: "Иван", LastName: "Тестов"}
 	row := Registration{ID: "17", EventID: "42", RaceID: "5", Bib: "0017", EPC: "000a", Person: person, Status: "dns"}
 	changes, err := Apply([]Registration{row}, Command{Type: "release_to_reserve", RegistrationID: "17"})
@@ -144,17 +158,37 @@ func TestReleaseNoShowToReserveIsExplicitAndRejectsIssuedOrTimedRows(t *testing.
 	if after.Person != nil || !after.Reserve || after.Issued || after.Status != "registered" || after.Bib != row.Bib || after.EPC != row.EPC {
 		t.Fatalf("unexpected reserve state: %+v", after)
 	}
-	for name, mutate := range map[string]func(*Registration){
-		"issued": func(value *Registration) { value.Issued = true },
-		"timed":  func(value *Registration) { value.HasTimingEvidence = true },
-	} {
-		t.Run(name, func(t *testing.T) {
-			candidate := row
-			mutate(&candidate)
-			if _, err := Apply([]Registration{candidate}, Command{Type: "release_to_reserve", RegistrationID: "17"}); err == nil {
-				t.Fatal("unsafe release was accepted")
-			}
-		})
+	target := "18"
+	row.Issued = true
+	row.TransferredTo = &target
+	changes, err = Apply([]Registration{row}, Command{Type: "release_to_reserve", RegistrationID: "17"})
+	if err != nil || changes[0].After.TransferredTo != nil || changes[0].After.Issued || !changes[0].After.Reserve {
+		t.Fatalf("legacy transfer was not released: changes=%+v err=%v", changes, err)
+	}
+	row.HasTimingEvidence = true
+	if _, err := Apply([]Registration{row}, Command{Type: "release_to_reserve", RegistrationID: "17"}); err == nil {
+		t.Fatal("timed release was accepted")
+	}
+}
+
+func TestMoveToReserveAllowsSameRaceAndReleasesSource(t *testing.T) {
+	person := &Person{ID: "person-1", FirstName: "Иван", LastName: "Тестов"}
+	source := Registration{ID: "17", EventID: "42", RaceID: "5", Bib: "131", EPC: "a", Person: person, Issued: true, Status: "registered"}
+	target := Registration{ID: "18", EventID: "42", RaceID: "5", Bib: "132", EPC: "b", Reserve: true, Status: "registered"}
+	issued := true
+	changes, err := Apply([]Registration{source, target}, Command{
+		Type: "move_to_reserve", RegistrationID: "17", TargetID: "18", IssuePacket: &issued,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 2 || changes[0].After.Person != nil || !changes[0].After.Reserve || changes[0].After.Issued ||
+		changes[1].After.Person == nil || changes[1].After.Person.ID != person.ID || !changes[1].After.Issued {
+		t.Fatalf("unexpected move: %+v", changes)
+	}
+	reversed, err := ReverseMove([]Registration{changes[0].After, changes[1].After}, changes, "Ошибка")
+	if err != nil || !equalRegistration(reversed[0].After, source) || !equalRegistration(reversed[1].After, target) {
+		t.Fatalf("reverse=%+v err=%v", reversed, err)
 	}
 }
 
