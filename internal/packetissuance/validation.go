@@ -240,8 +240,11 @@ func parseFeedAction(value any, scopeID, eventID string, expectedSequence int64)
 			return FeedAction{}, errors.New("invalid")
 		}
 		action.Operation = &operation
-		if operation.SchemaVersion == 2 && (action.Outcome != "applied" || !resolutionFeedChangesMatch(operation.Changes, action.Changes)) {
-			return FeedAction{}, errors.New("invalid")
+		if operation.SchemaVersion == 2 {
+			if action.Outcome == "equivalent" ||
+				(action.Outcome == "applied" && !resolutionFeedChangesMatch(operation.Changes, action.Changes)) {
+				return FeedAction{}, errors.New("invalid")
+			}
 		}
 	} else if action.Kind != "server_change" || obj["operation"] != nil || action.Outcome != "applied" || len(action.Changes) == 0 {
 		return FeedAction{}, errors.New("invalid")
@@ -476,6 +479,10 @@ func parseCommand(value any, allowResolution bool) (Command, error) {
 			return Command{}, errors.New("invalid_operation_command")
 		}
 		command.Value = &value
+	case "release_to_reserve":
+		if !identifierPattern.MatchString(command.RegistrationID) || !exactKeys(obj, "type", "registrationId") {
+			return Command{}, errors.New("invalid_operation_command")
+		}
 	case "edit_person":
 		if !identifierPattern.MatchString(command.RegistrationID) {
 			return Command{}, errors.New("invalid_operation_command")
@@ -515,7 +522,7 @@ func parseCommand(value any, allowResolution bool) (Command, error) {
 			return Command{}, errors.New("invalid_operation_command")
 		}
 		command.IssuePacket = &issue
-	case "move_race":
+	case "move_race", "move_to_reserve":
 		if !identifierPattern.MatchString(command.RegistrationID) {
 			return Command{}, errors.New("invalid_operation_command")
 		}

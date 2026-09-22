@@ -57,6 +57,10 @@ func (s *EventService) StorageStats(eventID string) (sqlite.EventStorageStats, e
 
 func (s *EventService) InstallationID() string { return s.catalog.InstallationID() }
 
+func (s *EventService) NextInstallationSequence() (int64, error) {
+	return s.catalog.NextInstallationSequence()
+}
+
 func (s *EventService) PreparePacketRelay(ctx context.Context, eventID, siteBaseURL string) (sqlite.PacketRelayState, error) {
 	return s.catalog.PreparePacketRelay(ctx, eventID, siteBaseURL)
 }

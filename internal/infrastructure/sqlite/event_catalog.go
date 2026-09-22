@@ -52,6 +52,10 @@ func NewEventCatalog(dataDir string) (*EventCatalog, error) {
 
 func (c *EventCatalog) InstallationID() string { return c.origin.instanceID }
 
+// NextInstallationSequence allocates one monotonic sequence shared by every
+// event and every locally-authored immutable record of this Desk installation.
+func (c *EventCatalog) NextInstallationSequence() (int64, error) { return c.origin.Next() }
+
 func (c *EventCatalog) PreparePacketRelay(ctx context.Context, eventID, siteBaseURL string) (PacketRelayState, error) {
 	return c.relays.Prepare(ctx, eventID, siteBaseURL, c.origin.instanceID)
 }

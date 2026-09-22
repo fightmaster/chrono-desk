@@ -1,6 +1,7 @@
 <script>
   import {createEventDispatcher} from 'svelte'
   import {call, fmtDateTime} from './api.js'
+  import PacketIssuanceReview from './PacketIssuanceReview.svelte'
 
   export let eventId
 
@@ -189,7 +190,10 @@
       </div>
       <p class="faint packet-help">
         Сертификат устанавливается на каждом телефоне один раз. Затем создайте отдельный QR для планшета.
-        Сервер объявляется как chrono-desk.local только пока приём включён.
+        Для работы без Интернета сначала подключите планшет QR сайта, затем этим QR Desk: это один список
+        с двумя независимыми получателями. Desk принимает изменения по локальному Wi-Fi; конфликты можно
+        разобрать здесь без Интернета, тем же журналом, что используется на сайте. Сервер объявляется как
+        chrono-desk.local только пока приём включён.
       </p>
       {#if packetLAN?.running}
         <div class="actions">
@@ -220,6 +224,7 @@
           <button class="btn" disabled={!!busy} on:click={compactPacketFeed}>Архивировать 100 записей</button>
         </div>
       {/if}
+      <PacketIssuanceReview {eventId} on:changed={() => dispatch('pulled')}/>
     </div>
   {/if}
 

@@ -114,9 +114,12 @@ Only the packet bootstrap/operations/feed contract is reachable on this listener
 The public results server and localhost control API remain separate. The
 installation CA and hashed grants live outside portable `.chrono` event files.
 Changes pulled from chrono.events are relayed into the same local tablet feed.
-This includes administrator conflict decisions: Desk consumes their trusted
-schema-v2 operation, closes the referenced review durably and never uploads the
-received decision back to the site. Ordinary tablet uploads remain schema v1.
+This includes administrator conflict decisions. Desk consumes a trusted
+schema-v2 operation from the site, or creates the same operation when an operator
+resolves a stored conflict locally. A local decision closes the referenced
+review, is published to LAN tablets and is queued unchanged for the site;
+received site decisions are not uploaded back. Ordinary tablet uploads remain
+schema v1.
 If the site feed cursor is no longer available, Desk fetches one authenticated
 snapshot and rebases it without deleting pending tablet work. Local same-field
 conflicts remain visible instead of using timestamp last-write-wins.

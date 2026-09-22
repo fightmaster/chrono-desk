@@ -25,6 +25,15 @@
     return n.length > 16 ? n.slice(0, 15) + '…' : n
   }
 
+  function stateLabel(m) {
+    if (m.reserve) return 'резерв'
+    if (m.status === 1) return m.issued ? 'выдан · не стартует' : 'не стартует'
+    if (m.status === 2) return 'DNF'
+    if (m.status === 3) return 'DSQ'
+    if (m.issued) return 'выдан'
+    return ''
+  }
+
   function pick(m) {
     query = ''
     dispatch('select', m.id)
@@ -62,6 +71,7 @@
             <span class="num mono">{m.number ?? '—'}</span>
             <span class="mname">{m.last_name ?? ''} {m.first_name ?? ''}</span>
             <span class="faint">{raceLabel(m)}</span>
+            {#if stateLabel(m)}<span class="state" class:issued={m.issued}>{stateLabel(m)}</span>{/if}
           </button>
         {/each}
       </div>
@@ -122,6 +132,8 @@
   .match .num { font-weight: 600; color: var(--accent); min-width: 42px; }
   .match .mname { font-weight: 600; flex: 1; }
   .match .faint { font-size: 12px; color: var(--faint); }
+  .match .state { font-size: 10.5px; border: 1px solid var(--border2); border-radius: 999px; padding: 2px 6px; color: var(--dim); }
+  .match .state.issued { border-color: var(--live); color: var(--live); }
 
   .spacer { flex: 1; }
 

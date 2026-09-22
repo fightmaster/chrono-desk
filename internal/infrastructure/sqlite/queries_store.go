@@ -202,20 +202,28 @@ func (s *Store) memberValueTaken(ctx context.Context, query, field, eventID stri
 
 // MemberRow is the slim JSON shape for the searchable members list.
 type MemberRow struct {
-	ID         string  `json:"id"`
-	RaceID     string  `json:"race_id"`
-	Number     *int64  `json:"number"`
-	FirstName  string  `json:"first_name"`
-	LastName   string  `json:"last_name"`
-	EPC        *string `json:"epc"`
-	CategoryID *string `json:"category_id"`
-	Status     int     `json:"status"`
+	ID            string  `json:"id"`
+	RaceID        string  `json:"race_id"`
+	Number        *int64  `json:"number"`
+	FirstName     string  `json:"first_name"`
+	LastName      string  `json:"last_name"`
+	EPC           *string `json:"epc"`
+	CategoryID    *string `json:"category_id"`
+	Status        int     `json:"status"`
+	PacketTracked bool    `json:"packet_tracked"`
+	Reserve       bool    `json:"reserve"`
+	Issued        bool    `json:"issued"`
 }
 
 func (s *Store) ListMembersByEvent(ctx context.Context, eventID string) ([]MemberRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, race_id, number, first_name, last_name, epc, category_id, status
-		FROM members WHERE event_id = ? ORDER BY last_name, first_name`, eventID)
+		SELECT m.id, m.race_id, m.number, m.first_name, m.last_name, m.epc, m.category_id, m.status,
+		       CASE WHEN p.registration_id IS NULL OR p.deleted=1 THEN 0 ELSE 1 END,
+		       COALESCE(json_extract(p.value_json, '$.reserve'), 0),
+		       COALESCE(json_extract(p.value_json, '$.issued'), 0)
+		FROM members m
+		LEFT JOIN packet_issuance_registrations p ON p.event_id=m.event_id AND p.registration_id=m.id
+		WHERE m.event_id = ? ORDER BY m.last_name, m.first_name, m.id`, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("list event members: %w", err)
 	}
@@ -224,7 +232,8 @@ func (s *Store) ListMembersByEvent(ctx context.Context, eventID string) ([]Membe
 	out := []MemberRow{}
 	for rows.Next() {
 		var m MemberRow
-		if err := rows.Scan(&m.ID, &m.RaceID, &m.Number, &m.FirstName, &m.LastName, &m.EPC, &m.CategoryID, &m.Status); err != nil {
+		if err := rows.Scan(&m.ID, &m.RaceID, &m.Number, &m.FirstName, &m.LastName, &m.EPC, &m.CategoryID,
+			&m.Status, &m.PacketTracked, &m.Reserve, &m.Issued); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

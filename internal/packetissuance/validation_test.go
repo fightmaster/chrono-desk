@@ -73,6 +73,47 @@ func TestCanonicalResolutionFixtureIsTrustedFeedOnly(t *testing.T) {
 	}
 }
 
+func TestCompetingResolutionIsAVisibleTerminalFeedConflict(t *testing.T) {
+	data, err := os.ReadFile("testdata/packet-issuance-resolution-operation-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		ResolutionOperation map[string]any `json:"resolutionOperation"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	operation := fixture.ResolutionOperation
+	scopeID := operation["scopeId"].(string)
+	page := map[string]any{
+		"schemaVersion": 1,
+		"scopeId":       scopeID,
+		"cursor": map[string]any{
+			"after": "18", "next": "19", "head": "19", "hasMore": false,
+		},
+		"actions": []any{map[string]any{
+			"actionId": operation["operationId"], "kind": "operation", "sequence": "19",
+			"recordedAt": "2026-09-13T08:10:00.123Z", "sourceCode": "admin.packet_issuance_resolution",
+			"outcome": "conflict", "code": "resolution_already_decided", "operation": operation,
+			"changes": []any{},
+		}},
+	}
+	wire, _ := json.Marshal(page)
+	parsed, err := ParseFeedPage(wire, scopeID, "18")
+	if err != nil || len(parsed.Actions) != 1 || parsed.Actions[0].Outcome != "conflict" ||
+		parsed.Actions[0].Operation == nil || parsed.Actions[0].Operation.SchemaVersion != 2 {
+		t.Fatalf("page=%+v err=%v", parsed, err)
+	}
+
+	page["actions"].([]any)[0].(map[string]any)["outcome"] = "equivalent"
+	page["actions"].([]any)[0].(map[string]any)["code"] = nil
+	wire, _ = json.Marshal(page)
+	if _, err := ParseFeedPage(wire, scopeID, "18"); err == nil {
+		t.Fatal("equivalent resolution outcome accepted")
+	}
+}
+
 func TestOperationBoundaryRejectsUnsafeShapes(t *testing.T) {
 	data, err := os.ReadFile("testdata/packet-issuance-operations-v1.json")
 	if err != nil {
@@ -112,6 +153,20 @@ func TestOperationBoundaryRejectsUnsafeShapes(t *testing.T) {
 	}
 }
 
+func TestMoveToReserveCommandUsesStrictReceiverShape(t *testing.T) {
+	command, err := parseCommand(map[string]any{
+		"type": "move_to_reserve", "registrationId": "17", "targetId": "18", "issuePacket": true,
+	}, false)
+	if err != nil || command.Type != "move_to_reserve" || command.TargetID != "18" || command.IssuePacket == nil || !*command.IssuePacket {
+		t.Fatalf("command=%+v err=%v", command, err)
+	}
+	if _, err := parseCommand(map[string]any{
+		"type": "move_to_reserve", "registrationId": "17", "targetId": "18", "issuePacket": true, "unknown": true,
+	}, false); err == nil {
+		t.Fatal("unknown command field was accepted")
+	}
+}
+
 func TestTransitionsKeepPacketAndParticipationIndependent(t *testing.T) {
 	person := &Person{ID: "person-1", FirstName: "Иван", LastName: "Тестов", BirthDate: "2000-02-29", Gender: "male"}
 	row := Registration{ID: "17", EventID: "42", RaceID: "5", Bib: "0017", EPC: "000a", Person: person, Status: "registered"}
@@ -130,6 +185,68 @@ func TestTransitionsKeepPacketAndParticipationIndependent(t *testing.T) {
 	}
 	if !changes[0].After.Issued {
 		t.Fatal("DNS must not undo issuance")
+	}
+}
+
+func TestReleaseToReserveClearsLegacyTransferAndRejectsTiming(t *testing.T) {
+	person := &Person{ID: "person-1", FirstName: "Иван", LastName: "Тестов"}
+	row := Registration{ID: "17", EventID: "42", RaceID: "5", Bib: "0017", EPC: "000a", Person: person, Status: "dns"}
+	changes, err := Apply([]Registration{row}, Command{Type: "release_to_reserve", RegistrationID: "17"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := changes[0].After
+	if after.Person != nil || !after.Reserve || after.Issued || after.Status != "registered" || after.Bib != row.Bib || after.EPC != row.EPC {
+		t.Fatalf("unexpected reserve state: %+v", after)
+	}
+	target := "18"
+	row.Issued = true
+	row.TransferredTo = &target
+	changes, err = Apply([]Registration{row}, Command{Type: "release_to_reserve", RegistrationID: "17"})
+	if err != nil || changes[0].After.TransferredTo != nil || changes[0].After.Issued || !changes[0].After.Reserve {
+		t.Fatalf("legacy transfer was not released: changes=%+v err=%v", changes, err)
+	}
+	row.HasTimingEvidence = true
+	if _, err := Apply([]Registration{row}, Command{Type: "release_to_reserve", RegistrationID: "17"}); err == nil {
+		t.Fatal("timed release was accepted")
+	}
+}
+
+func TestReplacePersonRegistersNewParticipantOnReserveWithoutChangingPacket(t *testing.T) {
+	reserve := Registration{ID: "18", EventID: "42", RaceID: "5", Bib: "0132", EPC: "000b", Reserve: true, Status: "registered"}
+	person := &Person{ID: "local-person", FirstName: "Анна", LastName: "Новая", BirthDate: "1995-03-04", Gender: "female"}
+	issued := true
+	changes, err := Apply([]Registration{reserve}, Command{
+		Type: "replace_person", RegistrationID: reserve.ID, Person: person, IssuePacket: &issued,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 1 || changes[0].After.Person == nil || changes[0].After.Person.ID != person.ID ||
+		changes[0].After.Reserve || !changes[0].After.Issued || changes[0].After.Bib != reserve.Bib ||
+		changes[0].After.EPC != reserve.EPC || changes[0].After.RaceID != reserve.RaceID {
+		t.Fatalf("unexpected reserve registration: %+v", changes)
+	}
+}
+
+func TestMoveToReserveAllowsSameRaceAndReleasesSource(t *testing.T) {
+	person := &Person{ID: "person-1", FirstName: "Иван", LastName: "Тестов"}
+	source := Registration{ID: "17", EventID: "42", RaceID: "5", Bib: "131", EPC: "a", Person: person, Issued: true, Status: "registered"}
+	target := Registration{ID: "18", EventID: "42", RaceID: "5", Bib: "132", EPC: "b", Reserve: true, Status: "registered"}
+	issued := true
+	changes, err := Apply([]Registration{source, target}, Command{
+		Type: "move_to_reserve", RegistrationID: "17", TargetID: "18", IssuePacket: &issued,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 2 || changes[0].After.Person != nil || !changes[0].After.Reserve || changes[0].After.Issued ||
+		changes[1].After.Person == nil || changes[1].After.Person.ID != person.ID || !changes[1].After.Issued {
+		t.Fatalf("unexpected move: %+v", changes)
+	}
+	reversed, err := ReverseMove([]Registration{changes[0].After, changes[1].After}, changes, "Ошибка")
+	if err != nil || !equalRegistration(reversed[0].After, source) || !equalRegistration(reversed[1].After, target) {
+		t.Fatalf("reverse=%+v err=%v", reversed, err)
 	}
 }
 

@@ -245,19 +245,27 @@ committed feed cursor from one SQLite transaction, so a newly connected tablet
 does not replay history already present in its snapshot.
 
 The trusted incoming feed additionally accepts the frozen schema-v2
-`resolve_conflict` operation; tablet uploads and the Desk outbound journal remain
-schema v1 only. Desk verifies that the referenced conflict occurrence is already
-present, applies the complete convergence transition with the existing three-way
-merge, stores a unique immutable resolution-to-input relation, and closes that
-input without rewriting it. A conflicting third local branch remains a review.
+`resolve_conflict` operation; tablet uploads remain schema v1. Desk verifies
+that the referenced conflict occurrence is already present, applies the complete
+convergence transition with the existing three-way merge, stores a unique
+immutable resolution-to-input relation, and closes that input without rewriting
+it. An enrolled local operator may create the same schema-v2 operation while
+offline; it enters the normal site outbox and LAN feed with one identity. A
+conflicting third local branch remains a review.
 Received site operations are marked acknowledged and never enter the site
-outbox. Site-only actions, including resolutions and ordinary server changes,
-are copied into the Desk-local ordered feed with their original action identity
-and a new local sequence, so LAN-only tablets can converge through Desk. A site
-echo of an operation already published locally is retained as separate site
+outbox. Site actions, including resolutions and ordinary server changes, are
+copied into the Desk-local ordered feed with their original action identity and
+a new local sequence, so LAN-only tablets can converge through Desk. A site echo
+of an operation already published locally is retained as separate site
 occurrence evidence and is not duplicated in the LAN feed. Projection, both
 occurrence journals, resolution relation, LAN relay action and site cursor are
 one SQLite transaction.
+
+If Desk and site independently author different decisions for one conflict,
+the first locally applied relation remains the projection. The later operation
+is retained as a review occurrence and the corresponding cursor advances; no
+arrival-time LWW or infinite retry blocks unrelated work. Tablets apply the same
+rule and deduplicate an identical decision received from both connections.
 
 The current candidate also keeps the last authenticated site registration
 projection separately from the locally merged projection. Only an exact,
