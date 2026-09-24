@@ -111,6 +111,15 @@ func (r *PacketIssuanceReceiver) receiveOne(ctx context.Context, store *sqlite.S
 		if operation.Command.Type == "assign_number" || operation.Command.Type == "create_registration" {
 			return r.receiveNumber(ctx, txStore, operation, hash, known, &receipt)
 		}
+		if operation.Command.Type == "change_race" {
+			race, err := txStore.GetRace(ctx, operation.Command.RaceID)
+			if errors.Is(err, sql.ErrNoRows) || (err == nil && race.EventID != eventID) {
+				return r.persist(ctx, txStore, operation, hash, "rejected", "invalid_target", nil, known, &receipt)
+			}
+			if err != nil {
+				return err
+			}
+		}
 		ids := make([]string, 0, len(operation.Changes))
 		for _, change := range operation.Changes {
 			ids = append(ids, change.RegistrationID)
@@ -135,7 +144,7 @@ func (r *PacketIssuanceReceiver) receiveOne(ctx context.Context, store *sqlite.S
 					}
 				}
 				categoryID := existingMember.CategoryID
-				if !reflect.DeepEqual(change.Before.Person, change.After.Person) {
+				if !reflect.DeepEqual(change.Before.Person, change.After.Person) || change.Before.RaceID != change.After.RaceID {
 					member := packetMember(change.After)
 					categoryID, err = resolveCategoryIDForMember(ctx, txStore, member)
 					if err != nil {

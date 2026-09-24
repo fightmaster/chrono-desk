@@ -421,7 +421,7 @@ func parseOperation(value any, canonical []byte, allowResolution bool) (Operatio
 		ids[change.RegistrationID] = true
 		for _, fieldEqual := range []bool{
 			change.Before.ID == change.After.ID, change.Before.EventID == change.After.EventID,
-			change.Before.RaceID == change.After.RaceID, change.Before.Bib == change.After.Bib || command.Type == "return_to_reserve" || command.Type == "clear_number" || command.Type == "assign_reserve" || command.Type == "correct_move" || command.Type == "assign_number" || command.Type == "unassign_number" || command.Type == "create_registration" || operation.SchemaVersion == 2,
+			change.Before.RaceID == change.After.RaceID || command.Type == "change_race", change.Before.Bib == change.After.Bib || command.Type == "return_to_reserve" || command.Type == "clear_number" || command.Type == "assign_reserve" || command.Type == "correct_move" || command.Type == "assign_number" || command.Type == "unassign_number" || command.Type == "create_registration" || operation.SchemaVersion == 2,
 			change.Before.EPC == change.After.EPC || command.Type == "return_to_reserve" || command.Type == "clear_number" || command.Type == "assign_reserve" || command.Type == "correct_move" || operation.SchemaVersion == 2,
 			change.Before.HasTimingEvidence == change.After.HasTimingEvidence,
 			change.Before.ID == change.RegistrationID,
@@ -564,6 +564,14 @@ func parseCommand(value any, allowResolution bool) (Command, error) {
 				return Command{}, errors.New("invalid_operation_command")
 			}
 			command.Fields[key] = text
+		}
+	case "change_race":
+		if !exactKeys(obj, "type", "registrationId", "raceId") || !identifierPattern.MatchString(command.RegistrationID) {
+			return Command{}, errors.New("invalid_operation_command")
+		}
+		command.RaceID = stringValue(obj["raceId"])
+		if !identifierPattern.MatchString(command.RaceID) {
+			return Command{}, errors.New("invalid_operation_command")
 		}
 	case "replace_person":
 		if !identifierPattern.MatchString(command.RegistrationID) {

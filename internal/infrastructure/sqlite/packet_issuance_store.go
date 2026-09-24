@@ -799,7 +799,7 @@ func (s *Store) PutPacketRegistration(ctx context.Context, row packetissuance.Re
 	if row.Person != nil {
 		first, last = row.Person.FirstName, row.Person.LastName
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE members SET first_name=?,last_name=?,gender=?,dob=?,team=?,city=?,status=?,category_id=?,number=?,rfid=CASE WHEN COALESCE(epc,'')<>? THEN NULL ELSE rfid END,epc=CASE WHEN COALESCE(epc,'')=? THEN epc ELSE ? END WHERE id=? AND event_id=?`, first, last, gender, dob, team, city, status, categoryID, packetRegistrationMember(row, categoryID).Number, row.EPC, row.EPC, packetRegistrationMember(row, categoryID).EPC, row.ID, row.EventID)
+	result, err := s.db.ExecContext(ctx, `UPDATE members SET race_id=?,first_name=?,last_name=?,gender=?,dob=?,team=?,city=?,status=?,category_id=?,number=?,rfid=CASE WHEN COALESCE(epc,'')<>? THEN NULL ELSE rfid END,epc=CASE WHEN COALESCE(epc,'')=? THEN epc ELSE ? END WHERE id=? AND event_id=?`, row.RaceID, first, last, gender, dob, team, city, status, categoryID, packetRegistrationMember(row, categoryID).Number, row.EPC, row.EPC, packetRegistrationMember(row, categoryID).EPC, row.ID, row.EventID)
 	if err != nil {
 		return err
 	}
@@ -1005,7 +1005,7 @@ func (s *Store) RelayPacketSiteAction(ctx context.Context, eventID string, actio
 	err := s.db.QueryRowContext(ctx, `SELECT kind,source_operation_id FROM packet_issuance_feed_actions WHERE action_id=?`, action.ActionID).
 		Scan(&kind, &sourceOperation)
 	if err == nil {
-		if action.Kind == "operation" && kind == "operation" && sourceOperation.Valid && sourceOperation.String == action.ActionID {
+		if action.Kind == kind && (kind == "operation" || kind == "server_change") && sourceOperation.Valid && sourceOperation.String == action.ActionID {
 			return nil
 		}
 		return errors.New("packet_feed_action_identity_conflict")
@@ -1041,6 +1041,9 @@ func (s *Store) RelayPacketSiteAction(ctx context.Context, eventID string, actio
 
 func (s *Store) PublishPacketOperation(ctx context.Context, operation packetissuance.Operation, outcome string, code *string, changes []packetissuance.Change, recordedAt int64) error {
 	if outcome == "waiting_dependency" || outcome == "rejected" {
+		return nil
+	}
+	if operation.Command.Type == "change_race" && outcome != "applied" {
 		return nil
 	}
 	var exists int
@@ -1094,7 +1097,11 @@ func (s *Store) PublishPacketOperation(ctx context.Context, operation packetissu
 	if operation.SchemaVersion == 2 {
 		sourceCode = "admin.packet_issuance_resolution"
 	}
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_feed_actions(action_id,event_id,event_sequence,kind,source_code,source_operation_id,outcome,outcome_code,changes_json,recorded_at) VALUES(?,?,?,'operation',?,?,?,?,?,?)`, operation.OperationID, eventID, sequence, sourceCode, operation.OperationID, outcome, code, encoded, recordedAt); err != nil {
+	kind := "operation"
+	if operation.Command.Type == "change_race" {
+		kind = "server_change"
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO packet_issuance_feed_actions(action_id,event_id,event_sequence,kind,source_code,source_operation_id,outcome,outcome_code,changes_json,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, operation.OperationID, eventID, sequence, kind, sourceCode, operation.OperationID, outcome, code, encoded, recordedAt); err != nil {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `UPDATE packet_issuance_feed_heads SET last_sequence=? WHERE event_id=?`, sequence, eventID)

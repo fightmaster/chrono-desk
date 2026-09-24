@@ -425,3 +425,15 @@ Native Desk edits retain the existing local_changes/site-sync and LAN-feed paths
 Rejected walk-in creation can be discarded explicitly by the existing conflict
 resolution UI; the resolution operation retains the virtual image while its feed
 after is null. No chip-presence policy or bib-range allocator is introduced.
+
+### CHR-SW-030: changing race before number assignment
+
+Docs-Impact: CROSS_PROJECT. Shared contract:
+`chrono-docs/contracts/packet-issuance-change-race-v1.md`.
+The receiver accepts `change_race` only for a person with no bib, EPC, issued
+packet or timing evidence, and verifies the new race belongs to the event.
+The member ID stays stable; the SQLite member race and local category projection
+change in the same transaction. A successful command appears on the LAN feed
+as a `server_change` with no embedded new command, so older tablets can consume
+the registration change. A rejected/conflicting command remains in the private
+operation journal and receipt.

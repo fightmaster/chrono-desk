@@ -214,6 +214,20 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 			return nil, err
 		}
 		after.Person = &person
+	case "change_race":
+		if err := requireEditable(source); err != nil {
+			return nil, err
+		}
+		if err := requireAssigned(source); err != nil {
+			return nil, err
+		}
+		if source.Bib != "" || source.EPC != "" || source.Issued {
+			return nil, errors.New("race_change_requires_unnumbered")
+		}
+		if !identifierPattern.MatchString(command.RaceID) || command.RaceID == source.RaceID {
+			return nil, errors.New("invalid_target")
+		}
+		after.RaceID = command.RaceID
 	case "replace_person":
 		if err := requireEditable(source); err != nil {
 			return nil, err

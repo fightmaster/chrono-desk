@@ -137,7 +137,7 @@ func PacketIssuanceFeedPage(ctx context.Context, store *sqlite.Store, eventID, s
 			}
 			next = row.Sequence
 			operation := json.RawMessage("null")
-			if len(row.OperationJSON) != 0 {
+			if row.Kind == "operation" && len(row.OperationJSON) != 0 {
 				operation = append(json.RawMessage(nil), row.OperationJSON...)
 			}
 			actions = append(actions, packetLANFeedAction{ActionID: row.ActionID, Kind: row.Kind,
