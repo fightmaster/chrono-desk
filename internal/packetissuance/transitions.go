@@ -97,6 +97,9 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 				return nil, errors.New("number_already_assigned")
 			}
 		}
+		if command.Type == "create_registration" && command.Bib == "" && command.IssuePacket != nil && !*command.IssuePacket {
+			break
+		}
 		number, err := strconv.ParseInt(command.Bib, 10, 32)
 		if err != nil || number < 1 || strconv.FormatInt(number, 10) != command.Bib || command.IssuePacket == nil {
 			return nil, errors.New("invalid_bib")

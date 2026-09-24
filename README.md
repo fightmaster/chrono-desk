@@ -6,9 +6,9 @@ an event exported from the run5 site, ingests RFID logs from files and live
 Feibot TCP, recalculates results offline, shows live standings and
 top-3, and exports printable CSV protocols for spreadsheet applications.
 
-Version 0.6.4 adds removal of an assigned number while preserving the participant,
-on top of number assignment, walk-in registration and roster synchronization.
-See [0.6.4 release notes](docs/releases/0.6.4.md) for the coordinated RUN5,
+Version 0.6.5 allows creating participants without a number during packet issuance,
+on top of number assignment/removal and roster synchronization.
+See [0.6.5 release notes](docs/releases/0.6.5.md) for the coordinated RUN5,
 Desk and Stopwatch update. Native Feibot input and existing site sync remain
 supported. The bundle version matches `VERSION`.
 

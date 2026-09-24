@@ -13,7 +13,11 @@ func (r *PacketIssuanceReceiver) receiveNumber(ctx context.Context, store *sqlit
 	command := operation.Command
 	eventID := operation.Changes[0].Before.EventID
 	creating := command.Type == "create_registration"
-	code, err := store.CheckPacketNumber(ctx, eventID, command.RegistrationID, command.Bib)
+	var code string
+	var err error
+	if command.Bib != "" {
+		code, err = store.CheckPacketNumber(ctx, eventID, command.RegistrationID, command.Bib)
+	}
 	if err != nil {
 		return err
 	}
