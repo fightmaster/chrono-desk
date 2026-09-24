@@ -107,6 +107,14 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 			}
 		}
 		after.Bib, after.Issued = command.Bib, *command.IssuePacket
+	case "unassign_number":
+		if err := requireEditable(source); err != nil {
+			return nil, err
+		}
+		if err := requireAssigned(source); err != nil {
+			return nil, err
+		}
+		after.Bib, after.Issued = "", false
 	case "issue":
 		if err := requireAssigned(source); err != nil {
 			return nil, err

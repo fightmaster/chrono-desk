@@ -1,0 +1,71 @@
+{
+  "operations": [
+    {
+      "schemaVersion": 1,
+      "operationId": "55555555-5555-4555-8555-555555555555",
+      "scopeId": "site:11111111-1111-4111-8111-111111111111:621632",
+      "baselineId": "baseline-numbers",
+      "originInstanceId": "22222222-2222-4222-8222-222222222222",
+      "originSequence": 1,
+      "createdAtMs": 1789290000001,
+      "claimedActor": "Волонтёр",
+      "command": {
+        "type": "unassign_number",
+        "registrationId": "700"
+      },
+      "bases": [
+        {
+          "registrationId": "700",
+          "heads": []
+        }
+      ],
+      "changes": [
+        {
+          "registrationId": "700",
+          "before": {
+            "id": "700",
+            "eventId": "621632",
+            "raceId": "100",
+            "bib": "500",
+            "epc": "",
+            "person": {
+              "id": "member-person:700",
+              "firstName": "Анна",
+              "lastName": "Тестовая",
+              "birthDate": "1990-03-02",
+              "gender": "female",
+              "team": "Команда",
+              "city": "Город"
+            },
+            "reserve": false,
+            "issued": true,
+            "status": "registered",
+            "transferredTo": null,
+            "hasTimingEvidence": false
+          },
+          "after": {
+            "id": "700",
+            "eventId": "621632",
+            "raceId": "100",
+            "bib": "",
+            "epc": "",
+            "person": {
+              "id": "member-person:700",
+              "firstName": "Анна",
+              "lastName": "Тестовая",
+              "birthDate": "1990-03-02",
+              "gender": "female",
+              "team": "Команда",
+              "city": "Город"
+            },
+            "reserve": false,
+            "issued": false,
+            "status": "registered",
+            "transferredTo": null,
+            "hasTimingEvidence": false
+          }
+        }
+      ]
+    }
+  ]
+}

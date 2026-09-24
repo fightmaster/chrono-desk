@@ -396,7 +396,7 @@ func parseOperation(value any, canonical []byte, allowResolution bool) (Operatio
 		ids[change.RegistrationID] = true
 		for _, fieldEqual := range []bool{
 			change.Before.ID == change.After.ID, change.Before.EventID == change.After.EventID,
-			change.Before.RaceID == change.After.RaceID, change.Before.Bib == change.After.Bib || command.Type == "assign_number" || command.Type == "create_registration" || operation.SchemaVersion == 2,
+			change.Before.RaceID == change.After.RaceID, change.Before.Bib == change.After.Bib || command.Type == "assign_number" || command.Type == "unassign_number" || command.Type == "create_registration" || operation.SchemaVersion == 2,
 			change.Before.EPC == change.After.EPC,
 			change.Before.HasTimingEvidence == change.After.HasTimingEvidence,
 			change.Before.ID == change.RegistrationID,
@@ -472,7 +472,7 @@ func parseCommand(value any, allowResolution bool) (Command, error) {
 			}
 			command.Person = &person
 		}
-	case "issue":
+	case "issue", "unassign_number":
 		if !identifierPattern.MatchString(command.RegistrationID) {
 			return Command{}, errors.New("invalid_operation_command")
 		}
