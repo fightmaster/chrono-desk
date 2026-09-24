@@ -98,7 +98,7 @@ func ConnectPacketIssuanceSite(ctx context.Context, events *EventService, eventI
 	if err := store.InstallPacketIssuanceRoster(ctx, sqlite.PacketIssuanceScope{
 		EventID: bootstrap.Event.ID, ScopeID: bootstrap.ScopeID, BaselineID: bootstrap.BaselineID,
 		SourceKind: bootstrap.SourceKind, SiteFeedCursor: bootstrap.FeedCursor,
-	}, bootstrap.Registrations); err != nil {
+	}, bootstrap.Registrations, bootstrap.ReserveOrigins); err != nil {
 		return PacketRelayStatus{}, err
 	}
 	return PacketRelayStatus{
@@ -281,7 +281,7 @@ func FetchPacketBootstrap(ctx context.Context, descriptor PacketRelayDescriptor,
 	if err != nil {
 		return packetissuance.Bootstrap{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?reserveOrigins=1", nil)
 	if err != nil {
 		return packetissuance.Bootstrap{}, fmt.Errorf("create packet roster request: %w", err)
 	}

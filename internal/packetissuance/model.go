@@ -40,6 +40,7 @@ type Command struct {
 	Value          *bool
 	Fields         map[string]string
 	Person         *Person
+	ReturnSource   *bool
 	IssuePacket    *bool
 	TargetID       string
 	OperationID    string
@@ -99,14 +100,15 @@ type Race struct {
 }
 
 type Bootstrap struct {
-	SchemaVersion int            `json:"schemaVersion"`
-	ScopeID       string         `json:"scopeId"`
-	SourceKind    string         `json:"sourceKind"`
-	Event         Event          `json:"event"`
-	Races         []Race         `json:"races"`
-	Registrations []Registration `json:"registrations"`
-	BaselineID    string         `json:"baselineId"`
-	FeedCursor    string         `json:"feedCursor,omitempty"`
+	ReserveOrigins *[]ReserveOrigin `json:"reserveOrigins,omitempty"`
+	SchemaVersion  int              `json:"schemaVersion"`
+	ScopeID        string           `json:"scopeId"`
+	SourceKind     string           `json:"sourceKind"`
+	Event          Event            `json:"event"`
+	Races          []Race           `json:"races"`
+	Registrations  []Registration   `json:"registrations"`
+	BaselineID     string           `json:"baselineId"`
+	FeedCursor     string           `json:"feedCursor,omitempty"`
 }
 
 type FeedChange struct {

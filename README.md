@@ -243,3 +243,16 @@ the endpoint is the machine-readable evidence used during field acceptance.
 - [docs/architecture.md](docs/architecture.md) — components, data flow, key decisions
 - [docs/event-export-format.md](docs/event-export-format.md) — the run5 → chrono-desk
   event export contract (JSON, schema_version 3)
+
+
+## CHR-SW-027: preserving participants when removing numbers
+
+Docs-Impact: CROSS_PROJECT. The single «Убрать номер» action detaches bib/EPC
+and issued state without deleting the participant. Explicit reserve provenance
+returns the number/EPC to its original race; manually entered numbers are freed
+without creating a reserve and can be assigned across races. New assignment
+never creates an empty reserve. Negotiated `reserveOrigins` bootstrap metadata
+and durable audit images preserve this choice across restart and other clients.
+See canonical `chrono-docs/contracts/packet-issuance-release-number.md` for
+`clear_number`, `return_to_reserve`, `assign_reserve`, virtual row/atomic feed
+semantics and compatibility. Legacy commands retain their replay semantics.

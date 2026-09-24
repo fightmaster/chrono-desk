@@ -41,6 +41,9 @@ func RebasePacketIssuanceRoster(ctx context.Context, store *sqlite.Store, eventI
 			snapshot.FeedCursor == "" || !validPacketSnapshotCursor(snapshot.FeedCursor) || len(snapshot.Registrations) > 20_000 {
 			return errors.New("invalid_packet_snapshot_rebase")
 		}
+		if err := txStore.SavePacketReserveOrigins(ctx, eventID, snapshot.ReserveOrigins); err != nil {
+			return err
+		}
 		complete, err := txStore.PacketSiteBaselineComplete(ctx, eventID)
 		if err != nil {
 			return err

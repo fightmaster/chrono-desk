@@ -18,10 +18,32 @@ var (
 	ErrPacketFeedScope         = errors.New("packet feed scope mismatch")
 )
 
-func PacketIssuanceBootstrap(ctx context.Context, events *EventService, eventID string) (packetissuance.Bootstrap, error) {
+func PacketIssuanceBootstrap(ctx context.Context, events *EventService, eventID string, includeOrigins ...bool) (packetissuance.Bootstrap, error) {
 	store, err := events.Open(eventID)
 	if err != nil {
 		return packetissuance.Bootstrap{}, err
+	}
+	if len(includeOrigins) != 0 && includeOrigins[0] {
+		ready, err := store.PacketReserveOriginsReady(ctx, eventID)
+		if err != nil {
+			return packetissuance.Bootstrap{}, err
+		}
+		if !ready {
+			state, found, err := events.GetPacketRelay(ctx, eventID)
+			if err != nil {
+				return packetissuance.Bootstrap{}, err
+			}
+			if found && state.Credential != "" {
+				snapshot, fetchErr := FetchPacketBootstrap(ctx, PacketRelayDescriptor{APIBaseURL: state.APIBaseURL, ScopeID: state.ScopeID, EventID: eventID}, state.Credential)
+				if fetchErr == nil {
+					if err := store.WithinTx(ctx, func(tx *sqlite.Store) error {
+						return tx.SavePacketReserveOrigins(ctx, eventID, snapshot.ReserveOrigins)
+					}); err != nil {
+						return packetissuance.Bootstrap{}, err
+					}
+				}
+			}
+		}
 	}
 	var result packetissuance.Bootstrap
 	err = store.WithinTx(ctx, func(txStore *sqlite.Store) error {
@@ -48,6 +70,12 @@ func PacketIssuanceBootstrap(ctx context.Context, events *EventService, eventID 
 		result = packetissuance.Bootstrap{SchemaVersion: 2, ScopeID: scope.ScopeID, SourceKind: "site",
 			Event:         packetissuance.Event{ID: event.ID, Name: event.Name, Date: event.Date},
 			Registrations: rows, BaselineID: scope.BaselineID, FeedCursor: strconv.FormatInt(head, 10),
+		}
+		if len(includeOrigins) != 0 && includeOrigins[0] {
+			result.ReserveOrigins, err = txStore.PacketReserveOrigins(ctx, eventID, rows)
+			if err != nil {
+				return err
+			}
 		}
 		for _, race := range races {
 			result.Races = append(result.Races, packetissuance.Race{ID: race.ID, Name: race.Name})

@@ -48,6 +48,10 @@ func EmptyRegistration(command Command) (Registration, error) {
 	return Registration{ID: command.RegistrationID, EventID: command.EventID, RaceID: command.RaceID, Status: "registered"}, nil
 }
 
+func EmptyReserve(command Command, source Registration) (Registration, error) {
+	return EmptyRegistration(Command{RegistrationID: command.TargetID, EventID: source.EventID, RaceID: command.RaceID})
+}
+
 func IsVirtualRegistration(row Registration) bool {
 	empty, err := EmptyRegistration(Command{RegistrationID: row.ID, EventID: row.EventID, RaceID: row.RaceID})
 	return err == nil && equalRegistration(row, empty)
@@ -110,7 +114,26 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 			}
 		}
 		after.Bib, after.Issued = command.Bib, *command.IssuePacket
-	case "unassign_number":
+	case "return_to_reserve":
+		if err := requireEditable(source); err != nil {
+			return nil, err
+		}
+		if err := requireAssigned(source); err != nil {
+			return nil, err
+		}
+		if !validAssignedBib(command.Bib) || (source.Bib != command.Bib && !(source.Bib == "" && source.EPC != "")) {
+			return nil, errors.New("invalid_bib")
+		}
+		target, ok := rows[command.TargetID]
+		empty, err := EmptyReserve(command, source)
+		if !ok || err != nil || target.ID == source.ID || !equalRegistration(target, empty) {
+			return nil, errors.New("invalid_target")
+		}
+		after.Bib, after.EPC, after.Issued = "", "", false
+		reserved := cloneRegistration(target)
+		reserved.Bib, reserved.EPC, reserved.Reserve = command.Bib, source.EPC, true
+		return []Change{change(source, after), change(target, reserved)}, nil
+	case "clear_number", "unassign_number":
 		if err := requireEditable(source); err != nil {
 			return nil, err
 		}
@@ -118,6 +141,9 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 			return nil, err
 		}
 		after.Bib, after.Issued = "", false
+		if command.Type == "clear_number" {
+			after.EPC = ""
+		}
 	case "issue":
 		if err := requireAssigned(source); err != nil {
 			return nil, err
@@ -206,7 +232,7 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 		after.Reserve = false
 		after.Issued = *command.IssuePacket
 		after.Status = "registered"
-	case "move_race", "move_to_reserve":
+	case "move_race", "move_to_reserve", "assign_reserve":
 		if err := requireEditable(source); err != nil {
 			return nil, err
 		}
@@ -218,12 +244,24 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 			(command.Type == "move_race" && target.RaceID == source.RaceID) {
 			return nil, errors.New("invalid_target")
 		}
+		if command.Type == "assign_reserve" && target.Bib == "" {
+			return nil, errors.New("invalid_bib")
+		}
 		if !target.Reserve || target.Issued || target.HasTimingEvidence || target.Status != "registered" || target.TransferredTo != nil {
 			return nil, errors.New("target_not_available")
 		}
-		if command.Type == "move_to_reserve" {
+		if command.Type == "move_to_reserve" || command.Type == "assign_reserve" {
 			after.Person = nil
-			after.Reserve = true
+			if command.Type == "assign_reserve" && command.ReturnSource == nil {
+				return nil, errors.New("invalid_command")
+			}
+			after.Reserve = command.Type == "move_to_reserve" || *command.ReturnSource
+			if command.Type == "assign_reserve" && *command.ReturnSource && source.Bib == "" {
+				return nil, errors.New("invalid_bib")
+			}
+			if command.Type == "assign_reserve" && !*command.ReturnSource {
+				after.Bib, after.EPC = "", ""
+			}
 			after.Issued = false
 			after.Status = "registered"
 			after.TransferredTo = nil
@@ -255,19 +293,23 @@ func ReverseMove(records []Registration, original []Change, reason string) ([]Ch
 	source, target := original[0], original[1]
 	releaseSource := source.After.Person == nil && source.After.Reserve && !source.After.Issued &&
 		source.After.Status == "registered" && source.After.TransferredTo == nil
+	emptySource := source.After.Person == nil && !source.After.Reserve && source.After.Bib == "" && source.After.EPC == "" && !source.After.Issued && source.After.Status == "registered" && source.After.TransferredTo == nil
 	legacySource := source.After.TransferredTo != nil && *source.After.TransferredTo == target.RegistrationID &&
 		source.After.Status == "dns" && !source.After.Reserve
-	if (!releaseSource && !legacySource) || !target.Before.Reserve || source.RegistrationID == target.RegistrationID {
+	if (!releaseSource && !emptySource && !legacySource) || !target.Before.Reserve || source.RegistrationID == target.RegistrationID {
 		return nil, errors.New("correction_review_required")
 	}
+	returnSource := false
 	issuePacket := target.After.Issued
 	moveType := "move_race"
-	if releaseSource {
+	if emptySource {
+		moveType = "assign_reserve"
+	} else if releaseSource {
 		moveType = "move_to_reserve"
 	}
 	replayed, err := Apply([]Registration{source.Before, target.Before}, Command{
 		Type: moveType, RegistrationID: source.RegistrationID,
-		TargetID: target.RegistrationID, IssuePacket: &issuePacket,
+		TargetID: target.RegistrationID, IssuePacket: &issuePacket, ReturnSource: &returnSource,
 	})
 	if err != nil || !equalChanges(replayed, original) {
 		return nil, errors.New("correction_review_required")
@@ -284,7 +326,7 @@ func ReverseMove(records []Registration, original []Change, reason string) ([]Ch
 		row, ok := current[previous.RegistrationID]
 		if !ok || row.HasTimingEvidence || !equalRegistration(row, previous.After) ||
 			row.ID != previous.Before.ID || row.EventID != previous.Before.EventID ||
-			row.RaceID != previous.Before.RaceID || row.Bib != previous.Before.Bib || row.EPC != previous.Before.EPC {
+			row.RaceID != previous.Before.RaceID || (row.Bib != previous.Before.Bib || row.EPC != previous.Before.EPC) {
 			return nil, errors.New("correction_review_required")
 		}
 		changes = append(changes, change(row, previous.Before))
@@ -331,4 +373,9 @@ func cloneRegistration(row Registration) Registration {
 }
 func change(before, after Registration) Change {
 	return Change{RegistrationID: before.ID, Before: cloneRegistration(before), After: cloneRegistration(after)}
+}
+
+func validAssignedBib(bib string) bool {
+	number, err := strconv.ParseInt(bib, 10, 32)
+	return err == nil && number > 0 && strconv.FormatInt(number, 10) == bib
 }

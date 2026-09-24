@@ -324,7 +324,7 @@ func (s *Store) MarkPacketOperationSiteReceipt(ctx context.Context, receipt pack
 // InstallPacketIssuanceRoster creates the Desk projection from the site's
 // authenticated bootstrap. It refuses replacement once any issuance history
 // exists; later changes must arrive through the feed rather than a snapshot.
-func (s *Store) InstallPacketIssuanceRoster(ctx context.Context, scope PacketIssuanceScope, rows []packetissuance.Registration) error {
+func (s *Store) InstallPacketIssuanceRoster(ctx context.Context, scope PacketIssuanceScope, rows []packetissuance.Registration, origins ...*[]packetissuance.ReserveOrigin) error {
 	if scope.SiteFeedCursor == "" {
 		scope.SiteFeedCursor = "0"
 	}
@@ -384,6 +384,15 @@ func (s *Store) InstallPacketIssuanceRoster(ctx context.Context, scope PacketIss
 			if _, err := txStore.db.ExecContext(ctx, `INSERT INTO packet_issuance_site_registrations
 				(event_id,registration_id,value_json,deleted) VALUES (?,?,?,0)`, scope.EventID, row.ID, encoded); err != nil {
 				return fmt.Errorf("insert packet site baseline %s: %w", row.ID, err)
+			}
+		}
+		if len(origins) != 0 {
+			values := origins[0]
+			if values != nil {
+				combined := packetissuance.MatchingReserveOrigins(rows, *values)
+				if err := txStore.SavePacketReserveOrigins(ctx, scope.EventID, &combined); err != nil {
+					return err
+				}
 			}
 		}
 		installedAt := scope.InstalledAt
@@ -790,7 +799,7 @@ func (s *Store) PutPacketRegistration(ctx context.Context, row packetissuance.Re
 	if row.Person != nil {
 		first, last = row.Person.FirstName, row.Person.LastName
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE members SET first_name=?,last_name=?,gender=?,dob=?,team=?,city=?,status=?,category_id=?,number=? WHERE id=? AND event_id=?`, first, last, gender, dob, team, city, status, categoryID, packetRegistrationMember(row, categoryID).Number, row.ID, row.EventID)
+	result, err := s.db.ExecContext(ctx, `UPDATE members SET first_name=?,last_name=?,gender=?,dob=?,team=?,city=?,status=?,category_id=?,number=?,rfid=CASE WHEN COALESCE(epc,'')<>? THEN NULL ELSE rfid END,epc=CASE WHEN COALESCE(epc,'')=? THEN epc ELSE ? END WHERE id=? AND event_id=?`, first, last, gender, dob, team, city, status, categoryID, packetRegistrationMember(row, categoryID).Number, row.EPC, row.EPC, packetRegistrationMember(row, categoryID).EPC, row.ID, row.EventID)
 	if err != nil {
 		return err
 	}
@@ -1045,9 +1054,17 @@ func (s *Store) PublishPacketOperation(ctx context.Context, operation packetissu
 		return nil
 	}
 	var feedChanges any = withoutTimingEvidence(changes)
-	if operation.Command.Type == "create_registration" && len(changes) == 1 {
-		after := changes[0].After
-		feedChanges = withoutFeedTimingEvidence([]packetissuance.FeedChange{{RegistrationID: after.ID, Before: nil, After: &after}})
+	if operation.Command.Type == "create_registration" || operation.Command.Type == "return_to_reserve" {
+		lifecycle := make([]packetissuance.FeedChange, 0, len(changes))
+		for _, change := range changes {
+			before, after := change.Before, change.After
+			item := packetissuance.FeedChange{RegistrationID: after.ID, Before: &before, After: &after}
+			if packetissuance.IsVirtualRegistration(before) {
+				item.Before = nil
+			}
+			lifecycle = append(lifecycle, item)
+		}
+		feedChanges = withoutFeedTimingEvidence(lifecycle)
 	}
 	if operation.SchemaVersion == 2 {
 		lifecycle := make([]packetissuance.FeedChange, 0, len(changes))
@@ -1181,4 +1198,10 @@ func (s *Store) CheckPacketNumber(ctx context.Context, eventID, registrationID, 
 		return "timing_review_required", nil
 	}
 	return "", nil
+}
+
+// RestorePacketRFID preserves the detached slot's legacy identifier.
+func (s *Store) RestorePacketRFID(ctx context.Context, targetID string, rfid *string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE members SET rfid=? WHERE id=?`, rfid, targetID)
+	return err
 }

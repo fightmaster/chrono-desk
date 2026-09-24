@@ -159,6 +159,20 @@ func packetConflictCandidate(ctx context.Context, store *sqlite.Store, eventID s
 	if errors.Is(err, sql.ErrNoRows) && operation.Command.Type == "create_registration" {
 		current, err = []packetissuance.Registration{operation.Changes[0].Before}, nil
 	}
+	if errors.Is(err, sql.ErrNoRows) && operation.Command.Type == "return_to_reserve" {
+		current = nil
+		for _, change := range operation.Changes {
+			rows, readErr := store.GetPacketRegistrations(ctx, eventID, []string{change.RegistrationID})
+			if errors.Is(readErr, sql.ErrNoRows) && packetissuance.IsVirtualRegistration(change.Before) {
+				rows, readErr = []packetissuance.Registration{change.Before}, nil
+			}
+			if readErr != nil {
+				return PacketConflictCandidate{}, readErr
+			}
+			current = append(current, rows[0])
+		}
+		err = nil
+	}
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return PacketConflictCandidate{}, errors.New("packet_resolution_input_missing")
@@ -175,7 +189,7 @@ func packetConflictCandidate(ctx context.Context, store *sqlite.Store, eventID s
 			applyErr = errors.New(code)
 		}
 	}
-	if operation.Command.Type == "create_registration" {
+	if operation.Command.Type == "create_registration" || operation.Command.Type == "return_to_reserve" {
 		applyErr = errors.New("registration_already_exists")
 	}
 	applicable := applyErr == nil

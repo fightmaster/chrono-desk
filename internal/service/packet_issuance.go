@@ -105,6 +105,9 @@ func (r *PacketIssuanceReceiver) receiveOne(ctx context.Context, store *sqlite.S
 		if !applied {
 			return r.persist(ctx, txStore, operation, hash, "waiting_dependency", "dependency_missing", nil, known, &receipt)
 		}
+		if operation.Command.Type == "return_to_reserve" {
+			return r.receiveReserveReturn(ctx, txStore, operation, hash, known, &receipt)
+		}
 		if operation.Command.Type == "assign_number" || operation.Command.Type == "create_registration" {
 			return r.receiveNumber(ctx, txStore, operation, hash, known, &receipt)
 		}
@@ -125,6 +128,11 @@ func (r *PacketIssuanceReceiver) receiveOne(ctx context.Context, store *sqlite.S
 				existingMember, err := txStore.GetMember(ctx, change.RegistrationID)
 				if err != nil {
 					return err
+				}
+				if operation.Command.Type == "clear_number" || (operation.Command.Type == "assign_reserve" && operation.Command.ReturnSource != nil && !*operation.Command.ReturnSource && change.RegistrationID == operation.Command.RegistrationID) {
+					if err := txStore.RestorePacketRFID(ctx, change.RegistrationID, nil); err != nil {
+						return err
+					}
 				}
 				categoryID := existingMember.CategoryID
 				if !reflect.DeepEqual(change.Before.Person, change.After.Person) {

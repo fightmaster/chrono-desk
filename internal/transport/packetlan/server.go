@@ -375,7 +375,7 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusUnauthorized, "connection_unavailable")
 		return
 	}
-	bootstrap, err := service.PacketIssuanceBootstrap(r.Context(), s.events, connection.EventID)
+	bootstrap, err := service.PacketIssuanceBootstrap(r.Context(), s.events, connection.EventID, r.URL.Query().Get("reserveOrigins") == "1")
 	if err != nil || bootstrap.ScopeID != connection.ScopeID {
 		s.writeError(w, http.StatusConflict, "roster_unavailable")
 		return

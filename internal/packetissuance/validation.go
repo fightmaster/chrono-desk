@@ -86,6 +86,8 @@ func ParseBootstrap(data []byte) (Bootstrap, error) {
 		return Bootstrap{}, errors.New("invalid_bootstrap")
 	}
 	obj, ok := root.(map[string]any)
+	rawOrigins, hasOrigins := obj["reserveOrigins"]
+	delete(obj, "reserveOrigins")
 	version := integer(obj["schemaVersion"])
 	keysOK := version == 1 && exactKeys(obj, "schemaVersion", "scopeId", "sourceKind", "event", "races", "registrations", "baselineId") ||
 		version == 2 && exactKeys(obj, "schemaVersion", "scopeId", "sourceKind", "event", "races", "registrations", "baselineId", "feedCursor")
@@ -143,8 +145,31 @@ func ParseBootstrap(data []byte) (Bootstrap, error) {
 			return Bootstrap{}, errors.New("invalid_bootstrap")
 		}
 	}
+	var origins *[]ReserveOrigin
+	if hasOrigins {
+		list, ok := rawOrigins.([]any)
+		if !ok || len(list) > 20000 {
+			return Bootstrap{}, errors.New("invalid_bootstrap")
+		}
+		values := make([]ReserveOrigin, 0, len(list))
+		seen := make(map[string]bool)
+		for _, item := range list {
+			obj, ok := item.(map[string]any)
+			if !ok || !exactKeys(obj, "registrationId", "bib", "epc", "raceId") {
+				return Bootstrap{}, errors.New("invalid_bootstrap")
+			}
+			origin := ReserveOrigin{RegistrationID: stringValue(obj["registrationId"]), Bib: stringValue(obj["bib"]), EPC: stringValue(obj["epc"]), RaceID: stringValue(obj["raceId"])}
+			if !identifierPattern.MatchString(origin.RegistrationID) || seen[origin.RegistrationID] || !raceIDs[origin.RaceID] || origin.Bib == "" || !validText(origin.Bib, 64) || !validText(origin.EPC, 128) {
+				return Bootstrap{}, errors.New("invalid_bootstrap")
+			}
+			seen[origin.RegistrationID] = true
+			values = append(values, origin)
+		}
+		origins = &values
+	}
 	return Bootstrap{
-		SchemaVersion: int(version), ScopeID: stringValue(obj["scopeId"]), SourceKind: "site",
+		ReserveOrigins: origins,
+		SchemaVersion:  int(version), ScopeID: stringValue(obj["scopeId"]), SourceKind: "site",
 		Event: event, Races: races, Registrations: rows, BaselineID: stringValue(obj["baselineId"]), FeedCursor: feedAfter,
 	}, nil
 }
@@ -396,8 +421,8 @@ func parseOperation(value any, canonical []byte, allowResolution bool) (Operatio
 		ids[change.RegistrationID] = true
 		for _, fieldEqual := range []bool{
 			change.Before.ID == change.After.ID, change.Before.EventID == change.After.EventID,
-			change.Before.RaceID == change.After.RaceID, change.Before.Bib == change.After.Bib || command.Type == "assign_number" || command.Type == "unassign_number" || command.Type == "create_registration" || operation.SchemaVersion == 2,
-			change.Before.EPC == change.After.EPC,
+			change.Before.RaceID == change.After.RaceID, change.Before.Bib == change.After.Bib || command.Type == "return_to_reserve" || command.Type == "clear_number" || command.Type == "assign_reserve" || command.Type == "correct_move" || command.Type == "assign_number" || command.Type == "unassign_number" || command.Type == "create_registration" || operation.SchemaVersion == 2,
+			change.Before.EPC == change.After.EPC || command.Type == "return_to_reserve" || command.Type == "clear_number" || command.Type == "assign_reserve" || command.Type == "correct_move" || operation.SchemaVersion == 2,
 			change.Before.HasTimingEvidence == change.After.HasTimingEvidence,
 			change.Before.ID == change.RegistrationID,
 		} {
@@ -450,6 +475,18 @@ func parseCommand(value any, allowResolution bool) (Command, error) {
 	}
 	command := Command{Type: stringValue(obj["type"]), RegistrationID: stringValue(obj["registrationId"]), raw: raw}
 	switch command.Type {
+	case "return_to_reserve":
+		if !identifierPattern.MatchString(command.RegistrationID) || !exactKeys(obj, "type", "registrationId", "targetId", "bib", "raceId") {
+			return Command{}, errors.New("invalid_operation_command")
+		}
+		command.TargetID = stringValue(obj["targetId"])
+		if !identifierPattern.MatchString(command.TargetID) {
+			return Command{}, errors.New("invalid_operation_command")
+		}
+		command.Bib, command.RaceID = stringValue(obj["bib"]), stringValue(obj["raceId"])
+		if !validAssignedBib(command.Bib) || !identifierPattern.MatchString(command.RaceID) {
+			return Command{}, errors.New("invalid_operation_command")
+		}
 	case "assign_number", "create_registration":
 		keys := []string{"type", "registrationId", "bib", "issuePacket"}
 		if command.Type == "create_registration" {
@@ -472,7 +509,7 @@ func parseCommand(value any, allowResolution bool) (Command, error) {
 			}
 			command.Person = &person
 		}
-	case "issue", "unassign_number":
+	case "issue", "unassign_number", "clear_number":
 		if !identifierPattern.MatchString(command.RegistrationID) {
 			return Command{}, errors.New("invalid_operation_command")
 		}
@@ -545,11 +582,20 @@ func parseCommand(value any, allowResolution bool) (Command, error) {
 			return Command{}, errors.New("invalid_operation_command")
 		}
 		command.IssuePacket = &issue
-	case "move_race", "move_to_reserve":
+	case "move_race", "move_to_reserve", "assign_reserve":
 		if !identifierPattern.MatchString(command.RegistrationID) {
 			return Command{}, errors.New("invalid_operation_command")
 		}
-		if !exactKeys(obj, "type", "registrationId", "targetId", "issuePacket") {
+		keys := []string{"type", "registrationId", "targetId", "issuePacket"}
+		if command.Type == "assign_reserve" {
+			keys = append(keys, "returnSource")
+			value, valid := obj["returnSource"].(bool)
+			if !valid {
+				return Command{}, errors.New("invalid_operation_command")
+			}
+			command.ReturnSource = &value
+		}
+		if !exactKeys(obj, keys...) {
 			return Command{}, errors.New("invalid_operation_command")
 		}
 		command.TargetID = stringValue(obj["targetId"])

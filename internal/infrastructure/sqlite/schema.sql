@@ -469,3 +469,8 @@ CREATE TABLE IF NOT EXISTS projection_evidence_acceptance (
     last_failure_version_mismatch  INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (event_id, revision_version, acceptance_window, app_build)
 );
+
+CREATE TABLE IF NOT EXISTS packet_issuance_reserve_origins (
+    event_id TEXT PRIMARY KEY REFERENCES events(id),
+    origins_json TEXT NOT NULL
+);
