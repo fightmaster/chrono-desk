@@ -2,6 +2,8 @@ package packetissuance
 
 import (
 	"errors"
+	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -37,6 +39,20 @@ func validatePerson(person Person) error {
 	return nil
 }
 
+// EmptyRegistration is a virtual image only; receivers must prove ID absence.
+func EmptyRegistration(command Command) (Registration, error) {
+	if !regexp.MustCompile(`^[1-9][0-9]{14}$`).MatchString(command.RegistrationID) ||
+		!identifierPattern.MatchString(command.EventID) || !identifierPattern.MatchString(command.RaceID) {
+		return Registration{}, errors.New("invalid_command")
+	}
+	return Registration{ID: command.RegistrationID, EventID: command.EventID, RaceID: command.RaceID, Status: "registered"}, nil
+}
+
+func IsVirtualRegistration(row Registration) bool {
+	empty, err := EmptyRegistration(Command{RegistrationID: row.ID, EventID: row.EventID, RaceID: row.RaceID})
+	return err == nil && equalRegistration(row, empty)
+}
+
 func Apply(records []Registration, command Command) ([]Change, error) {
 	rows := make(map[string]Registration, len(records))
 	for _, row := range records {
@@ -54,6 +70,43 @@ func Apply(records []Registration, command Command) ([]Change, error) {
 	}
 	after := cloneRegistration(source)
 	switch command.Type {
+	case "assign_number", "create_registration":
+		if err := requireEditable(source); err != nil {
+			return nil, err
+		}
+		if command.Type == "create_registration" {
+			empty, err := EmptyRegistration(command)
+			if err != nil {
+				return nil, err
+			}
+			if !equalRegistration(source, empty) {
+				return nil, errors.New("registration_already_exists")
+			}
+			if command.Person == nil {
+				return nil, errors.New("invalid_person")
+			}
+			if err := validatePerson(*command.Person); err != nil {
+				return nil, err
+			}
+			after.Person = clonePerson(command.Person)
+		} else {
+			if err := requireAssigned(source); err != nil {
+				return nil, err
+			}
+			if source.Bib != "" || source.Issued {
+				return nil, errors.New("number_already_assigned")
+			}
+		}
+		number, err := strconv.ParseInt(command.Bib, 10, 32)
+		if err != nil || number < 1 || strconv.FormatInt(number, 10) != command.Bib || command.IssuePacket == nil {
+			return nil, errors.New("invalid_bib")
+		}
+		for _, row := range records {
+			if row.EventID == source.EventID && row.ID != source.ID && row.Bib == command.Bib {
+				return nil, errors.New("number_occupied")
+			}
+		}
+		after.Bib, after.Issued = command.Bib, *command.IssuePacket
 	case "issue":
 		if err := requireAssigned(source); err != nil {
 			return nil, err

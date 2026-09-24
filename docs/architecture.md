@@ -410,3 +410,18 @@ resolution remain release gates; the localhost bearer is never sent to a tablet.
   offline must match the site.
 - Importers (event JSON, Feibot CSV) get fixture-based tests including timezone and
   dedup cases.
+
+### CHR-SW-021: assigning bibs at packet issuance
+
+Docs-Impact: CROSS_PROJECT. Shared contract:
+`chrono-docs/contracts/packet-issuance-numbers.md`.
+The dedicated packet receiver accepts `assign_number` and `create_registration`
+inside the existing SQLite transaction, checks event-wide bib availability,
+persists the participant/issued state, immutable operation and feed together.
+New registrations keep the tablet's stable 15-digit bigint-safe ID. A creation
+has an exact virtual operation before-image; its authoritative feed before is
+null. Site feed creation and bib updates also update the ordinary members table.
+Native Desk edits retain the existing local_changes/site-sync and LAN-feed paths.
+Rejected walk-in creation can be discarded explicitly by the existing conflict
+resolution UI; the resolution operation retains the virtual image while its feed
+after is null. No chip-presence policy or bib-range allocator is introduced.

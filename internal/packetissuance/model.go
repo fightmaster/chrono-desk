@@ -33,6 +33,9 @@ type Registration struct {
 type Command struct {
 	Type           string
 	RegistrationID string
+	Bib            string
+	EventID        string
+	RaceID         string
 	Reason         string
 	Value          *bool
 	Fields         map[string]string

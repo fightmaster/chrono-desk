@@ -156,6 +156,9 @@ func packetConflictCandidate(ctx context.Context, store *sqlite.Store, eventID s
 		ids = append(ids, change.RegistrationID)
 	}
 	current, err := store.GetPacketRegistrations(ctx, eventID, ids)
+	if errors.Is(err, sql.ErrNoRows) && operation.Command.Type == "create_registration" {
+		current, err = []packetissuance.Registration{operation.Changes[0].Before}, nil
+	}
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return PacketConflictCandidate{}, errors.New("packet_resolution_input_missing")
@@ -163,6 +166,18 @@ func packetConflictCandidate(ctx context.Context, store *sqlite.Store, eventID s
 		return PacketConflictCandidate{}, err
 	}
 	derived, applyErr := packetissuance.Apply(current, operation.Command)
+	if operation.Command.Type == "assign_number" {
+		code, err := store.CheckPacketNumber(ctx, eventID, operation.Command.RegistrationID, operation.Command.Bib)
+		if err != nil {
+			return PacketConflictCandidate{}, err
+		}
+		if code != "" {
+			applyErr = errors.New(code)
+		}
+	}
+	if operation.Command.Type == "create_registration" {
+		applyErr = errors.New("registration_already_exists")
+	}
 	applicable := applyErr == nil
 	if !applicable {
 		derived, err = convergencePacketChanges(current, operation.Changes)

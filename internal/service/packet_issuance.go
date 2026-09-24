@@ -105,6 +105,9 @@ func (r *PacketIssuanceReceiver) receiveOne(ctx context.Context, store *sqlite.S
 		if !applied {
 			return r.persist(ctx, txStore, operation, hash, "waiting_dependency", "dependency_missing", nil, known, &receipt)
 		}
+		if operation.Command.Type == "assign_number" || operation.Command.Type == "create_registration" {
+			return r.receiveNumber(ctx, txStore, operation, hash, known, &receipt)
+		}
 		ids := make([]string, 0, len(operation.Changes))
 		for _, change := range operation.Changes {
 			ids = append(ids, change.RegistrationID)

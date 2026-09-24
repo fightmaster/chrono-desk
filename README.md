@@ -6,14 +6,11 @@ an event exported from the run5 site, ingests RFID logs from files and live
 Feibot TCP, recalculates results offline, shows live standings and
 top-3, and exports printable CSV protocols for spreadsheet applications.
 
-The unpublished 0.6.0/build190 candidate combines the released 0.5.1 ordinary
-Feibot/RFID Edge receiver baseline with the packet-issuance LAN receiver,
-site journal and pending-safe snapshot recovery (CHR-SIDE-002, CHR-SW-009).
-Its native bundle version matches `VERSION`; it does not move or reissue an
-existing tag. Native Feibot input and existing site schema versions stay
-supported. See [0.6.0 release notes](docs/releases/0.6.0.md),
-[edge receiver](docs/edge-receiver.md) and the packet-tablet section below for
-the receiver-first rollout and remaining physical gates.
+Version 0.6.2 adds number assignment and walk-in registration during packet
+issuance, on top of the published 0.6.1 receiver and roster synchronization.
+See [0.6.2 release notes](docs/releases/0.6.2.md) for the coordinated RUN5,
+Desk and Stopwatch update. Native Feibot input and existing site sync remain
+supported. The bundle version matches `VERSION`.
 
 The site stays the source of truth. Synchronization is bidirectional: the desktop pulls
 the current event export and pushes local edits/manual finishes plus only the raw

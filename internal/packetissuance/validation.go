@@ -263,12 +263,13 @@ func resolutionFeedChangesMatch(operation []Change, feed []FeedChange) bool {
 	}
 	for index, expected := range operation {
 		actual := feed[index]
-		if actual.Before == nil || actual.After == nil || actual.RegistrationID != expected.RegistrationID {
+		if actual.Before == nil || actual.RegistrationID != expected.RegistrationID {
 			return false
 		}
 		before, after := expected.Before, expected.After
 		before.HasTimingEvidence, after.HasTimingEvidence = false, false
-		if !reflect.DeepEqual(before, *actual.Before) || !reflect.DeepEqual(after, *actual.After) {
+		if !reflect.DeepEqual(before, *actual.Before) || (IsVirtualRegistration(expected.After) && actual.After != nil) ||
+			(!IsVirtualRegistration(expected.After) && (actual.After == nil || !reflect.DeepEqual(after, *actual.After))) {
 			return false
 		}
 	}
@@ -395,7 +396,7 @@ func parseOperation(value any, canonical []byte, allowResolution bool) (Operatio
 		ids[change.RegistrationID] = true
 		for _, fieldEqual := range []bool{
 			change.Before.ID == change.After.ID, change.Before.EventID == change.After.EventID,
-			change.Before.RaceID == change.After.RaceID, change.Before.Bib == change.After.Bib,
+			change.Before.RaceID == change.After.RaceID, change.Before.Bib == change.After.Bib || command.Type == "assign_number" || command.Type == "create_registration" || operation.SchemaVersion == 2,
 			change.Before.EPC == change.After.EPC,
 			change.Before.HasTimingEvidence == change.After.HasTimingEvidence,
 			change.Before.ID == change.RegistrationID,
@@ -449,6 +450,28 @@ func parseCommand(value any, allowResolution bool) (Command, error) {
 	}
 	command := Command{Type: stringValue(obj["type"]), RegistrationID: stringValue(obj["registrationId"]), raw: raw}
 	switch command.Type {
+	case "assign_number", "create_registration":
+		keys := []string{"type", "registrationId", "bib", "issuePacket"}
+		if command.Type == "create_registration" {
+			keys = append(keys, "eventId", "raceId", "person")
+		}
+		if !identifierPattern.MatchString(command.RegistrationID) || !exactKeys(obj, keys...) {
+			return Command{}, errors.New("invalid_operation_command")
+		}
+		bib, bibOK := obj["bib"].(string)
+		issue, issueOK := obj["issuePacket"].(bool)
+		if !bibOK || !issueOK {
+			return Command{}, errors.New("invalid_operation_command")
+		}
+		command.Bib, command.IssuePacket = bib, &issue
+		if command.Type == "create_registration" {
+			command.EventID, command.RaceID = stringValue(obj["eventId"]), stringValue(obj["raceId"])
+			person, err := parsePerson(obj["person"])
+			if err != nil {
+				return Command{}, errors.New("invalid_operation_command")
+			}
+			command.Person = &person
+		}
 	case "issue":
 		if !identifierPattern.MatchString(command.RegistrationID) {
 			return Command{}, errors.New("invalid_operation_command")

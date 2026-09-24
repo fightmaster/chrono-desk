@@ -790,7 +790,7 @@ func (s *Store) PutPacketRegistration(ctx context.Context, row packetissuance.Re
 	if row.Person != nil {
 		first, last = row.Person.FirstName, row.Person.LastName
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE members SET first_name=?,last_name=?,gender=?,dob=?,team=?,city=?,status=?,category_id=? WHERE id=? AND event_id=?`, first, last, gender, dob, team, city, status, categoryID, row.ID, row.EventID)
+	result, err := s.db.ExecContext(ctx, `UPDATE members SET first_name=?,last_name=?,gender=?,dob=?,team=?,city=?,status=?,category_id=?,number=? WHERE id=? AND event_id=?`, first, last, gender, dob, team, city, status, categoryID, packetRegistrationMember(row, categoryID).Number, row.ID, row.EventID)
 	if err != nil {
 		return err
 	}
@@ -1044,7 +1044,24 @@ func (s *Store) PublishPacketOperation(ctx context.Context, operation packetissu
 	if exists != 0 {
 		return nil
 	}
-	encoded, err := json.Marshal(withoutTimingEvidence(changes))
+	var feedChanges any = withoutTimingEvidence(changes)
+	if operation.Command.Type == "create_registration" && len(changes) == 1 {
+		after := changes[0].After
+		feedChanges = withoutFeedTimingEvidence([]packetissuance.FeedChange{{RegistrationID: after.ID, Before: nil, After: &after}})
+	}
+	if operation.SchemaVersion == 2 {
+		lifecycle := make([]packetissuance.FeedChange, 0, len(changes))
+		for _, change := range changes {
+			before, after := change.Before, change.After
+			item := packetissuance.FeedChange{RegistrationID: change.RegistrationID, Before: &before, After: &after}
+			if packetissuance.IsVirtualRegistration(after) {
+				item.After = nil
+			}
+			lifecycle = append(lifecycle, item)
+		}
+		feedChanges = withoutFeedTimingEvidence(lifecycle)
+	}
+	encoded, err := json.Marshal(feedChanges)
 	if err != nil {
 		return err
 	}
@@ -1146,4 +1163,22 @@ func withoutFeedTimingEvidence(changes []packetissuance.FeedChange) []packetRela
 			Before: convert(change.Before), After: convert(change.After)})
 	}
 	return out
+}
+
+// CheckPacketNumber runs inside the receiver's SQLite write transaction.
+func (s *Store) CheckPacketNumber(ctx context.Context, eventID, registrationID, bib string) (string, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM members WHERE event_id=? AND id<>? AND number=CAST(? AS INTEGER)`, eventID, registrationID, bib).Scan(&count); err != nil {
+		return "", err
+	}
+	if count != 0 {
+		return "number_occupied", nil
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rfid_logs WHERE event_id=? AND number=CAST(? AS INTEGER)`, eventID, bib).Scan(&count); err != nil {
+		return "", err
+	}
+	if count != 0 {
+		return "timing_review_required", nil
+	}
+	return "", nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strconv"
 	"testing"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
@@ -41,13 +42,20 @@ func packetStore(t *testing.T, operation packetissuance.Operation) *sqlite.Store
 	if err := store.UpsertRace(ctx, domain.Race{ID: row.RaceID, EventID: row.EventID, Name: "5 км", Date: "2026-09-13 09:00:00", Format: domain.FormatFixedDistance}); err != nil {
 		t.Fatal(err)
 	}
-	number := int64(17)
+	var number *int64
+	if row.Bib != "" {
+		value, err := strconv.ParseInt(row.Bib, 10, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		number = &value
+	}
 	epc := row.EPC
 	gender := row.Person.Gender
 	dob := row.Person.BirthDate
 	team := row.Person.Team
 	city := row.Person.City
-	if err := store.UpsertMember(ctx, domain.Member{ID: row.ID, EventID: row.EventID, RaceID: row.RaceID, Number: &number, EPC: &epc, FirstName: row.Person.FirstName, LastName: row.Person.LastName, Gender: &gender, DOB: &dob, Team: &team, City: &city}); err != nil {
+	if err := store.UpsertMember(ctx, domain.Member{ID: row.ID, EventID: row.EventID, RaceID: row.RaceID, Number: number, EPC: &epc, FirstName: row.Person.FirstName, LastName: row.Person.LastName, Gender: &gender, DOB: &dob, Team: &team, City: &city}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.InstallPacketIssuanceRoster(ctx, sqlite.PacketIssuanceScope{EventID: row.EventID, ScopeID: operation.ScopeID, BaselineID: operation.BaselineID, SourceKind: "site"}, []packetissuance.Registration{row}); err != nil {
