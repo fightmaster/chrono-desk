@@ -324,6 +324,7 @@ func PushPacketOperations(ctx context.Context, apiBaseURL, credential string, op
 	if err != nil {
 		return nil, fmt.Errorf("create packet operation request: %w", err)
 	}
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+credential)
 	resp, err := syncHTTPClient.Do(req)

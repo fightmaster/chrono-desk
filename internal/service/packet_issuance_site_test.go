@@ -183,8 +183,23 @@ func TestPushPacketOperationsAcceptsOnlyOrderedMatchingReceipts(t *testing.T) {
 	previous := syncHTTPClient
 	t.Cleanup(func() { syncHTTPClient = previous })
 	syncHTTPClient = &http.Client{Transport: packetRoundTrip(func(request *http.Request) (*http.Response, error) {
-		if request.Header.Get("Authorization") != "Bearer relay-secret" || request.Header.Get("X-SYNC-TOKEN") != "" {
+		if request.Header.Get("Authorization") != "Bearer relay-secret" || request.Header.Get("X-SYNC-TOKEN") != "" || request.Header.Get("Accept") != "application/json" {
 			t.Fatalf("wrong operation authorization: %v", request.Header)
+		}
+		var batch struct {
+			SchemaVersion int               `json:"schemaVersion"`
+			Operations    []json.RawMessage `json:"operations"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&batch); err != nil || batch.SchemaVersion != 1 || len(batch.Operations) != 1 {
+			t.Fatalf("invalid outgoing batch: %+v error=%v", batch, err)
+		}
+		// Validate the actual wire bytes, including an empty heads array.
+		sent, err := packetissuance.ParseTrustedOperation(batch.Operations[0])
+		if err != nil {
+			t.Fatalf("receiver rejected outgoing operation: %v; wire=%s", err, batch.Operations[0])
+		}
+		if packetissuance.ContentHash(sent) != packetissuance.ContentHash(operation) {
+			t.Fatal("outgoing operation content hash changed")
 		}
 		return packetResponse(http.StatusOK, `{"schemaVersion":1,"receipts":[{"operationId":"`+
 			operation.OperationID+`","contentHash":"`+packetissuance.ContentHash(operation)+

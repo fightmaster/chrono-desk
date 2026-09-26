@@ -658,7 +658,9 @@ func parseBase(value any) (Base, error) {
 	if !ok || !exactKeys(obj, "registrationId", "heads") {
 		return Base{}, errors.New("invalid")
 	}
-	base := Base{RegistrationID: stringValue(obj["registrationId"])}
+	// Preserve the contract's empty array when a parsed operation is relayed.
+	// A nil slice would marshal to null and invalidate both the wire and hash.
+	base := Base{RegistrationID: stringValue(obj["registrationId"]), Heads: []string{}}
 	raw, ok := obj["heads"].([]any)
 	if !identifierPattern.MatchString(base.RegistrationID) || !ok || len(raw) > 64 {
 		return Base{}, errors.New("invalid")
