@@ -75,5 +75,6 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/events/{id}/packet-issuance/lan/connections/{connectionID}/revoke", s.handlePacketIssuanceLANRevoke)
 	mux.HandleFunc("POST /api/events/{id}/packet-issuance/lan/compact", s.handlePacketIssuanceLANCompact)
 	mux.HandleFunc("GET /api/events/{id}/packet-issuance/lan/ca", s.handlePacketIssuanceLANCA)
+	mux.HandleFunc("POST /api/events/{id}/packet-issuance/lan/ca/export", s.handlePacketIssuanceLANCAExport)
 	return mux
 }

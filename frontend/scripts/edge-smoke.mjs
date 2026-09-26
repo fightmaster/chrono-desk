@@ -8,6 +8,7 @@ export function edgeSmokeFixture() {
   let captures = []
   let nextCaptureID = 40
   let failedCaptureDelete = false
+  let certificateExports = 0
   const calls = {save: 0, start: 0, stop: 0, relay: 0, startWithoutBindings: 0}
   let relay = {endpoint: '', enabled: false, revision: 0}
   const status = () => ({running: false, port: '', any_running: running, ips: ['127.0.0.1'], readers: [], edge: {running, port, combined, received: 0, inserted: 0, duplicates: 0, errors: 0, last_error: running ? 'Проверочная ошибка привязки события' : ''}})
@@ -20,6 +21,20 @@ export function edgeSmokeFixture() {
       }
       if (path === '/api/version') value = {}
       if (path === '/api/events') value = [{id: '100', name: 'Synthetic edge UI', date: '2026-09-10', race_count: 0, member_count: 0}]
+      if (path.endsWith('/sync-config')) value = {base_url: 'https://app.chrono.events', token_set: true}
+      if (path.endsWith('/packet-issuance/site')) value = {roster_installed: true}
+      if (path.endsWith('/packet-issuance/conflicts')) value = {items: [], total: 0, limit: 50, offset: 0}
+      if (path.endsWith('/packet-issuance/lan')) value = {running: false}
+      if (path.endsWith('/packet-issuance/lan/ca/export')) {
+        if (request.method !== 'POST') throw new Error('Certificate export must use native POST API')
+        certificateExports++
+        if (certificateExports === 2) {
+          response.writeHead(500, {'Content-Type': 'application/json'})
+          response.end(JSON.stringify({error: 'Нет доступа к папке Загрузки'}))
+          return true
+        }
+        value = {path: '/synthetic/Downloads/chrono-desk-ca.crt'}
+      }
       if (path.endsWith('/live/status')) value = status()
       if (path.endsWith('/photos/status')) value = {photos_count: 0, finishes_count: 0}
       if (path.endsWith('/captures')) {
@@ -87,6 +102,7 @@ export function edgeSmokeFixture() {
       return true
     },
     verify(html) {
+      if (certificateExports !== 2) throw new Error('Certificate export success/error paths were not exercised')
       if (!failedCaptureDelete || captures.length !== 1 || captures[0].id !== 44 || !html.includes('Отметка №1 · ручной финиш')) {
         throw new Error('Manual capture numbering did not survive deletion and event reopen')
       }
@@ -113,6 +129,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === text);
   try {
     (await wait(() => document.querySelector('button.event'))).click();
+    (await wait(() => button('Настройки'))).click();
+    (await wait(() => button('Сохранить сертификат Desk'))).click();
+    await wait(() => document.querySelector('.packet-lan [role="status"]')?.textContent.includes('/synthetic/Downloads/chrono-desk-ca.crt'));
+    (await wait(() => !button('Сохранить сертификат Desk').disabled && button('Сохранить сертификат Desk'))).click();
+    await wait(() => document.querySelector('.card .error')?.textContent.includes('Нет доступа к папке Загрузки'));
+    if (document.querySelector('.packet-lan [role="status"]')) throw new Error('Failed certificate export retained a success message');
     (await wait(() => document.querySelector('button.live'))).click();
     const captureRows = () => [...document.querySelectorAll('.row.capture')];
     const captureCount = () => document.querySelector('.capture-count strong')?.textContent;

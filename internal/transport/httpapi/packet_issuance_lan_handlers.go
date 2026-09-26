@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+
+	"gitlab.com/fightmaster1/chrono-desk/internal/service"
 )
 
 func (s *Server) handlePacketIssuanceLANStatus(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +121,19 @@ func (s *Server) handlePacketIssuanceLANCA(w http.ResponseWriter, _ *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{
 		"filename": "chrono-desk-ca.crt", "certificate": string(s.packetLAN.CACertificate()),
 	})
+}
+
+func (s *Server) handlePacketIssuanceLANCAExport(w http.ResponseWriter, _ *http.Request) {
+	if s.packetLAN == nil {
+		s.fail(w, errors.New("локальная выдача пакетов недоступна"))
+		return
+	}
+	path, err := service.SaveToDownloads("chrono-desk-ca.crt", s.packetLAN.CACertificate())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": path})
 }
 
 func decodePacketLANRequest(w http.ResponseWriter, r *http.Request, target any) error {

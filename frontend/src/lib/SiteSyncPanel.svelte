@@ -25,6 +25,7 @@
   let packetLAN = null
   let packetInvitation = null
   let packetLabel = 'Планшет выдачи'
+  let certificatePath = ''
 
   async function loadConfig() {
     error = ''
@@ -128,13 +129,11 @@
   }
 
   async function downloadPacketCA() {
-    error = ''
+    error = ''; certificatePath = ''; busy = 'Сохранение сертификата…'
     try {
-      const data = await call('GET', `/api/events/${eventId}/packet-issuance/lan/ca`)
-      const href = URL.createObjectURL(new Blob([data.certificate], {type: 'application/x-x509-ca-cert'}))
-      const link = document.createElement('a'); link.href = href; link.download = data.filename
-      link.click(); setTimeout(() => URL.revokeObjectURL(href), 60000)
-    } catch (e) { error = `Сертификат: ${e.message}` }
+      const data = await call('POST', `/api/events/${eventId}/packet-issuance/lan/ca/export`, '{}')
+      certificatePath = data.path
+    } catch (e) { error = `Сертификат: ${e.message}` } finally { busy = '' }
   }
 </script>
 
@@ -183,13 +182,19 @@
         <span class="faint">
           Планшеты в локальной сети: {packetLAN?.running ? `приём включён · ${packetLAN.api_base_url}` : 'приём выключен'}
         </span>
-        <button class="btn" disabled={!!busy} on:click={downloadPacketCA}>Скачать сертификат Desk</button>
+        <button class="btn" disabled={!!busy} on:click={downloadPacketCA}>Сохранить сертификат Desk</button>
         <button class="btn" disabled={!!busy} on:click={() => setPacketLAN(!packetLAN?.running)}>
           {packetLAN?.running ? 'Остановить приём' : 'Включить приём'}
         </button>
       </div>
+      {#if certificatePath}
+        <p class="ok-text" role="status">Сертификат сохранён: {certificatePath}</p>
+      {/if}
       <p class="faint packet-help">
-        Сертификат устанавливается на каждом телефоне один раз. Затем создайте отдельный QR для планшета.
+        Кнопка сохраняет файл chrono-desk-ca.crt в «Загрузки» на компьютере.
+        Передайте его на каждый планшет и установите как доверенный сертификат:
+        он нужен для HTTPS-подключения к этому Desk по локальной сети.
+        Затем создайте отдельный QR для планшета.
         Для работы без Интернета сначала подключите планшет QR сайта, затем этим QR Desk: это один список
         с двумя независимыми получателями. Desk принимает изменения по локальному Wi-Fi; конфликты можно
         разобрать здесь без Интернета, тем же журналом, что используется на сайте. Сервер объявляется как
