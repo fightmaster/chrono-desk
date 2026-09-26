@@ -5,6 +5,9 @@ export function edgeSmokeFixture() {
   let combined = false
   let port = ''
   let bindings = []
+  let captures = []
+  let nextCaptureID = 40
+  let failedCaptureDelete = false
   const calls = {save: 0, start: 0, stop: 0, relay: 0, startWithoutBindings: 0}
   let relay = {endpoint: '', enabled: false, revision: 0}
   const status = () => ({running: false, port: '', any_running: running, ips: ['127.0.0.1'], readers: [], edge: {running, port, combined, received: 0, inserted: 0, duplicates: 0, errors: 0, last_error: running ? 'Проверочная ошибка привязки события' : ''}})
@@ -19,6 +22,24 @@ export function edgeSmokeFixture() {
       if (path === '/api/events') value = [{id: '100', name: 'Synthetic edge UI', date: '2026-09-10', race_count: 0, member_count: 0}]
       if (path.endsWith('/live/status')) value = status()
       if (path.endsWith('/photos/status')) value = {photos_count: 0, finishes_count: 0}
+      if (path.endsWith('/captures')) {
+        if (request.method === 'POST') {
+          let body = ''
+          for await (const chunk of request) body += chunk
+          value = {id: ++nextCaptureID, time_ms: JSON.parse(body).time_ms}
+          captures.unshift(value)
+        } else value = captures
+      }
+      if (request.method === 'DELETE' && path.includes('/captures/')) {
+        if (!failedCaptureDelete) {
+          failedCaptureDelete = true
+          response.writeHead(500, {'Content-Type': 'application/json'})
+          response.end(JSON.stringify({error: 'Проверочная ошибка удаления'}))
+          return true
+        }
+        captures = captures.filter(capture => capture.id !== Number(path.split('/').pop()))
+        value = {ok: true}
+      }
       if (path.endsWith('/edge/config')) {
         if (request.method === 'PUT') {
           let body = ''
@@ -66,6 +87,9 @@ export function edgeSmokeFixture() {
       return true
     },
     verify(html) {
+      if (!failedCaptureDelete || captures.length !== 1 || captures[0].id !== 44 || !html.includes('Отметка №1 · ручной финиш')) {
+        throw new Error('Manual capture numbering did not survive deletion and event reopen')
+      }
       if (!html.includes('data-edge-smoke="passed"') || calls.save !== 2 || calls.start !== 1 || calls.startWithoutBindings !== 1 || calls.stop !== 1 || calls.relay !== 2 || relay.enabled || relay.endpoint !== 'tls://hub.test:44004' || relay.tls_bundle !== '/synthetic/desk-only' || bindings[0]?.board !== 'Feibot:U659A' || bindings[0]?.source_session_id !== '100' || bindings[1]?.board !== 'Feibot:U660' || bindings[1]?.source_session_id !== '100' || combined !== true || port !== '5084') {
         throw new Error(`Edge UI did not complete save/start/stop: ${JSON.stringify(calls)}\n${html.slice(-4000)}`)
       }
@@ -90,6 +114,36 @@ window.addEventListener('DOMContentLoaded', async () => {
   try {
     (await wait(() => document.querySelector('button.event'))).click();
     (await wait(() => document.querySelector('button.live'))).click();
+    const captureRows = () => [...document.querySelectorAll('.row.capture')];
+    const captureCount = () => document.querySelector('.capture-count strong')?.textContent;
+    const captureButton = await wait(() => button('⏱ Зафиксировать время'));
+    captureButton.click(); captureButton.click(); captureButton.click();
+    await wait(() => captureRows().length === 3 && captureCount() === '3');
+    if (captureRows().map(row => row.querySelector('.name').textContent).join('|') !== 'Отметка №3 · ручной финиш|Отметка №2 · ручной финиш|Отметка №1 · ручной финиш') throw new Error('Capture numbers used storage IDs');
+    captureRows()[1].click();
+    await wait(() => document.querySelector('.dtitle')?.textContent === 'Отметка №2 · ручной финиш');
+    document.querySelector('.drawer .x').click();
+    await wait(() => !document.querySelector('.drawer'));
+    captureRows()[1].querySelector('.del').click();
+    await wait(() => document.querySelector('.banner.error')?.textContent.includes('Проверочная ошибка удаления'));
+    if (captureRows().length !== 3 || captureCount() !== '3') throw new Error('Failed deletion changed capture count');
+    captureRows()[1].querySelector('.del').click();
+    await wait(() => captureRows().length === 2 && captureCount() === '2');
+    if (captureRows().map(row => row.querySelector('.name').textContent).join('|') !== 'Отметка №2 · ручной финиш|Отметка №1 · ручной финиш') throw new Error('Middle deletion did not renumber captures');
+    captureRows()[0].click();
+    await wait(() => document.querySelector('.dtitle')?.textContent === 'Отметка №2 · ручной финиш');
+    document.querySelector('.drawer .x').click();
+    await wait(() => !document.querySelector('.drawer'));
+    captureRows()[0].querySelector('.del').click();
+    await wait(() => captureRows().length === 1 && captureCount() === '1');
+    captureRows()[0].querySelector('.del').click();
+    await wait(() => captureRows().length === 0 && captureCount() === '0');
+    captureButton.click();
+    await wait(() => captureRows()[0]?.querySelector('.name').textContent === 'Отметка №1 · ручной финиш' && captureCount() === '1');
+    document.querySelector('button.back').click();
+    (await wait(() => document.querySelector('button.event'))).click();
+    (await wait(() => document.querySelector('button.live'))).click();
+    await wait(() => captureRows()[0]?.querySelector('.name').textContent === 'Отметка №1 · ручной финиш' && captureCount() === '1');
     const advanced = await wait(() => document.querySelector('details.edge'));
     if (advanced.open || button('Добавить Feibot')) throw new Error('Ordinary Feibot requires an Edge setup visit');
     const guidance = await wait(() => document.querySelector('.edge-status'));

@@ -31,7 +31,10 @@
   // restart doesn't lose them; binding a number in the drawer turns one into a
   // manual finish (the existing endpoint) and deletes the capture.
   let captures = []
-  let lastCaptureNumber = 0
+  $: displayCaptures = captures.map((capture, index) => ({...capture, ordinal: captures.length - index}))
+  $: drawerCapture = drawer?.capture
+    ? displayCaptures.find(capture => capture.id === drawer.capture.id) ?? drawer.capture
+    : null
 
   // Light live-status poll to drive the header's pinned LIVE indicator from any
   // screen (the Live screen has its own faster feed poll while mounted).
@@ -66,7 +69,6 @@
   async function openEvent(ev) {
     currentEvent = ev
     captures = []
-    lastCaptureNumber = 0
     currentRace = null
     protocol = null
     drawer = null
@@ -167,10 +169,8 @@
     try {
       const eventId = currentEvent.id
       const pending = await call('GET', `/api/events/${eventId}/captures`)
-      const counter = await call('GET', `/api/events/${eventId}/captures/last-number`)
       if (currentEvent?.id !== eventId) return
       captures = pending
-      lastCaptureNumber = counter.last_number
     } catch (_) { /* best-effort; an empty list is fine */ }
   }
   async function addCapture(timeMs) {
@@ -180,16 +180,20 @@
       const c = await call('POST', `/api/events/${eventId}/captures`, JSON.stringify({time_ms: timeMs}))
       if (currentEvent?.id !== eventId) return
       captures = [c, ...captures].sort((a, b) => b.id - a.id)
-      lastCaptureNumber = Math.max(lastCaptureNumber, c.id)
     } catch (e) {
       error = `Захват времени: ${e.message}`
     }
   }
   async function removeCapture(id) {
-    if (currentEvent) {
-      try { await call('DELETE', `/api/events/${currentEvent.id}/captures/${id}`) } catch (_) { /* keep UI in sync anyway */ }
+    if (!currentEvent) return
+    const eventId = currentEvent.id
+    try {
+      await call('DELETE', `/api/events/${eventId}/captures/${id}`)
+      if (currentEvent?.id !== eventId) return
+      captures = captures.filter(c => c.id !== id)
+    } catch (e) {
+      error = `Удаление отметки: ${e.message}`
     }
-    captures = captures.filter(c => c.id !== id)
   }
   // A capture became a persisted manual finish (number bound in the drawer):
   // drop the now-redundant pending capture.
@@ -227,7 +231,7 @@
                      on:changed={onEdited}
                      on:pulled={() => openEvent(currentEvent)}/>
     {:else if view === 'live'}
-      <LiveScreen eventId={currentEvent.id} {members} {captures} {lastCaptureNumber} {liveStatus}
+      <LiveScreen eventId={currentEvent.id} {members} captures={displayCaptures} {liveStatus}
                   on:status={e => liveStatus = e.detail}
                   on:capture={e => addCapture(e.detail)}
                   on:removeCapture={e => removeCapture(e.detail)}
@@ -240,7 +244,7 @@
   {#if drawer}
     <MemberDrawer eventId={currentEvent.id} {races} {categories} {members} {reloadToken}
                   memberId={drawer.memberId ?? null}
-                  capture={drawer.capture ?? null}
+                  capture={drawerCapture}
                   on:changed={onEdited}
                   on:captureBound={captureBound}
                   on:capture={e => addCapture(e.detail)}

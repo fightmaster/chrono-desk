@@ -7,7 +7,6 @@
   export let eventId
   export let members = []
   export let captures = []            // client-side unbound «Зафиксировать время» rows
-  export let lastCaptureNumber = 0
   export let liveStatus = {running: false, port: ''}
 
   const dispatch = createEventDispatcher()
@@ -317,7 +316,7 @@
     <button class="btn amber" on:click={capture}>⏱ Зафиксировать время</button>
   </div>
   <p class="faint cap-note">«Зафиксировать время» ставит астрономическое время сразу, без номера. Потом откройте запись кликом — назначьте номер, поправьте время или удалите.</p>
-  <p class="capture-count" aria-live="polite">Последняя отметка: <strong class="mono">{lastCaptureNumber ? `№${lastCaptureNumber}` : 'нет'}</strong> · ждут номера: <strong class="mono">{captures.length}</strong></p>
+  <p class="capture-count" aria-live="polite">Отметок: <strong class="mono">{captures.length}</strong></p>
   {#if manualError}<p class="error">{manualError}</p>{/if}
   {#if flash}<p class="flash">{flash}</p>{/if}
 
@@ -336,7 +335,7 @@
              on:keydown={e => activateRow(e, () => dispatch('openCapture', c))}>
           <span class="time mono">{fmtTime(c.time_ms)}</span>
           <span class="num mono">—</span>
-          <span class="name">Отметка №{c.id} · ручной финиш</span>
+          <span class="name">Отметка №{c.ordinal} · ручной финиш</span>
           <span class="st amber-text">не привязано</span>
           <button class="del" on:click|stopPropagation={() => dispatch('removeCapture', c.id)}>удалить</button>
           {#if capturePhotos[c.id]}
