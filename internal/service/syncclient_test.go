@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net/http"
@@ -25,6 +26,44 @@ func TestSyncHTTPClientKeepsCredentialsOnExplicitHTTP1Endpoint(t *testing.T) {
 	if transport.ForceAttemptHTTP2 || transport.Protocols == nil || !transport.Protocols.HTTP1() ||
 		transport.Protocols.HTTP2() || transport.Protocols.UnencryptedHTTP2() {
 		t.Fatal("Go 1.24 sync client must disable HTTP/2")
+	}
+}
+
+func TestSyncHTTPClientNegotiatesHTTP1OverTLS(t *testing.T) {
+	for _, enableHTTP2 := range []bool{false, true} {
+		name := "HTTP1 server"
+		if enableHTTP2 {
+			name = "HTTP2 server"
+		}
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.ProtoMajor != 1 || r.TLS.NegotiatedProtocol == "h2" {
+					t.Errorf("request protocol = %s, ALPN = %q", r.Proto, r.TLS.NegotiatedProtocol)
+				}
+				_, _ = io.WriteString(w, "site response")
+			}))
+			srv.EnableHTTP2 = enableHTTP2
+			srv.StartTLS()
+			defer srv.Close()
+
+			client := newSyncHTTPClient()
+			defer client.CloseIdleConnections()
+			transport := client.Transport.(*http.Transport)
+			if transport.TLSClientConfig == nil {
+				transport.TLSClientConfig = &tls.Config{}
+			}
+			// Trust only the test server without replacing the client's ALPN config.
+			transport.TLSClientConfig.RootCAs = srv.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
+			response, err := client.Get(srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != nil || string(body) != "site response" || response.ProtoMajor != 1 {
+				t.Fatalf("response protocol=%s body=%q error=%v", response.Proto, body, err)
+			}
+		})
 	}
 }
 

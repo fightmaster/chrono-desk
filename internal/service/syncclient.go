@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,6 +32,13 @@ func newSyncHTTPClient() *http.Client {
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	transport.Protocols = protocols
+	// Clone initializes DefaultTransport's HTTP/2 support and copies its ALPN
+	// list. Go 1.24 does not remove h2 when Protocols later disables HTTP/2,
+	// so align TLS negotiation with the HTTP/1.1 parser explicitly.
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{}
+	}
+	transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
 	return &http.Client{
 		Transport: transport,
 		Timeout:   syncHTTPTimeout,
