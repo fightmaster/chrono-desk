@@ -52,6 +52,19 @@ func (s *Store) ListPendingCaptures(ctx context.Context, eventID string) ([]Pend
 	return captures, rows.Err()
 }
 
+// LastCaptureNumber returns the last assigned capture number, including captures
+// that have since been bound or deleted. Each event has its own SQLite file, so
+// the AUTOINCREMENT sequence is the event's durable manual-capture counter.
+func (s *Store) LastCaptureNumber(ctx context.Context) (int64, error) {
+	var number int64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'pending_captures'), 0)`).Scan(&number)
+	if err != nil {
+		return 0, fmt.Errorf("last capture number: %w", err)
+	}
+	return number, nil
+}
+
 // DeletePendingCapture removes a capture (bound to a member, or discarded).
 func (s *Store) DeletePendingCapture(ctx context.Context, eventID string, id int64) error {
 	_, err := s.db.ExecContext(ctx,

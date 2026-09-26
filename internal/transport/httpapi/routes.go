@@ -45,6 +45,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/events/{id}/results/{resultID}", s.handleDeleteManualResult)
 	mux.HandleFunc("POST /api/events/{id}/captures", s.handleCreateCapture)
 	mux.HandleFunc("GET /api/events/{id}/captures", s.handleListCaptures)
+	mux.HandleFunc("GET /api/events/{id}/captures/last-number", s.handleLastCaptureNumber)
 	mux.HandleFunc("DELETE /api/events/{id}/captures/{capID}", s.handleDeleteCapture)
 	mux.HandleFunc("GET /api/events/{id}/photos/sources", s.handleListPhotoSources)
 	mux.HandleFunc("POST /api/events/{id}/photos/sources", s.handleAddPhotoSource)

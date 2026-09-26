@@ -159,6 +159,20 @@ func (s *Server) handleListCaptures(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, captures)
 }
 
+func (s *Server) handleLastCaptureNumber(w http.ResponseWriter, r *http.Request) {
+	store, err := s.events.Open(r.PathValue("id"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	number, err := store.LastCaptureNumber(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"last_number": number})
+}
+
 func (s *Server) handleDeleteCapture(w http.ResponseWriter, r *http.Request) {
 	store, err := s.events.Open(r.PathValue("id"))
 	if err != nil {

@@ -233,7 +233,7 @@
   }
 
   $: title = manualMode
-    ? (bound ? `№${data?.number ?? '—'} ${data?.last_name ?? ''} ${data?.first_name ?? ''}`.trim() : 'Ручной финиш')
+    ? (bound ? `№${data?.number ?? '—'} ${data?.last_name ?? ''} ${data?.first_name ?? ''}`.trim() : (capture ? `Отметка №${capture.id} · ручной финиш` : 'Ручной финиш'))
     : (data ? `№${data.number ?? '—'} ${data.last_name ?? ''} ${data.first_name ?? ''}`.trim() : 'Участник')
 
   // ── Photo-finish companion ────────────────────────────────────────────────

@@ -31,6 +31,7 @@
   // restart doesn't lose them; binding a number in the drawer turns one into a
   // manual finish (the existing endpoint) and deletes the capture.
   let captures = []
+  let lastCaptureNumber = 0
 
   // Light live-status poll to drive the header's pinned LIVE indicator from any
   // screen (the Live screen has its own faster feed poll while mounted).
@@ -64,6 +65,8 @@
 
   async function openEvent(ev) {
     currentEvent = ev
+    captures = []
+    lastCaptureNumber = 0
     currentRace = null
     protocol = null
     drawer = null
@@ -162,14 +165,22 @@
   async function loadCaptures() {
     if (!currentEvent) return
     try {
-      captures = await call('GET', `/api/events/${currentEvent.id}/captures`)
+      const eventId = currentEvent.id
+      const pending = await call('GET', `/api/events/${eventId}/captures`)
+      const counter = await call('GET', `/api/events/${eventId}/captures/last-number`)
+      if (currentEvent?.id !== eventId) return
+      captures = pending
+      lastCaptureNumber = counter.last_number
     } catch (_) { /* best-effort; an empty list is fine */ }
   }
   async function addCapture(timeMs) {
     if (!currentEvent) return
     try {
-      const c = await call('POST', `/api/events/${currentEvent.id}/captures`, JSON.stringify({time_ms: timeMs}))
-      captures = [c, ...captures]
+      const eventId = currentEvent.id
+      const c = await call('POST', `/api/events/${eventId}/captures`, JSON.stringify({time_ms: timeMs}))
+      if (currentEvent?.id !== eventId) return
+      captures = [c, ...captures].sort((a, b) => b.id - a.id)
+      lastCaptureNumber = Math.max(lastCaptureNumber, c.id)
     } catch (e) {
       error = `Захват времени: ${e.message}`
     }
@@ -216,7 +227,7 @@
                      on:changed={onEdited}
                      on:pulled={() => openEvent(currentEvent)}/>
     {:else if view === 'live'}
-      <LiveScreen eventId={currentEvent.id} {members} {captures} {liveStatus}
+      <LiveScreen eventId={currentEvent.id} {members} {captures} {lastCaptureNumber} {liveStatus}
                   on:status={e => liveStatus = e.detail}
                   on:capture={e => addCapture(e.detail)}
                   on:removeCapture={e => removeCapture(e.detail)}
