@@ -150,14 +150,23 @@ func TestProtocolProgressIgnoresDeletedAndForeignReserveMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := store.DB().Exec(`INSERT INTO packet_issuance_registrations(event_id,registration_id,value_json,heads_json,deleted)
-		VALUES('ev-100','mem-1','{"reserve":true}','[]',1), ('foreign','mem-1','{"reserve":true}','[]',0)`); err != nil {
+		VALUES('ev-100','mem-1','{"reserve":true}','[]',1)`); err != nil {
 		t.Fatal(err)
 	}
-	protocol, err := BuildProtocol(ctx, store, "race-10k")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if protocol.Progress.Counts.Reserve != 0 || protocol.Progress.Counts.OnCourse != 1 {
-		t.Fatalf("foreign/deleted reserve hid an active participant: %+v", protocol.Progress)
+	for _, scope := range []string{"deleted", "foreign"} {
+		if scope == "foreign" {
+			// Registration IDs are globally unique: move the synthetic metadata
+			// instead of creating an impossible duplicate primary key.
+			if _, err := store.DB().Exec(`UPDATE packet_issuance_registrations SET event_id='foreign',deleted=0 WHERE registration_id='mem-1'`); err != nil {
+				t.Fatal(err)
+			}
+		}
+		protocol, err := BuildProtocol(ctx, store, "race-10k")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if protocol.Progress.Counts.Reserve != 0 || protocol.Progress.Counts.OnCourse != 1 {
+			t.Fatalf("%s reserve hid an active participant: %+v", scope, protocol.Progress)
+		}
 	}
 }
