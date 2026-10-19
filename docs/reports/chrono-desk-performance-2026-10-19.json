@@ -1,0 +1,388 @@
+{
+  "task": "CHR-DESK-PERF-001",
+  "docs_impact": "LOCAL",
+  "observed": "2026-10-19",
+  "application_version": "0.6.12",
+  "source_revision": "f8ddc425713fa693b14cbc6e8dec6bbd2383267d",
+  "macos": "11.7.11",
+  "arch": "amd64",
+  "input_counts": {
+    "races": 12,
+    "members": 444,
+    "checkpoints": 12,
+    "rfid_logs": 29036,
+    "stored_results": 407,
+    "photos_in_original_only": 920
+  },
+  "scope": "Isolated headless service/HTTP; no historical transport trace, WebView paint, photo data or real reader traffic. One run per mode.",
+  "single": {
+    "duplicate_ingest_wait_ms": 5371.780999,
+    "idle": {
+      "errors": 0,
+      "max_ms": 147.050555,
+      "p50_ms": 1.970603,
+      "p95_ms": 80.73152,
+      "p99_ms": 84.729908,
+      "samples": 45,
+      "sql": {
+        "queries": 107,
+        "execs": 0,
+        "prepares": 0,
+        "begins": 0,
+        "commits": 0,
+        "rollbacks": 0,
+        "rows": 17566,
+        "driver_ms": 1253.971009
+      },
+      "ui_pool": {
+        "wait_count": 0,
+        "wait_ms": 0.877851
+      }
+    },
+    "ingest": {
+      "errors": 0,
+      "max_ms": 80.770564,
+      "p50_ms": 4.795796,
+      "p95_ms": 80.154282,
+      "p99_ms": 80.658717,
+      "samples": 45,
+      "sql": {
+        "queries": 1493,
+        "execs": 600,
+        "prepares": 200,
+        "begins": 400,
+        "commits": 200,
+        "rollbacks": 200,
+        "rows": 18749,
+        "driver_ms": 1604.4260949999998
+      },
+      "ui_pool": {
+        "wait_count": 147,
+        "wait_ms": 1183.536645
+      }
+    },
+    "ingest_inserted": 200,
+    "mode": "single",
+    "protected_unchanged": true,
+    "recount": {
+      "errors": 0,
+      "max_ms": 5372.455487,
+      "p50_ms": 5371.727861,
+      "p95_ms": 5371.727861,
+      "p99_ms": 5371.727861,
+      "samples": 3,
+      "sql": {
+        "queries": 121987,
+        "execs": 981,
+        "prepares": 1,
+        "begins": 2,
+        "commits": 2,
+        "rollbacks": 0,
+        "rows": 92283,
+        "driver_ms": 4435.287929
+      },
+      "ui_pool": {
+        "wait_count": 8,
+        "wait_ms": 21403.621492
+      }
+    },
+    "recount_ms": 5293.634217,
+    "recount_replayed": 29036,
+    "evidence_check": {
+      "duration_ms": 298.620069,
+      "sql": {
+        "queries": 10,
+        "execs": 0,
+        "prepares": 0,
+        "begins": 1,
+        "commits": 1,
+        "rollbacks": 0,
+        "rows": 29764,
+        "driver_ms": 220.15662299999985
+      }
+    },
+    "ingest_duration_ms": 2032.756018,
+    "ingest_mark_ms": {
+      "p50": 2.027654,
+      "p95": 73.49358,
+      "p99": 76.950298,
+      "max": 80.19446
+    },
+    "whole_probe_max_rss_mib": 54.80859375,
+    "whole_probe_time_l_first_line": "10.39 real         8.75 user         3.41 sys",
+    "endpoints": {
+      "idle": {
+        "live/feed": {
+          "samples": 15,
+          "p50_ms": 1.724633,
+          "p95_ms": 2.246408,
+          "p99_ms": 2.246408,
+          "max_ms": 3.438202
+        },
+        "passes": {
+          "samples": 15,
+          "p50_ms": 78.784448,
+          "p95_ms": 84.729908,
+          "p99_ms": 84.729908,
+          "max_ms": 147.050555
+        },
+        "protocol": {
+          "samples": 15,
+          "p50_ms": 1.768269,
+          "p95_ms": 2.708512,
+          "p99_ms": 2.708512,
+          "max_ms": 3.21632
+        }
+      },
+      "recount": {
+        "live/feed": {
+          "samples": 1,
+          "p50_ms": 5371.727861,
+          "p95_ms": 5371.727861,
+          "p99_ms": 5371.727861,
+          "max_ms": 5371.727861
+        },
+        "passes": {
+          "samples": 1,
+          "p50_ms": 5370.731666,
+          "p95_ms": 5370.731666,
+          "p99_ms": 5370.731666,
+          "max_ms": 5370.731666
+        },
+        "protocol": {
+          "samples": 1,
+          "p50_ms": 5372.455487,
+          "p95_ms": 5372.455487,
+          "p99_ms": 5372.455487,
+          "max_ms": 5372.455487
+        }
+      },
+      "ingest": {
+        "live/feed": {
+          "samples": 15,
+          "p50_ms": 3.228937,
+          "p95_ms": 5.070419,
+          "p99_ms": 5.070419,
+          "max_ms": 5.383395
+        },
+        "passes": {
+          "samples": 15,
+          "p50_ms": 79.30243,
+          "p95_ms": 80.658717,
+          "p99_ms": 80.658717,
+          "max_ms": 80.770564
+        },
+        "protocol": {
+          "samples": 15,
+          "p50_ms": 4.26926,
+          "p95_ms": 4.971075,
+          "p99_ms": 4.971075,
+          "max_ms": 4.991883
+        }
+      }
+    }
+  },
+  "separate": {
+    "duplicate_ingest_wait_ms": 5704.099066,
+    "idle": {
+      "errors": 0,
+      "max_ms": 52.769405,
+      "p50_ms": 2.192703,
+      "p95_ms": 49.866056,
+      "p99_ms": 50.319573,
+      "samples": 45,
+      "sql": {
+        "queries": 105,
+        "execs": 0,
+        "prepares": 0,
+        "begins": 0,
+        "commits": 0,
+        "rollbacks": 0,
+        "rows": 17565,
+        "driver_ms": 744.052222
+      },
+      "ui_pool": {
+        "wait_count": 0,
+        "wait_ms": 0
+      }
+    },
+    "ingest": {
+      "errors": 0,
+      "max_ms": 82.615493,
+      "p50_ms": 4.159979,
+      "p95_ms": 80.720852,
+      "p99_ms": 81.799583,
+      "samples": 45,
+      "sql": {
+        "queries": 1493,
+        "execs": 600,
+        "prepares": 200,
+        "begins": 400,
+        "commits": 200,
+        "rollbacks": 200,
+        "rows": 18749,
+        "driver_ms": 1681.804148000001
+      },
+      "ui_pool": {
+        "wait_count": 0,
+        "wait_ms": 0
+      }
+    },
+    "ingest_inserted": 200,
+    "mode": "separate",
+    "protected_unchanged": true,
+    "recount": {
+      "errors": 0,
+      "max_ms": 67.19027,
+      "p50_ms": 55.494879,
+      "p95_ms": 59.728063,
+      "p99_ms": 62.668851,
+      "samples": 113,
+      "sql": {
+        "queries": 122243,
+        "execs": 981,
+        "prepares": 1,
+        "begins": 2,
+        "commits": 2,
+        "rollbacks": 0,
+        "rows": 134599,
+        "driver_ms": 6731.353905
+      },
+      "ui_pool": {
+        "wait_count": 98,
+        "wait_ms": 3727.626011
+      }
+    },
+    "recount_ms": 5705.330758,
+    "recount_replayed": 29036,
+    "evidence_check": {
+      "duration_ms": 299.040188,
+      "sql": {
+        "queries": 10,
+        "execs": 0,
+        "prepares": 0,
+        "begins": 1,
+        "commits": 1,
+        "rollbacks": 0,
+        "rows": 29764,
+        "driver_ms": 219.92174899999918
+      }
+    },
+    "ingest_duration_ms": 2001.57346,
+    "ingest_mark_ms": {
+      "p50": 2.519225,
+      "p95": 3.91809,
+      "p99": 5.877141,
+      "max": 6.626307
+    },
+    "whole_probe_max_rss_mib": 69.55859375,
+    "whole_probe_time_l_first_line": "9.55 real        11.12 user         3.33 sys",
+    "endpoints": {
+      "idle": {
+        "live/feed": {
+          "samples": 15,
+          "p50_ms": 1.687811,
+          "p95_ms": 2.725564,
+          "p99_ms": 2.725564,
+          "max_ms": 4.281962
+        },
+        "passes": {
+          "samples": 15,
+          "p50_ms": 49.156218,
+          "p95_ms": 50.319573,
+          "p99_ms": 50.319573,
+          "max_ms": 52.769405
+        },
+        "protocol": {
+          "samples": 15,
+          "p50_ms": 1.653441,
+          "p95_ms": 2.198726,
+          "p99_ms": 2.198726,
+          "max_ms": 2.296642
+        }
+      },
+      "recount": {
+        "live/feed": {
+          "samples": 38,
+          "p50_ms": 55.543224,
+          "p95_ms": 59.609123,
+          "p99_ms": 59.728063,
+          "max_ms": 62.548042
+        },
+        "passes": {
+          "samples": 37,
+          "p50_ms": 55.91627,
+          "p95_ms": 59.567178,
+          "p99_ms": 62.682981,
+          "max_ms": 67.19027
+        },
+        "protocol": {
+          "samples": 38,
+          "p50_ms": 55.31388,
+          "p95_ms": 59.739394,
+          "p99_ms": 59.754957,
+          "max_ms": 62.668851
+        }
+      },
+      "ingest": {
+        "live/feed": {
+          "samples": 15,
+          "p50_ms": 4.151275,
+          "p95_ms": 5.078838,
+          "p99_ms": 5.078838,
+          "max_ms": 6.760607
+        },
+        "passes": {
+          "samples": 15,
+          "p50_ms": 79.690495,
+          "p95_ms": 81.799583,
+          "p99_ms": 81.799583,
+          "max_ms": 82.615493
+        },
+        "protocol": {
+          "samples": 15,
+          "p50_ms": 3.222653,
+          "p95_ms": 3.547948,
+          "p99_ms": 3.547948,
+          "max_ms": 4.763066
+        }
+      }
+    }
+  },
+  "parity": {
+    "derived_passes_and_member_times": true,
+    "protected_raw_manual_status_fingerprints": true,
+    "duplicate_inserted": 0,
+    "synthetic_inserted_each": 200,
+    "category_rank_parity": "not asserted; no DOB/category assignment data transferred"
+  },
+  "linux_python_sql_index_probe": {
+    "before": {
+      "plan": [
+        "SEARCH l USING INDEX idx_rfid_logs_time (event_id=?)",
+        "SEARCH r USING INDEX uq_results_rfid_log (rfid_log_id=?) LEFT-JOIN",
+        "SEARCH c USING INDEX sqlite_autoindex_checkpoints_1 (id=?) LEFT-JOIN",
+        "USE TEMP B-TREE FOR RIGHT PART OF ORDER BY"
+      ],
+      "samples": 200,
+      "p50_ms": 47.952296499715885,
+      "p95_ms": 94.64181499970437,
+      "max_ms": 147.7532290000454,
+      "rows": 1010
+    },
+    "after": {
+      "plan": [
+        "SEARCH l USING INDEX perf_event_epc_time_id (event_id=? AND epc=?)",
+        "SEARCH r USING INDEX uq_results_rfid_log (rfid_log_id=?) LEFT-JOIN",
+        "SEARCH c USING INDEX sqlite_autoindex_checkpoints_1 (id=?) LEFT-JOIN"
+      ],
+      "samples": 200,
+      "p50_ms": 3.5054575000685873,
+      "p95_ms": 3.771263000089675,
+      "max_ms": 4.124553999645286,
+      "rows": 1010
+    },
+    "parity": true,
+    "scope": "Linux Python sqlite3 warm SQL only, not Go HTTP or Mac UI"
+  }
+}
