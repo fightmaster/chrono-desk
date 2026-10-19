@@ -5,10 +5,13 @@ import {dirname, extname, join, normalize, resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {tmpdir} from 'node:os'
 import {edgeSmokeFixture, edgeSmokeBootstrap} from './edge-smoke.mjs'
+import {progressSmokeFixture, progressSmokeBootstrap} from './progress-smoke.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const distDir = resolve(scriptDir, '..', 'dist')
 const edgeFixture = process.argv.includes('--edge') ? edgeSmokeFixture() : null
+const progressFixture = process.argv.includes('--progress') ? progressSmokeFixture() : null
+const fixture = edgeFixture || progressFixture
 
 if (!existsSync(join(distDir, 'index.html'))) {
   throw new Error('frontend/dist is missing; run npm run build first')
@@ -45,7 +48,7 @@ const requests = []
 const server = createServer(async (request, response) => {
   const requestedPath = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
   requests.push(`${request.method} ${requestedPath}`)
-  if (edgeFixture && await edgeFixture.handle(request, response, requestedPath)) return
+  if (fixture && await fixture.handle(request, response, requestedPath)) return
   const relativePath = requestedPath === '/' ? 'index.html' : requestedPath.slice(1)
   const filePath = normalize(join(distDir, relativePath))
 
@@ -56,8 +59,8 @@ const server = createServer(async (request, response) => {
   }
 
   response.writeHead(200, {'Content-Type': contentTypes[extname(filePath)] ?? 'application/octet-stream'})
-  if (edgeFixture && relativePath === 'index.html') {
-    response.end(readFileSync(filePath, 'utf8').replace('<head>', '<head>' + edgeSmokeBootstrap))
+  if (fixture && relativePath === 'index.html') {
+    response.end(readFileSync(filePath, 'utf8').replace('<head>', '<head>' + (progressFixture ? progressSmokeBootstrap : edgeSmokeBootstrap)))
     return
   }
   createReadStream(filePath).pipe(response)
@@ -162,9 +165,9 @@ try {
   await send('Page.navigate', {url: `http://127.0.0.1:${address.port}`})
   const deadline = Date.now() + 15000
   while (Date.now() < deadline) {
-    const state = await evaluate(`({ready: !!document.querySelector('[data-chrono-desk-ready="true"]'), edge: document.body?.dataset.edgeSmoke, error: document.body?.dataset.edgeSmokeError})`)
+    const state = await evaluate(`({ready: !!document.querySelector('[data-chrono-desk-ready="true"]'), edge: document.body?.dataset.edgeSmoke || document.body?.dataset.progressSmoke, error: document.body?.dataset.edgeSmokeError || document.body?.dataset.progressSmokeError})`)
     if (exceptions.length || state.edge === 'failed') throw new Error(state.error || exceptions.join('\n'))
-    if (state.ready && (!edgeFixture || state.edge === 'passed')) {
+    if (state.ready && (!fixture || state.edge === 'passed')) {
       documentHtml = await evaluate('document.documentElement.outerHTML')
       break
     }
@@ -192,6 +195,6 @@ if (exceptions.length || /Uncaught (Error|TypeError|SyntaxError)/.test(browserLo
   throw new Error(`Uncaught frontend exception\n${exceptions.join('\n')}\n${browserLog}`)
 }
 
-if (edgeFixture) edgeFixture.verify(documentHtml)
+if (fixture) fixture.verify(documentHtml)
 
-console.log('Chrono Desk frontend ' + (edgeFixture ? 'edge save/start/stop' : 'runtime') + ' smoke passed')
+console.log('Chrono Desk frontend ' + (progressFixture ? 'on-course roster' : edgeFixture ? 'edge save/start/stop' : 'runtime') + ' smoke passed')

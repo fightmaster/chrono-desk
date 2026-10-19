@@ -3,6 +3,8 @@
   import {APIBaseURL, APIToken} from '../wailsjs/go/main/App.js'
   import {setBase, call} from './lib/api.js'
   import {theme} from './lib/theme.js'
+  import {latestRequest} from './lib/latest-request.js'
+  import {coalescedTask} from './lib/coalesced-task.js'
   import EventsList from './lib/EventsList.svelte'
   import WorkspaceHeader from './lib/WorkspaceHeader.svelte'
   import ResultsScreen from './lib/ResultsScreen.svelte'
@@ -21,6 +23,10 @@
   let members = []
   let currentRace = null
   let protocol = null
+  const protocolRequest = latestRequest()
+  const protocolPoll = coalescedTask(async () => {
+    if (view === 'results' && currentEvent && currentRace) await loadProtocol(currentEvent.id, currentRace.id)
+  })
   let reloadToken = 0 // bumped after recount/refresh so open child views reload
 
   // Participant drawer (opens over any in-event screen).
@@ -52,12 +58,19 @@
       error = `API недоступен: ${e}`
     }
   })
-  onDestroy(() => clearInterval(statusTimer))
+  onDestroy(() => {
+    clearInterval(statusTimer)
+    protocolPoll.close()
+    protocolRequest.cancel()
+  })
 
   async function pollStatus() {
     if (!currentEvent) return
+    const eventId = currentEvent.id
+    if (view === 'results') protocolPoll.request()
     try {
-      liveStatus = await call('GET', `/api/events/${currentEvent.id}/live/status`)
+      const next = await call('GET', `/api/events/${eventId}/live/status`)
+      if (currentEvent?.id === eventId) liveStatus = next
     } catch (_) { /* header indicator is best-effort */ }
   }
 
@@ -67,6 +80,7 @@
   }
 
   async function openEvent(ev) {
+    protocolRequest.cancel()
     currentEvent = ev
     captures = []
     currentRace = null
@@ -84,6 +98,7 @@
   }
 
   function backToEvents() {
+    protocolRequest.cancel()
     clearInterval(statusTimer)
     currentEvent = null
     protocol = null
@@ -101,14 +116,25 @@
     if (currentRace) currentRace = races.find(r => r.id === currentRace.id) ?? null
   }
 
+  async function loadProtocol(eventId, raceId) {
+    const request = protocolRequest.begin()
+    try {
+      const next = await call('GET', `/api/events/${eventId}/races/${raceId}/protocol`, undefined, undefined, request.signal)
+      if (request.current() && currentEvent?.id === eventId && currentRace?.id === raceId) protocol = next
+    } catch (e) {
+      if (request.current() && currentEvent?.id === eventId && currentRace?.id === raceId) error = `Протокол: ${e.message}`
+    }
+  }
+
   async function openRace(race) {
+    if (currentRace?.id !== race.id) protocol = null
     currentRace = race
-    protocol = await call('GET', `/api/events/${currentEvent.id}/races/${race.id}/protocol`)
+    await loadProtocol(currentEvent.id, race.id)
   }
 
   async function refreshProtocol() {
     if (currentRace) {
-      protocol = await call('GET', `/api/events/${currentEvent.id}/races/${currentRace.id}/protocol`)
+      await loadProtocol(currentEvent.id, currentRace.id)
     }
     await loadMembers()
     reloadToken++
@@ -199,7 +225,11 @@
   // drop the now-redundant pending capture.
   function captureBound(e) { removeCapture(e.detail.captureId) }
 
-  function navigate(v) { view = v }
+  function navigate(v) {
+    view = v
+    if (v === 'results') protocolPoll.request()
+    else protocolRequest.cancel()
+  }
 </script>
 
 <div class="root" data-theme={$theme} data-chrono-desk-ready="true">

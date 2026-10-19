@@ -12,6 +12,7 @@ import (
 
 // ProtocolStore is the query port consumed by protocol rendering.
 type ProtocolStore interface {
+	ListReservedMemberIDs(ctx context.Context, eventID string) (map[string]bool, error)
 	GetRace(ctx context.Context, raceID string) (domain.Race, error)
 	ListMembersByRace(ctx context.Context, raceID string) ([]domain.Member, error)
 	ListCategories(ctx context.Context) (map[string]domain.Category, error)

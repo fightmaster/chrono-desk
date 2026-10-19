@@ -3,12 +3,13 @@
 Task: CHR-DESK-PERF-001
 Docs-Impact: CROSS_PROJECT
 
-The candidate pins `timing-core v0.8.1-0.20261019192112-6e3c998a2f8e`
+The candidate pins `timing-core v0.9.0`
 (commit `6e3c998`) and its `event-snapshot-fixed-distance-v1` calculator. The
 same pure package is consumed by rfid-sync's numeric-ID wrapper; Desk keeps opaque
 string IDs. SQL, transaction lifetime, durable raw storage and publication remain
 consumer responsibilities. The module was validated from a private file proxy
-built from the exact clean source commit; remote publication is still pending.
+built from the exact clean source commit. Release preparation now pins the same
+source as the immutable v0.9.0 tag; publish the core before the desktop tag.
 The unchanged tagged rfid-core v0.4.2 archive also matches its existing go.sum,
 so final checks and native packaging use ordinary modules without local replace.
 

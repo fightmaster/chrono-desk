@@ -3,6 +3,8 @@
   import {call, fmtTime, inputToMs, msToInput} from './api.js'
   import CheckpointEditor from './CheckpointEditor.svelte'
   import AddMemberForm from './AddMemberForm.svelte'
+  import OnCourseList from './OnCourseList.svelte'
+  import {progressSummary} from './race-progress.js'
 
   export let eventId
   export let races = []
@@ -13,7 +15,7 @@
 
   const dispatch = createEventDispatcher()
 
-  let tab = 'awards' // awards | protocol | dset
+  let tab = 'awards' // awards | protocol | on-course | dset
   let exportOpen = false
   let exportMsg = ''
   let error = ''
@@ -24,17 +26,17 @@
   const genderNames = {male: 'Мужчины', female: 'Женщины'}
   const genderMarks = {male: 'М', female: 'Ж'}
 
-  $: rows = protocol ? protocol.rows : []
+  $: activeProtocol = protocol?.race_id === currentRace?.id ? protocol : null
+  $: rows = activeProtocol?.rows || []
+  $: progress = activeProtocol?.progress || null
   // TimeLimited races report which checkpoint each member last reached in-window
   // — restore that protocol column when the data is present.
-  $: showCheckpoint = (protocol && protocol.format === 'TimeLimited') || rows.some(r => r.last_checkpoint_name)
-  // Authoritative tallies from the backend (by member status + ranked places):
-  // finished = members with a place; started = total − DNS. Falls back to row
-  // counts if an older response has no `counts`.
-  $: counts = protocol && protocol.counts ? protocol.counts : null
+  $: showCheckpoint = (activeProtocol && activeProtocol.format === 'TimeLimited') || rows.some(r => r.last_checkpoint_name)
+  // Keep older local APIs readable without inventing an on-course count.
+  $: counts = activeProtocol?.counts || null
   $: distMeta = currentRace
-    ? `Старт ${fmtTime(currentRace.started_at_ms)} · финишировало ` +
-      `${counts ? counts.finished : rows.filter(r => r.place != null).length} из ${counts ? counts.started : rows.length}`
+    ? `Старт ${fmtTime(currentRace.started_at_ms) || 'не задан'}` +
+      (activeProtocol ? ` · ${progressSummary(progress, counts)}` : ' · Загружаем протокол…')
     : ''
 
   // Top-3 per gender for the awards columns; if gender isn't marked, fall back
@@ -219,6 +221,7 @@
     <div class="seg tabs">
       <button class="seg-item" class:active={tab === 'awards'} on:click={() => tab = 'awards'}>Призёры · грамоты</button>
       <button class="seg-item" class:active={tab === 'protocol'} on:click={() => tab = 'protocol'}>Полный протокол</button>
+      <button class="seg-item" class:active={tab === 'on-course'} on:click={() => tab = 'on-course'}>На дистанции · {progress ? progress.counts.on_course : '—'}</button>
       <button class="seg-item" class:active={tab === 'dset'} on:click={() => tab = 'dset'}>Настройки дистанции</button>
     </div>
 
@@ -300,6 +303,11 @@
           <div class="empty-row">{protocolQuery || protocolGender !== 'all' || protocolCategory !== 'all' ? 'Никого не нашлось' : 'Пока нет результатов'}</div>
         {/if}
       </div>
+
+    {:else if tab === 'on-course'}
+      {#key currentRace.id}
+        <OnCourseList {progress} on:openMember={e => dispatch('openMember', e.detail)}/>
+      {/key}
 
     {:else if tab === 'dset'}
       <div class="dset">

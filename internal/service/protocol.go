@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
@@ -33,12 +34,10 @@ type ProtocolRow struct {
 	ElapsedMs          *int64  `json:"elapsed_ms,omitempty"`
 }
 
-// ProtocolCounts are authoritative race tallies for the distance header
-// («финишировало X из Y»), computed from member status + ranked places so the
-// client need not re-derive them. Started counts everyone who took the start
-// (total minus DNS — did-not-start); a DNF (сошёл) or DSQ started but is not a
-// finisher. Finished counts members with an assigned place (classified
-// finishers — a DSQ/DNF carries no place).
+// ProtocolCounts retain the existing protocol API tallies. Started is the legacy
+// denominator (registrations minus explicit DNS), including DNF/DSQ. It is not
+// evidence that a person physically started or is still expected at finish.
+// The operational header and on-course roster use Progress instead.
 type ProtocolCounts struct {
 	Total    int `json:"total"`    // start list (all members of the race)
 	Started  int `json:"started"`  // total − DNS
@@ -55,6 +54,7 @@ type ProtocolResponse struct {
 	Format   string         `json:"format"`
 	Counts   ProtocolCounts `json:"counts"`
 	Rows     []ProtocolRow  `json:"rows"`
+	Progress RaceProgress   `json:"progress"`
 }
 
 // BuildProtocol loads the race, ranks its members in memory and renders the
@@ -88,7 +88,12 @@ func BuildProtocol(ctx context.Context, store ProtocolStore, raceID string) (Pro
 		}
 	}
 
+	reserved, err := store.ListReservedMemberIDs(ctx, race.EventID)
+	if err != nil {
+		return ProtocolResponse{}, err
+	}
 	ranked := ranking.Protocol(race, members, lastPasses)
+	progress := buildRaceProgress(race, members, ranked, categories, reserved, time.Now().UnixMilli())
 
 	counts := ProtocolCounts{Total: len(members)}
 	for _, m := range members {
@@ -104,6 +109,7 @@ func BuildProtocol(ctx context.Context, store ProtocolStore, raceID string) (Pro
 	counts.Started = counts.Total - counts.DNS
 
 	resp := ProtocolResponse{
+		Progress: progress,
 		RaceID:   race.ID,
 		RaceName: race.Name,
 		Format:   string(race.Format),

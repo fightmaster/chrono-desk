@@ -365,3 +365,26 @@ photo merge остаются в центральном CHR-DESK-PERF-001.
 По указанию владельца сначала завершается оптимизация. Подготовленный roster/счётчики
 CHR-DESK-UI-001 сохранены отдельно в feat/chr-desk-ui-001 и не входят в эту сборку.
 Нового status endpoint или дублирующего heartbeat polling не добавлено.
+
+
+## Mac WebKit follow-up, 2026-10-20
+
+Task: CHR-DESK-PERF-001. Exact performance source a7b7114.
+A standalone macOS WebKit host loaded the exact built frontend with mocked Wails
+bootstrap and the actual GET-only diagnostic API on a sanitized copy. It blocked
+external resources, used nonpersistent website data and never started a physical
+reader/camera/site. One hundred member opens: fields p50/p95/p99/max
+54/93/111/120ms; two RAF opportunities100/149/173/239ms; accepted-pass HTTP+JSON
+37/56/77/81ms. One hundred switches between two representative distances:
+two RAFs57/89/108/119ms; protocol HTTP+JSON9/26/52/63ms. No JS exceptions;
+protected raw/pass/member fingerprints unchanged. Transparent host window/idle
+workload and mocked bootstrap mean this is not physical paint, the packaged Wails
+bridge or event-load freshness acceptance. Evidence: private mac-webkit-a7b7114.
+
+An independent fault-injection audit of the existing native publisher confirmed
+raw/outbox durability but missing automatic derived-result recovery after a
+projection error followed by retransmit. Explicit processing restores the result.
+This is not evidence that this failure caused the historical UI stalls. The
+preferred follow-up is a durable/coalesced projection inbox; blindly rolling raw
+persistence back with projection changes its current durability guarantee. See
+central reports/chrono-desk-native-ingest-recovery-audit-2026-10-20.md.
