@@ -10,12 +10,9 @@ import (
 )
 
 func (s *Server) handleListPhotoSources(w http.ResponseWriter, r *http.Request) {
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	sources, err := store.ListPhotoSources(r.Context(), r.PathValue("id"))
+	sources, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) ([]sqlite.PhotoSource, error) {
+		return read.ListPhotoSources(r.Context(), r.PathValue("id"))
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -86,11 +83,6 @@ func (s *Server) handlePollPhotos(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMatchPhotos(w http.ResponseWriter, r *http.Request) {
 	eventID := r.PathValue("id")
-	store, err := s.events.Open(eventID)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
 	var timeMs int64
 	if _, err := fmt.Sscanf(r.URL.Query().Get("time_ms"), "%d", &timeMs); err != nil {
 		s.fail(w, fmt.Errorf("укажите time_ms"))
@@ -102,7 +94,9 @@ func (s *Server) handleMatchPhotos(w http.ResponseWriter, r *http.Request) {
 	} else if v := r.URL.Query().Get("tolerance"); v != "" {
 		fmt.Sscanf(v, "%d", &tolerance) //nolint:errcheck
 	}
-	photos, err := service.MatchPhotos(r.Context(), store, eventID, timeMs, tolerance, r.URL.Query().Get("bib"))
+	photos, err := readEventView(r.Context(), s.events, eventID, func(read *sqlite.Store) ([]sqlite.Photo, error) {
+		return service.MatchPhotos(r.Context(), read, eventID, timeMs, tolerance, r.URL.Query().Get("bib"))
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -112,16 +106,13 @@ func (s *Server) handleMatchPhotos(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRecentPhotos(w http.ResponseWriter, r *http.Request) {
 	eventID := r.PathValue("id")
-	store, err := s.events.Open(eventID)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
 	limit := 50
 	if v := r.URL.Query().Get("limit"); v != "" {
 		fmt.Sscanf(v, "%d", &limit) //nolint:errcheck
 	}
-	photos, err := store.ListRecentPhotos(r.Context(), eventID, limit)
+	photos, err := readEventView(r.Context(), s.events, eventID, func(read *sqlite.Store) ([]sqlite.Photo, error) {
+		return read.ListRecentPhotos(r.Context(), eventID, limit)
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -131,11 +122,6 @@ func (s *Server) handleRecentPhotos(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMergedPhotos(w http.ResponseWriter, r *http.Request) {
 	eventID := r.PathValue("id")
-	store, err := s.events.Open(eventID)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
 	limit := 200
 	if v := r.URL.Query().Get("limit"); v != "" {
 		fmt.Sscanf(v, "%d", &limit) //nolint:errcheck
@@ -144,28 +130,12 @@ func (s *Server) handleMergedPhotos(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("window_ms"); v != "" {
 		fmt.Sscanf(v, "%d", &windowMs) //nolint:errcheck
 	}
-	photos, err := store.ListPhotosForMerge(r.Context(), eventID)
+	finishes, err := readEventView(r.Context(), s.events, eventID, func(read *sqlite.Store) ([]service.MergedFinish, error) {
+		return service.LoadMergedFinishes(r.Context(), read, eventID, windowMs, limit)
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
-	}
-	finishes := service.MergeFinishes(photos, windowMs)
-	if limit > 0 && len(finishes) > limit {
-		finishes = finishes[:limit]
-	}
-	ids := make([]string, len(finishes))
-	for i := range finishes {
-		ids[i] = finishes[i].ID
-	}
-	framesByID, err := store.GetFramesByIDs(r.Context(), eventID, ids)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	for i := range finishes {
-		if fr, ok := framesByID[finishes[i].ID]; ok {
-			finishes[i].Frames = fr
-		}
 	}
 	writeJSON(w, http.StatusOK, finishes)
 }
@@ -177,12 +147,9 @@ func (s *Server) handlePhotoImage(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, fmt.Errorf("укажите параметр u (адрес кадра)"))
 		return
 	}
-	store, err := s.events.Open(eventID)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	sources, err := store.ListPhotoSources(r.Context(), eventID)
+	sources, err := readEventView(r.Context(), s.events, eventID, func(read *sqlite.Store) ([]sqlite.PhotoSource, error) {
+		return read.ListPhotoSources(r.Context(), eventID)
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -211,32 +178,27 @@ func (s *Server) handlePhotoImage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePhotoStatus(w http.ResponseWriter, r *http.Request) {
 	eventID := r.PathValue("id")
-	store, err := s.events.Open(eventID)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	sources, err := store.ListPhotoSources(r.Context(), eventID)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	count, err := store.CountPhotos(r.Context(), eventID)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	finishes, err := service.CountMergedFinishes(r.Context(), store, eventID)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"running":        s.photos.Running(eventID),
-		"sources":        sources,
-		"photos_count":   count,
-		"finishes_count": finishes,
+	view, err := readEventView(r.Context(), s.events, eventID, func(read *sqlite.Store) (map[string]any, error) {
+		sources, err := read.ListPhotoSources(r.Context(), eventID)
+		if err != nil {
+			return nil, err
+		}
+		count, err := read.CountPhotos(r.Context(), eventID)
+		if err != nil {
+			return nil, err
+		}
+		finishes, err := service.CountMergedFinishes(r.Context(), read, eventID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"sources": sources, "photos_count": count, "finishes_count": finishes}, nil
 	})
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	view["running"] = s.photos.Running(eventID)
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) handleExportFinishes(w http.ResponseWriter, r *http.Request) {

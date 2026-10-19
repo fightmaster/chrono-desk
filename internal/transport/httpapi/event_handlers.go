@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
 	"gitlab.com/fightmaster1/chrono-desk/internal/version"
@@ -81,12 +82,9 @@ func (s *Server) handleRecount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListRaces(w http.ResponseWriter, r *http.Request) {
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	races, err := store.ListRaces(r.Context(), r.PathValue("id"))
+	races, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) ([]domain.Race, error) {
+		return read.ListRaces(r.Context(), r.PathValue("id"))
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -112,12 +110,9 @@ func (s *Server) handleListRaces(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProtocol(w http.ResponseWriter, r *http.Request) {
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	protocol, err := service.BuildProtocol(r.Context(), store, r.PathValue("raceID"))
+	protocol, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) (service.ProtocolResponse, error) {
+		return service.BuildProtocol(r.Context(), read, r.PathValue("raceID"))
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -197,12 +192,9 @@ func (s *Server) handleListEdits(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListCheckpoints(w http.ResponseWriter, r *http.Request) {
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	checkpoints, err := store.ListCheckpointsByEvent(r.Context(), r.PathValue("id"))
+	checkpoints, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) ([]sqlite.CheckpointRow, error) {
+		return read.ListCheckpointsByEvent(r.Context(), r.PathValue("id"))
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -220,12 +212,9 @@ func (s *Server) handleMemberPasses(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Неизвестный фильтр отсечек"})
 		return
 	}
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	passes, err := load(r.Context(), store, r.PathValue("memberID"))
+	passes, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) (service.MemberPasses, error) {
+		return load(r.Context(), read, r.PathValue("memberID"))
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -253,12 +242,9 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	m, err := store.GetMember(r.Context(), r.PathValue("memberID"))
+	m, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) (domain.Member, error) {
+		return read.GetMember(r.Context(), r.PathValue("memberID"))
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -277,12 +263,9 @@ type categoryJSON struct {
 }
 
 func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	categories, err := store.ListCategories(r.Context())
+	categories, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) (map[string]domain.Category, error) {
+		return read.ListCategories(r.Context())
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -296,12 +279,9 @@ func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListRaceCategories(w http.ResponseWriter, r *http.Request) {
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	categories, err := store.ListRaceCategories(r.Context(), r.PathValue("raceID"))
+	categories, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) ([]domain.Category, error) {
+		return read.ListRaceCategories(r.Context(), r.PathValue("raceID"))
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -349,12 +329,9 @@ func (s *Server) handleDetachCategory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	members, err := store.ListMembersByEvent(r.Context(), r.PathValue("id"))
+	members, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) ([]sqlite.MemberRow, error) {
+		return read.ListMembersByEvent(r.Context(), r.PathValue("id"))
+	})
 	if err != nil {
 		s.fail(w, err)
 		return

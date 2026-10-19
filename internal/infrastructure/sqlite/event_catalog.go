@@ -15,9 +15,10 @@ import (
 // EventCatalog owns the event-file directory and lazily opens one SQLite store
 // per event, caching the handles for the process lifetime.
 type EventCatalog struct {
-	dataDir string
-	origin  *installationOrigin
-	relays  *packetRelayState
+	dataDir         string
+	origin          *installationOrigin
+	relays          *packetRelayState
+	readConnections int
 
 	mu     sync.Mutex
 	stores map[string]*Store
@@ -34,7 +35,22 @@ type EventStorageStats struct {
 
 var unsafeEventFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
-func NewEventCatalog(dataDir string) (*EventCatalog, error) {
+type CatalogOption func(*EventCatalog)
+
+// WithReadConnections controls the bounded UI pool. Zero is reserved for legacy
+// diagnostic comparisons; normal application composition uses four readers.
+func WithReadConnections(connections int) CatalogOption {
+	return func(c *EventCatalog) { c.readConnections = connections }
+}
+
+func NewEventCatalog(dataDir string, options ...CatalogOption) (*EventCatalog, error) {
+	catalog := &EventCatalog{dataDir: dataDir, stores: map[string]*Store{}, readConnections: 4}
+	for _, option := range options {
+		option(catalog)
+	}
+	if catalog.readConnections < 0 {
+		return nil, fmt.Errorf("reader connection count cannot be negative")
+	}
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create data dir %s: %w", dataDir, err)
 	}
@@ -47,7 +63,8 @@ func NewEventCatalog(dataDir string) (*EventCatalog, error) {
 		origin.Close()
 		return nil, err
 	}
-	return &EventCatalog{dataDir: dataDir, origin: origin, relays: relays, stores: map[string]*Store{}}, nil
+	catalog.origin, catalog.relays = origin, relays
+	return catalog, nil
 }
 
 func (c *EventCatalog) InstallationID() string { return c.origin.instanceID }
@@ -135,6 +152,13 @@ func (c *EventCatalog) openLocked(eventID string, create bool) (*Store, error) {
 	if err != nil {
 		db.Close()
 		return nil, err
+	}
+	if c.readConnections > 0 {
+		store.readRoot, err = OpenReadOnly(path, c.readConnections)
+		if err != nil {
+			store.Close()
+			return nil, err
+		}
 	}
 	c.stores[eventID] = store
 	return store, nil

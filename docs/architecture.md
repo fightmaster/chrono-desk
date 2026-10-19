@@ -52,6 +52,10 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
 
 ## Key decisions
 
+The candidate uses a shared snapshot calculator and independent coherent reads;
+see [snapshot recount and read pools](snapshot-recount.md). App-owned ingestion
+continues while UI views are closed.
+
 The participant drawer uses accepted-only initial reads and explicitly requested
 full history; see [member card loading](member-card-history.md). This bounds the
 first response without changing stored observations or result calculation.
@@ -61,7 +65,7 @@ first response without changing stored observations or result calculation.
    The file-system concerns and open-store cache now live in `sqlite.EventCatalog`;
    application-level import/list logic stays in `service.EventService`.
 2. **Reuse one versioned timing-core, not a copied processor.** The immutable
-   `timing-core v0.8.0` release owns `legacy-once-v1` checkpoint eligibility,
+   `timing-core v0.8.1-0.20261019192112-6e3c998a2f8e` candidate owns `legacy-once-v1` checkpoint eligibility,
    `member-time-v2-start-provenance`, `result-outcome-v2`, deterministic
    `ranking-v3-canonical-decimal-id`, age calculation and the
    ordered `impact-v3-preview` projection plan. Chrono Desk keeps the

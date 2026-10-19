@@ -16,7 +16,7 @@ if directory.stat().st_mode & 0o077:
 source = Path(__file__).resolve().parents[2] / "internal/infrastructure/sqlite/open.go"
 original = source.read_text()
 needle = 'sql.Open("sqlite", dsn)'
-if original.count(needle) != 1:
+if original.count(needle) not in (1, 2):
     raise RuntimeError("Source differs; review instrumentation before benchmarking")
 replacement = directory / "open-metered.go"
 with replacement.open("x") as handle:

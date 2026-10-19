@@ -50,6 +50,16 @@ func (s *EventService) Open(eventID string) (*sqlite.Store, error) {
 	return s.catalog.Open(eventID)
 }
 
+// WithReadSnapshot gives query use cases a coherent view independent of the
+// writer and releases it before transports encode or send their response.
+func (s *EventService) WithReadSnapshot(ctx context.Context, eventID string, load func(*sqlite.Store) error) error {
+	store, err := s.catalog.Open(eventID)
+	if err != nil {
+		return err
+	}
+	return store.WithinReadSnapshot(ctx, load)
+}
+
 // StorageStats returns SQLite main/WAL/SHM sizes without checkpointing.
 func (s *EventService) StorageStats(eventID string) (sqlite.EventStorageStats, error) {
 	return s.catalog.StorageStats(eventID)
@@ -142,20 +152,24 @@ func (s *EventService) List(ctx context.Context) ([]EventInfo, error) {
 			s.logger.Printf("skip event file %s.chrono: %v", id, err)
 			continue
 		}
-		event, err := FirstEvent(ctx, store)
-		if err != nil {
-			s.logger.Printf("skip event file %s.chrono: %v", id, err)
-			continue
-		}
-		raceCount, memberCount, err := store.CountRacesAndMembers(ctx)
-		if err != nil {
-			s.logger.Printf("skip event file %s.chrono: %v", id, err)
-			continue
-		}
-		infos = append(infos, EventInfo{
-			ID: event.ID, Name: event.Name, Date: event.Date, Timezone: event.Timezone, File: id + ".chrono",
-			RaceCount: raceCount, MemberCount: memberCount, UseRaceDateForAge: event.UseRaceDateForAge,
+		var info EventInfo
+		err = store.WithinReadSnapshot(ctx, func(read *sqlite.Store) error {
+			event, err := FirstEvent(ctx, read)
+			if err != nil {
+				return err
+			}
+			raceCount, memberCount, err := read.CountRacesAndMembers(ctx)
+			if err != nil {
+				return err
+			}
+			info = EventInfo{ID: event.ID, Name: event.Name, Date: event.Date, Timezone: event.Timezone, File: id + ".chrono", RaceCount: raceCount, MemberCount: memberCount, UseRaceDateForAge: event.UseRaceDateForAge}
+			return nil
 		})
+		if err != nil {
+			s.logger.Printf("skip event file %s.chrono: %v", id, err)
+			continue
+		}
+		infos = append(infos, info)
 	}
 	sort.Slice(infos, func(i, j int) bool { return infos[i].Date > infos[j].Date })
 	return infos, nil

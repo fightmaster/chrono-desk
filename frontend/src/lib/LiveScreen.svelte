@@ -3,6 +3,8 @@
   import {call, fmtTime, cleanToMs, timeStrToMs, memberMatches, imgURL} from './api.js'
   import PhotoLightbox from './PhotoLightbox.svelte'
   import EdgeReceiver from './EdgeReceiver.svelte'
+  import {latestRequest} from './latest-request.js'
+  import {coalescedTask} from './coalesced-task.js'
 
   export let eventId
   export let members = []
@@ -17,6 +19,11 @@
   let feedLimit = 40
   let error = ''
   let timer = null
+  let statusRevision = 0
+  const feedRequest = latestRequest()
+  const photoRequest = latestRequest()
+  const feedRefresh = coalescedTask(refreshFeed)
+  const photoRefresh = coalescedTask(refreshPhotos)
 
   $: receiving = status.any_running ?? status.running
   $: activeInput = status.running ? status : (status.edge?.running ? status.edge : status)
@@ -58,27 +65,44 @@
     return `${Math.floor(sec / 3600)} ч назад`
   }
 
-  async function refresh() {
+  function refresh() {
+    photoRefresh.request()
+    return feedRefresh.request()
+  }
+
+  async function refreshFeed() {
+    const request = feedRequest.begin()
+    const revision = statusRevision
+    await Promise.allSettled([
+      call('GET', `/api/events/${eventId}/live/feed?limit=${feedLimit}`, undefined, undefined, request.signal)
+        .then(next => { if (request.current()) feed = next })
+        .catch(e => { if (request.current()) error = e.message }),
+      call('GET', `/api/events/${eventId}/live/status`, undefined, undefined, request.signal)
+        .then(next => {
+          if (!request.current() || revision !== statusRevision) return
+          status = next
+          if (status.port) port = status.port
+          else if (status.edge?.running && status.edge.port) port = status.edge.port
+          dispatch('status', status)
+        }),
+    ])
+  }
+
+  async function refreshPhotos() {
+    const request = photoRequest.begin()
     try {
-      status = await call('GET', `/api/events/${eventId}/live/status`)
-      feed = await call('GET', `/api/events/${eventId}/live/feed?limit=${feedLimit}`)
-      // Raw photos back the inline finish-row thumbnails (matched by time/number);
-      // the wall uses the server-merged list so multi-camera copies collapse the same
-      // way everywhere. photos_count is the true stored total (the page holds only the
-      // newest photoLimit).
-      try {
-        photos = await call('GET', `/api/events/${eventId}/photos/recent?limit=${photoLimit}`)
-        merged = await call('GET', `/api/events/${eventId}/photos/merged?limit=${photoLimit}`)
-        const pstatus = await call('GET', `/api/events/${eventId}/photos/status`)
-        photosTotal = pstatus.photos_count || 0
-        finishesTotal = pstatus.finishes_count || 0
-      } catch (_) { /* photos best-effort */ }
-      if (status.port) port = status.port
-      else if (status.edge?.running && status.edge.port) port = status.edge.port
-      dispatch('status', status)
-    } catch (e) {
-      error = e.message
-    }
+      const results = await Promise.allSettled([
+        call('GET', `/api/events/${eventId}/photos/recent?limit=${photoLimit}`, undefined, undefined, request.signal),
+        call('GET', `/api/events/${eventId}/photos/merged?limit=${photoLimit}`, undefined, undefined, request.signal),
+        call('GET', `/api/events/${eventId}/photos/status`, undefined, undefined, request.signal),
+      ])
+      if (!request.current() || results.some(result => result.status !== 'fulfilled')) return
+      const [nextPhotos, nextMerged, pstatus] = results.map(result => result.value)
+      photos = nextPhotos
+      merged = nextMerged
+      photosTotal = pstatus.photos_count || 0
+      finishesTotal = pstatus.finishes_count || 0
+    } catch (_) { /* photos best-effort, independent from the RFID feed */ }
   }
 
   function setView(v) { feedView = v; refresh() }
@@ -138,14 +162,21 @@
   }
 
   onMount(() => { refresh(); timer = setInterval(refresh, 2000) })
-  onDestroy(() => { clearInterval(timer); if (flashTimer) clearTimeout(flashTimer) })
+  onDestroy(() => {
+    clearInterval(timer)
+    feedRefresh.close(); photoRefresh.close()
+    feedRequest.cancel(); photoRequest.cancel()
+    if (flashTimer) clearTimeout(flashTimer)
+  })
 
   async function start() {
+    statusRevision++
     error = ''
     try { status = await call('POST', `/api/events/${eventId}/live/start`, JSON.stringify({port})); dispatch('status', status) }
     catch (e) { error = e.message }
   }
   async function stop() {
+    statusRevision++
     error = ''
     try { status = await call('POST', `/api/events/${eventId}/live/stop`); dispatch('status', status) }
     catch (e) { error = e.message }

@@ -22,6 +22,7 @@ type MemberPass struct {
 }
 
 type MemberPasses struct {
+	Registration  MemberRegistration    `json:"member"`
 	MemberID      string                `json:"member_id"`
 	FirstName     string                `json:"first_name"`
 	LastName      string                `json:"last_name"`
@@ -32,6 +33,22 @@ type MemberPasses struct {
 	CleanTime     *string               `json:"clean_time"`
 	Passes        []MemberPass          `json:"passes"`
 	ManualResults []sqlite.ManualResult `json:"manual_results"`
+}
+
+// MemberRegistration is bundled with passes so the drawer's fields and timing
+// come from one coherent read, rather than two independently committed views.
+type MemberRegistration struct {
+	ID         string  `json:"id"`
+	RaceID     string  `json:"race_id"`
+	CategoryID *string `json:"category_id"`
+	Number     *int64  `json:"number"`
+	EPC        *string `json:"epc"`
+	FirstName  string  `json:"first_name"`
+	LastName   string  `json:"last_name"`
+	Gender     *string `json:"gender"`
+	DOB        *string `json:"dob"`
+	Team       *string `json:"team"`
+	City       *string `json:"city"`
 }
 
 // LoadMemberPasses lists the member's reads in chronological order with the
@@ -53,6 +70,7 @@ func loadMemberPasses(ctx context.Context, store *sqlite.Store, memberID string,
 	if err != nil {
 		return out, err
 	}
+	out.Registration = MemberRegistration{ID: member.ID, RaceID: member.RaceID, CategoryID: member.CategoryID, Number: member.Number, EPC: member.EPC, FirstName: member.FirstName, LastName: member.LastName, Gender: member.Gender, DOB: member.DOB, Team: member.Team, City: member.City}
 	out.FirstName = member.FirstName
 	out.LastName = member.LastName
 	out.Number = member.Number

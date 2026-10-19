@@ -81,6 +81,8 @@ gitlab.com/fightmaster1/rfid-core v0.4.2 h1:jrUM3epxlT1+O8zhE5GIs/Fhz1ZAv3ic30R4
 gitlab.com/fightmaster1/rfid-core v0.4.2/go.mod h1:gdqqSnDz8jV6fIkg7CYJsdQ7ej5Z1xyasTqDplL0qGQ=
 gitlab.com/fightmaster1/timing-core v0.8.0 h1:jVJO90LQ1sZvArdn7p8SYzXtiPPguTwXEYUsDKDSMBc=
 gitlab.com/fightmaster1/timing-core v0.8.0/go.mod h1:n2oVRF1zRI7/kp8GWad9bRlo/FPi0UGwtqv6rOfubmQ=
+gitlab.com/fightmaster1/timing-core v0.8.1-0.20261019192112-6e3c998a2f8e h1:uwOBt7D71hQ9XMNodU8l6g0CaRTdLGH32reNuSOQQfk=
+gitlab.com/fightmaster1/timing-core v0.8.1-0.20261019192112-6e3c998a2f8e/go.mod h1:n2oVRF1zRI7/kp8GWad9bRlo/FPi0UGwtqv6rOfubmQ=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
 golang.org/x/crypto v0.48.0 h1:/VRzVqiRSggnhY7gNRxPauEQ5Drw9haKdM0jqfcCFts=
@@ -108,9 +110,9 @@ golang.org/x/sys v0.0.0-20201119102817-f84b799fce68/go.mod h1:h1NjWce9XRLGQEsW7w
 golang.org/x/sys v0.0.0-20210423082822-04245dca01da/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.1.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.41.0 h1:Ivj+2Cp/ylzLiEU89QhWblYnOE9zerudt9Ftecq2C6k=
 golang.org/x/sys v0.41.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
+golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
 golang.org/x/text v0.3.6/go.mod h1:5Zoc/QRtKVWzQhOtBMvqHzDpF6irO9z98xDceosuGiQ=

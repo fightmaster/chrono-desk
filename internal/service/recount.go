@@ -166,6 +166,13 @@ func projectionFailureClass(err error) string {
 }
 
 func (r *Recounter) recount(ctx context.Context, store recountTxStore, eventID, raceID string) (RecountStats, error) {
+	if stats, used, err := r.trySnapshotRecount(ctx, store, eventID, raceID); used || err != nil {
+		return stats, err
+	}
+	return r.recountLegacy(ctx, store, eventID, raceID)
+}
+
+func (r *Recounter) recountLegacy(ctx context.Context, store recountTxStore, eventID, raceID string) (RecountStats, error) {
 	if err := store.WipeDerivedResults(ctx, eventID, raceID); err != nil {
 		return RecountStats{}, err
 	}

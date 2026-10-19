@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
+	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
 )
 
@@ -167,12 +169,12 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"published": false})
 		return
 	}
-	store, err := s.events.Open(eventID)
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"published": false})
-		return
-	}
-	ev, err := service.FirstEvent(r.Context(), store)
+	var ev domain.Event
+	err := s.events.WithReadSnapshot(r.Context(), eventID, func(read *sqlite.Store) error {
+		var err error
+		ev, err = service.FirstEvent(r.Context(), read)
+		return err
+	})
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"published": false})
 		return
@@ -194,12 +196,12 @@ func (s *Server) handleRaces(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"published": false, "races": []raceJSON{}})
 		return
 	}
-	store, err := s.events.Open(eventID)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	races, err := store.ListRaces(r.Context(), eventID)
+	var races []domain.Race
+	err := s.events.WithReadSnapshot(r.Context(), eventID, func(read *sqlite.Store) error {
+		var err error
+		races, err = read.ListRaces(r.Context(), eventID)
+		return err
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -217,12 +219,12 @@ func (s *Server) handleProtocol(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"published": false})
 		return
 	}
-	store, err := s.events.Open(eventID)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	full, err := service.BuildProtocol(r.Context(), store, r.PathValue("raceID"))
+	var full service.ProtocolResponse
+	err := s.events.WithReadSnapshot(r.Context(), eventID, func(read *sqlite.Store) error {
+		var err error
+		full, err = service.BuildProtocol(r.Context(), read, r.PathValue("raceID"))
+		return err
+	})
 	if err != nil {
 		s.fail(w, err)
 		return

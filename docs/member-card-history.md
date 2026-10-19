@@ -3,8 +3,9 @@
 Task: CHR-DESK-PERF-001
 Docs-Impact: LOCAL
 
-The drawer initially requests accepted checkpoint passes only. Registration and
-the small pass response load concurrently. Disabled and unaccepted readings are
+The drawer initially requests accepted checkpoint passes only. Registration fields and
+the small pass list arrive in one coherent read snapshot (`member` in the pass
+response). A separate registration GET remains a compatibility fallback for old APIs. Disabled and unaccepted readings are
 fetched when the operator clears **«только засчитанные»**. Loaded history is reused
 when toggling the filter; a member reload invalidates it. Closing/reloading the
 drawer aborts outstanding reads and ignores stale responses even if transport
@@ -58,8 +59,8 @@ read-pool and batch-engine work, which this optimization does not replace.
 Validation: full Go tests/race/vet/build, staticcheck, JS request tests, Vite
 production build, runtime/edge browser smoke and the lazy-history browser scenario
 pass. Staticcheck used an identical private source copy with the exact local
-rfid-core v0.4.2 source replacement; production module files are unchanged.
+rfid-core v0.4.2 source replacement; that card-only checkpoint left module files unchanged. The subsequent shared
+snapshot candidate pins timing-core as documented in [snapshot recount](snapshot-recount.md).
 The Go1.24.13 vulnerability audit reports existing reachable standard-library
 findings; it is not a clean audit/release acceptance. Compatibility and dependency
-remediation remain centrally tracked by CHR-SEC-002. No dependency updates are
-included in this card change.
+remediation remain centrally tracked by CHR-SEC-002. No vulnerability remediation is included in this performance candidate.

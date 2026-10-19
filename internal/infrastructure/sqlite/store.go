@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -19,6 +20,7 @@ var schemaSQL string
 type Store struct {
 	db                 database
 	root               *sql.DB
+	readRoot           *sql.DB
 	tx                 *sql.Tx
 	originInstanceID   string
 	nextOriginSequence func() (int64, error)
@@ -79,7 +81,39 @@ func New(db *sql.DB, options ...StoreOption) (*Store, error) {
 func (s *Store) DB() *sql.DB { return s.root }
 
 // Close releases the event database owned by the store.
-func (s *Store) Close() error { return s.root.Close() }
+func (s *Store) Close() error {
+	if s.readRoot != nil {
+		return errors.Join(s.readRoot.Close(), s.root.Close())
+	}
+	return s.root.Close()
+}
+
+// ReadStats exposes counters, never a mutable handle to the query-only pool.
+func (s *Store) ReadStats() sql.DBStats {
+	if s.readRoot != nil {
+		return s.readRoot.Stats()
+	}
+	return s.root.Stats()
+}
+
+// WithinReadSnapshot pins all queries in one view to the same committed state.
+// Nested calls retain the caller's existing transition transaction. Standalone
+// stores without a configured reader pool keep their existing shared handle.
+func (s *Store) WithinReadSnapshot(ctx context.Context, fn func(*Store) error) error {
+	if s.tx != nil {
+		return fn(s)
+	}
+	reader := s.readRoot
+	if reader == nil {
+		reader = s.root
+	}
+	tx, err := reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("begin read snapshot: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // releases the read lease on every path
+	return fn(&Store{db: tx, root: reader, tx: tx})
+}
 
 // WithinTx runs fn against a transaction-bound Store and commits only when fn
 // succeeds. Nested calls join the existing transaction.

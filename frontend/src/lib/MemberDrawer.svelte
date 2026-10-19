@@ -88,10 +88,9 @@
     if (!boundMemberId) { data = null; member = null; return }
     const path = `/api/events/${eventId}/members/${boundMemberId}`
     try {
-      const [nextData, nextMember] = await Promise.all([
-        call('GET', `${path}/passes?scope=accepted`, undefined, undefined, request.signal),
-        call('GET', path, undefined, undefined, request.signal),
-      ])
+      const nextData = await call('GET', `${path}/passes?scope=accepted`, undefined, undefined, request.signal)
+      // Older local API builds omit the bundled registration fields.
+      const nextMember = nextData.member ?? await call('GET', path, undefined, undefined, request.signal)
       if (!request.current()) return
       data = nextData
       member = nextMember

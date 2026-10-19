@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"sort"
 	"sync"
@@ -30,11 +31,13 @@ import (
 )
 
 type seedMetadata struct {
-	Event  string `json:"event"`
-	Member string `json:"member"`
-	Race   string `json:"race"`
-	Mode   string `json:"mode"`
-	Source string `json:"sanitized_source_sha256"`
+	Event     string `json:"event"`
+	Member    string `json:"member"`
+	Race      string `json:"race"`
+	Mode      string `json:"mode"`
+	Source    string `json:"sanitized_source_sha256"`
+	Scope     string `json:"copy_scope"`
+	NativeSHA string `json:"local_database_sha256"`
 }
 type requestSample struct {
 	Path   string  `json:"path"`
@@ -47,8 +50,7 @@ type poolSample struct {
 	WaitMS    float64 `json:"wait_ms"`
 }
 
-func poolDelta(db *sql.DB, before sql.DBStats) poolSample {
-	s := db.Stats()
+func poolDelta(s, before sql.DBStats) poolSample {
 	return poolSample{s.WaitCount - before.WaitCount, float64(s.WaitDuration-before.WaitDuration) / 1e6}
 }
 func must(err error) {
@@ -101,11 +103,12 @@ func protected(db *sql.DB) map[string]string {
 }
 func main() {
 	dir := flag.String("data-dir", "", "Private directory with a preseeded sanitized event database")
-	mode := flag.String("mode", "single", "single or separate (diagnostic read-connection prototype)")
+	mode := flag.String("mode", "single", "single (legacy pool), separate (prototype) or production (bounded reader pool)")
 	cpu := flag.String("cpu-profile", "", "Optional private CPU profile")
 	serve := flag.Bool("serve-ui", false, "Serve the API on a query-only private copy for 2 minutes; no benchmark replay or ingest")
+	parity := flag.Bool("local-parity", false, "Recount only an owner-local sealed copy and emit hashes/counts, never serve HTTP or export personal fields")
 	flag.Parse()
-	if *dir == "" || (*mode != "single" && *mode != "separate") {
+	if *dir == "" || (*mode != "single" && *mode != "separate" && *mode != "production") {
 		panic("explicit private copy and mode required")
 	}
 	abs, e := filepath.Abs(*dir)
@@ -119,22 +122,47 @@ func main() {
 	must(e)
 	var seed seedMetadata
 	must(json.Unmarshal(data, &seed))
-	if seed.Source == "" || seed.Mode != *mode || seed.Event == "" {
+	if (seed.Source == "" && seed.NativeSHA == "") || seed.Mode != *mode || seed.Event == "" {
 		panic("sanitized seed metadata/mode required")
+	}
+	if seed.Scope == "owner-mac-local-only" {
+		if !*parity || *mode != "single" || seed.NativeSHA == "" || *serve {
+			panic("native owner-local copies require single-mode local-parity only")
+		}
+		sealed, e := os.ReadFile(filepath.Join(abs, seed.Event+".chrono"))
+		must(e)
+		digest := sha256.Sum256(sealed)
+		if hex.EncodeToString(digest[:]) != seed.NativeSHA {
+			panic("native copy differs from its closed-copy seal")
+		}
+	} else if seed.NativeSHA != "" {
+		panic("unrecognized native copy scope")
 	}
 	if _, e = os.Stat(filepath.Join(abs, "probe-result.json")); e == nil {
 		panic("preserve prior probe; use another fresh copy")
 	}
 	eventID := seed.Event
 	logger := log.New(io.Discard, "", 0)
-	events, e := service.NewEventManager(abs, logger)
+	readerCount := 0
+	if *mode == "production" {
+		readerCount = 4
+	}
+	catalog, e := sqlite.NewEventCatalog(abs, sqlite.WithReadConnections(readerCount))
+	must(e)
+	events := service.NewEventService(catalog, logger)
 	must(e)
 	defer events.Close()
 	store, e := events.Open(eventID)
 	must(e)
+	if *parity {
+		runLocalParity(store, eventID, logger)
+		return
+	}
 	uiEvents := events
 	if *mode == "separate" {
-		uiEvents, e = service.NewEventManager(abs, logger)
+		readCatalog, err := sqlite.NewEventCatalog(abs, sqlite.WithReadConnections(0))
+		must(err)
+		uiEvents = service.NewEventService(readCatalog, logger)
 		must(e)
 		defer uiEvents.Close()
 		read, e := uiEvents.Open(eventID)
@@ -173,17 +201,24 @@ func main() {
 	client := &http.Client{Timeout: 120 * time.Second}
 	base := server.BaseURL()
 	paths := []string{"/api/events/" + eventID + "/live/feed?limit=50", "/api/events/" + eventID + "/members/" + seed.Member + "/passes", "/api/events/" + eventID + "/races/" + seed.Race + "/protocol"}
-	result := map[string]any{"mode": *mode, "source_sha256": seed.Source, "go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH, "source_revision": "f8ddc425713fa693b14cbc6e8dec6bbd2383267d", "scope": "Isolated local HTTP/storage reproduction; no WebView render or physical-reader network trace"}
+	result := map[string]any{"mode": *mode, "source_sha256": seed.Source, "go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH, "baseline_revision": "f8ddc425713fa693b14cbc6e8dec6bbd2383267d", "scope": "Isolated local HTTP/storage reproduction; no WebView render or physical-reader network trace"}
+	if build, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range build.Settings {
+			if setting.Key == "vcs.revision" || setting.Key == "vcs.modified" {
+				result[setting.Key] = setting.Value
+			}
+		}
+	}
 	original := protected(store.DB())
 	idleSQL := sqlSnapshot()
-	idlePool := uiStore.DB().Stats()
+	idlePool := uiStore.ReadStats()
 	idle := []requestSample{}
 	for n := 0; n < 15; n++ {
 		for _, p := range paths {
 			idle = append(idle, get(client, base, p))
 		}
 	}
-	result["idle"] = map[string]any{"requests": idle, "sql": sqlSnapshot().since(idleSQL), "ui_pool": poolDelta(uiStore.DB(), idlePool)}
+	result["idle"] = map[string]any{"requests": idle, "sql": sqlSnapshot().since(idleSQL), "ui_pool": poolDelta(uiStore.ReadStats(), idlePool)}
 	// Reproduce a real full recount holding its actual transaction, with parallel
 	// HTTP reads and one newly arriving tag waiting for the same writer handle.
 	var duplicate domain.RfidLog
@@ -191,7 +226,7 @@ func main() {
 	duplicate.EventID = eventID
 	duplicate.CaptureSourceID = "chrono-desk:" + eventID + ":" + duplicate.Board
 	initialSQL := sqlSnapshot()
-	initialUI := uiStore.DB().Stats()
+	initialUI := uiStore.ReadStats()
 	initialWriter := store.DB().Stats()
 	started := time.Now()
 	done := make(chan struct{})
@@ -244,7 +279,7 @@ func main() {
 	workers.Wait()
 	must(recountErr)
 	must(duplicateErr)
-	result["recount"] = map[string]any{"duration_ms": recountMS, "duplicate_ingest_wait_ms": duplicateWaitMS, "replayed": recount, "requests": samples, "sql": sqlSnapshot().since(initialSQL), "ui_pool": poolDelta(uiStore.DB(), initialUI), "writer_pool": poolDelta(store.DB(), initialWriter)}
+	result["recount"] = map[string]any{"duration_ms": recountMS, "duplicate_ingest_wait_ms": duplicateWaitMS, "replayed": recount, "requests": samples, "sql": sqlSnapshot().since(initialSQL), "ui_pool": poolDelta(uiStore.ReadStats(), initialUI), "writer_pool": poolDelta(store.DB().Stats(), initialWriter)}
 	// Raw and judge facts must survive the diagnostic replay. Derived history in
 	// this isolated copy may change; no application database is accepted as input.
 	final := protected(store.DB())
@@ -270,7 +305,7 @@ func main() {
 	}
 	proc := processor.New(sqlite.NewProcessorRepo(store), logger, false)
 	ingestSQL := sqlSnapshot()
-	ingestPool := uiStore.DB().Stats()
+	ingestPool := uiStore.ReadStats()
 	ingestStart := time.Now()
 	ingestDone := make(chan struct{})
 	var ingestErr error
@@ -313,7 +348,7 @@ func main() {
 	}
 finished:
 	must(ingestErr)
-	result["ingest"] = map[string]any{"inserted": inserted, "requested_rate_per_second": 100, "duration_ms": float64(time.Since(ingestStart).Nanoseconds()) / 1e6, "mark_processing_ms": ingestLatencies, "requests": ingestReads, "sql": sqlSnapshot().since(ingestSQL), "ui_pool": poolDelta(uiStore.DB(), ingestPool)}
+	result["ingest"] = map[string]any{"inserted": inserted, "requested_rate_per_second": 100, "duration_ms": float64(time.Since(ingestStart).Nanoseconds()) / 1e6, "mark_processing_ms": ingestLatencies, "requests": ingestReads, "sql": sqlSnapshot().since(ingestSQL), "ui_pool": poolDelta(uiStore.ReadStats(), ingestPool)}
 	// A no-op evidence check is run separately because the real five-second pull
 	// invokes it even when no replay is selected; never contact the real website.
 	evidenceSQL := sqlSnapshot()
@@ -346,4 +381,50 @@ finished:
 	out, e := json.Marshal(summary)
 	must(e)
 	fmt.Println(string(out))
+}
+
+// This mode never creates an HTTP server, ingest, photo or relay manager.
+// Names/DOB remain on the owner's machine and enter only an aggregate hash.
+func runLocalParity(store *sqlite.Store, eventID string, logger *log.Logger) {
+	ctx := context.Background()
+	facts := func() map[string]string {
+		return map[string]string{
+			"raw":          fingerprint(store.DB(), "SELECT * FROM rfid_logs ORDER BY id"),
+			"manual":       fingerprint(store.DB(), "SELECT * FROM results WHERE rfid_log_id IS NULL ORDER BY id"),
+			"registration": fingerprint(store.DB(), "SELECT id,event_id,race_id,category_id,number,epc,rfid,first_name,last_name,gender,dob,city,team,status FROM members ORDER BY id"),
+		}
+	}
+	before := facts()
+	start := time.Now()
+	stats, err := service.NewRecounter(store, logger, false).Recount(ctx, eventID, "")
+	must(err)
+	ms := float64(time.Since(start).Nanoseconds()) / 1e6
+	after := facts()
+	for key, value := range before {
+		if after[key] != value {
+			panic("owner-local protected fact changed: " + key)
+		}
+	}
+	races, err := store.ListRaces(ctx, eventID)
+	must(err)
+	protocol := sha256.New()
+	rows, finished := 0, 0
+	for _, race := range races {
+		view, err := service.BuildProtocol(ctx, store, race.ID)
+		must(err)
+		data, err := json.Marshal(view)
+		must(err)
+		protocol.Write(data)
+		protocol.Write([]byte{'\n'})
+		rows += len(view.Rows)
+		finished += view.Counts.Finished
+	}
+	must(json.NewEncoder(os.Stdout).Encode(map[string]any{
+		"scope":      "owner-local copy; no personal fields exported; no HTTP or ingest started",
+		"recount_ms": ms, "stats": stats, "races": len(races), "rows": rows, "finished": finished,
+		"protected_unchanged": true, "protected_hashes": after,
+		"protocol_sha256":     hex.EncodeToString(protocol.Sum(nil)),
+		"passes_sha256":       fingerprint(store.DB(), "SELECT member_id,race_id,checkpoint_id,rfid_log_id,time_ms,number FROM results ORDER BY member_id,race_id,time_ms,rfid_log_id"),
+		"member_times_sha256": fingerprint(store.DB(), "SELECT id,start_time_ms,start_time_source,start_observation_id,finish_time_ms,clean_time FROM members ORDER BY id"),
+	}))
 }

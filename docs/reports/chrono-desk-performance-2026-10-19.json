@@ -1,6 +1,6 @@
 {
   "task": "CHR-DESK-PERF-001",
-  "docs_impact": "LOCAL",
+  "docs_impact": "CROSS_PROJECT",
   "observed": "2026-10-19",
   "application_version": "0.6.12",
   "source_revision": "f8ddc425713fa693b14cbc6e8dec6bbd2383267d",
@@ -399,5 +399,179 @@
     },
     "initial_scope": "accepted",
     "default_legacy_api_scope": "all"
+  },
+  "shared_snapshot_candidate": {
+    "core_commit": "6e3c998a2f8e003c4451e14fb936b04f2607c5ec",
+    "calculator_version": "event-snapshot-fixed-distance-v1",
+    "installed": false,
+    "dependency_mode": "Both consumers pin v0.8.1-0.20261019192112-6e3c998a2f8e; exact clean source archive validated via private file proxy; remote publication pending. Desk test-only rfid-core override uses unchanged v0.4.2 source.",
+    "mac_combined": {
+      "single": {
+        "duplicate_ingest_wait_ms": 329.490311,
+        "idle": {
+          "errors": 0,
+          "max_ms": 106.471528,
+          "p50_ms": 1.837339,
+          "p95_ms": 80.101462,
+          "p99_ms": 81.820385,
+          "samples": 45,
+          "sql": {
+            "queries": 105,
+            "execs": 0,
+            "prepares": 0,
+            "begins": 45,
+            "commits": 0,
+            "rollbacks": 45,
+            "rows": 17565,
+            "driver_ms": 1206.492332
+          },
+          "ui_pool": {
+            "wait_count": 0,
+            "wait_ms": 0
+          }
+        },
+        "ingest": {
+          "errors": 0,
+          "max_ms": 82.716339,
+          "p50_ms": 4.646698,
+          "p95_ms": 81.063511,
+          "p99_ms": 81.69987,
+          "samples": 45,
+          "sql": {
+            "queries": 1493,
+            "execs": 600,
+            "prepares": 200,
+            "begins": 445,
+            "commits": 200,
+            "rollbacks": 245,
+            "rows": 18749,
+            "driver_ms": 1596.090583
+          },
+          "ui_pool": {
+            "wait_count": 75,
+            "wait_ms": 1212.921157
+          }
+        },
+        "ingest_inserted": 200,
+        "mode": "single",
+        "protected_unchanged": true,
+        "recount": {
+          "errors": 0,
+          "max_ms": 329.385317,
+          "p50_ms": 327.95763,
+          "p95_ms": 327.95763,
+          "p99_ms": 327.95763,
+          "samples": 3,
+          "sql": {
+            "queries": 12,
+            "execs": 11,
+            "prepares": 1,
+            "begins": 5,
+            "commits": 2,
+            "rollbacks": 3,
+            "rows": 30686,
+            "driver_ms": 287.25497500000006
+          },
+          "ui_pool": {
+            "wait_count": 4,
+            "wait_ms": 1228.490628
+          }
+        },
+        "recount_ms": 249.403838
+      },
+      "production": {
+        "duplicate_ingest_wait_ms": 242.323123,
+        "idle": {
+          "errors": 0,
+          "max_ms": 54.737495,
+          "p50_ms": 1.794676,
+          "p95_ms": 52.806348,
+          "p99_ms": 53.035268,
+          "samples": 45,
+          "sql": {
+            "queries": 105,
+            "execs": 0,
+            "prepares": 0,
+            "begins": 45,
+            "commits": 0,
+            "rollbacks": 45,
+            "rows": 17565,
+            "driver_ms": 764.745852
+          },
+          "ui_pool": {
+            "wait_count": 0,
+            "wait_ms": 0
+          }
+        },
+        "ingest": {
+          "errors": 0,
+          "max_ms": 83.421677,
+          "p50_ms": 4.462527,
+          "p95_ms": 80.685444,
+          "p99_ms": 81.926502,
+          "samples": 45,
+          "sql": {
+            "queries": 1493,
+            "execs": 600,
+            "prepares": 200,
+            "begins": 445,
+            "commits": 200,
+            "rollbacks": 245,
+            "rows": 18749,
+            "driver_ms": 1681.750659
+          },
+          "ui_pool": {
+            "wait_count": 0,
+            "wait_ms": 0
+          }
+        },
+        "ingest_inserted": 200,
+        "mode": "production",
+        "protected_unchanged": true,
+        "recount": {
+          "errors": 0,
+          "max_ms": 63.089039,
+          "p50_ms": 7.465826,
+          "p95_ms": 49.377341,
+          "p99_ms": 49.377341,
+          "samples": 8,
+          "sql": {
+            "queries": 23,
+            "execs": 11,
+            "prepares": 1,
+            "begins": 10,
+            "commits": 2,
+            "rollbacks": 8,
+            "rows": 32017,
+            "driver_ms": 326.44359199999997
+          },
+          "ui_pool": {
+            "wait_count": 0,
+            "wait_ms": 0
+          }
+        },
+        "recount_ms": 243.493101
+      }
+    },
+    "native_owner_mac_parity": {
+      "scope": "Full native copy stayed on owner Mac; only aggregate hashes/counts returned. No HTTP, ingest or working database recount. One run per calculator.",
+      "legacy_recount_ms": 4856.406316,
+      "snapshot_recount_ms": 154.057058,
+      "races": 12,
+      "protocol_rows": 391,
+      "finished": 338,
+      "protocol_and_places_equal": true,
+      "passes_equal": true,
+      "member_times_equal": true,
+      "protected_facts_equal": true
+    },
+    "linux_bundled_lazy_card": {
+      "scope": "Linux headless Chromium; exact frontend and real localhost API on sanitized event772963; no photos, reader or background replay; not Mac WebKit",
+      "samples": 15,
+      "two_raf_p50_ms": 38.80000000074506,
+      "two_raf_p95_ms": 71.30000000074506,
+      "two_raf_max_ms": 108.40000000037253,
+      "exceptions": []
+    }
   }
 }

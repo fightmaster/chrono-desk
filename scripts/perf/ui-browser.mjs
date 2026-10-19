@@ -8,10 +8,32 @@ import {fileURLToPath} from 'node:url'
 if (!process.argv[2] || !process.env.CHRONO_DESK_BROWSER) throw Error('Usage: CHRONO_DESK_BROWSER=/path/to/chromium node scripts/perf/ui-browser.mjs /private/serve-ui-copy')
 const root=resolve(process.argv[2])
 const assertLazy=process.argv.includes('--lazy-history')
+const assertSlowLive=process.argv.includes('--slow-live')
 const meta=JSON.parse(readFileSync(root+'/server.log','utf8').trim())
 const distDir=resolve(dirname(fileURLToPath(import.meta.url)), '../../frontend/dist')
 const bootstrap=`<script>window.go={main:{App:{APIBaseURL:async()=>${JSON.stringify(meta.base)},APIToken:async()=> 'isolated-performance-probe'}}};window.__http=[];const original=window.fetch;window.fetch=async(...args)=>{if((args[1]?.method||'GET')!=='GET')throw Error('Diagnostic browser permits GET only');const start=performance.now();let res=await original(...args);const json=res.json.bind(res);res.json=async()=>{const data=await json();window.__http.push({path:new URL(args[0],location.href).pathname+new URL(args[0],location.href).search,start,end:performance.now()});return data};return res};</script>`
-const server=createServer((req,res)=>{const name=new URL(req.url,'http://localhost').pathname;const p=normalize(join(distDir,name==='/'?'index.html':name));if(!p.startsWith(distDir+'/')||!existsSync(p)){res.writeHead(404);res.end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2'})[extname(p)]||'application/octet-stream');if(name==='/'){res.end(readFileSync(p,'utf8').replace('<head>','<head>'+bootstrap));return}createReadStream(p).pipe(res)})
+const slowLiveBootstrap = assertSlowLive ? `<script>
+window.__liveProbe = {enabled:false, calls:{}, active:{}, max:{}, aborted:0};
+const liveFetch = window.fetch;
+window.fetch = async (...args) => {
+  const probe = window.__liveProbe, path = new URL(args[0],location.href).pathname;
+  if (!probe.enabled || !/\\/(photos\\/(recent|merged|status)|live\\/feed)$/.test(path)) return liveFetch(...args);
+  probe.calls[path]=(probe.calls[path]||0)+1;
+  probe.active[path]=(probe.active[path]||0)+1;
+  probe.max[path]=Math.max(probe.max[path]||0,probe.active[path]);
+  try {
+    if (path.endsWith('/photos/recent')) throw Error('Synthetic early photo metadata failure');
+    await new Promise((resolve,reject)=>{
+      const signal=args[1]?.signal;
+      const abort=()=>{clearTimeout(timer);probe.aborted++;reject(new DOMException('View closed','AbortError'))};
+      const timer=setTimeout(()=>{signal?.removeEventListener('abort',abort);resolve()},path.includes('/photos/')?8000:50);
+      if(signal?.aborted)abort();else signal?.addEventListener('abort',abort,{once:true});
+    });
+    return await liveFetch(...args);
+  } finally {probe.active[path]--}
+};
+</script>` : ''
+const server=createServer((req,res)=>{const name=new URL(req.url,'http://localhost').pathname;const p=normalize(join(distDir,name==='/'?'index.html':name));if(!p.startsWith(distDir+'/')||!existsSync(p)){res.writeHead(404);res.end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2'})[extname(p)]||'application/octet-stream');if(name==='/'){res.end(readFileSync(p,'utf8').replace('<head>','<head>'+bootstrap+slowLiveBootstrap));return}createReadStream(p).pipe(res)})
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const address=server.address()
 const profile=mkdtempSync(root+'/browser-')
 const browser=process.env.CHRONO_DESK_BROWSER
@@ -105,7 +127,26 @@ try{
   await evaluate("document.querySelector('.drawer .x').click()")
   await waitFor("!document.querySelector('.drawer')")
  }
- const output={scope:'Linux headless Chromium; exact frontend and real localhost API on sanitized event772963; no photos, reader or background replay; not Mac WebKit',samples:measures,exceptions}
+ let liveProbe = null
+ if(assertSlowLive){
+  await evaluate("window.__liveProbe.enabled=true;document.querySelector('button.live').click()")
+  await waitFor("document.querySelectorAll('.row:not(.capture)').length>0")
+  if(!await evaluate("Object.entries(window.__liveProbe.active).some(([path,count])=>path.endsWith('/photos/merged')&&count===1)"))throw Error('Feed was blocked by slow photo metadata')
+  await delay(4300)
+  liveProbe=await evaluate('structuredClone(window.__liveProbe)')
+  const feeds=Object.entries(liveProbe.calls).find(([path])=>path.endsWith('/live/feed'))?.[1]
+  if(feeds<3)throw Error('Slow photos blocked repeated RFID refreshes')
+  for(const [path,count] of Object.entries(liveProbe.calls))if(path.includes('/photos/')&&count!==1)throw Error('Queued photo polling overlapped after an early failure')
+  if(Object.values(liveProbe.max).some(count=>count>1))throw Error('Live display requests overlapped')
+  await evaluate("[...document.querySelectorAll('.seg-item')].find(button=>button.textContent==='Результаты').click()")
+  await waitFor('Object.values(window.__liveProbe.active).every(count=>count===0)')
+  const count=await evaluate('JSON.stringify(window.__liveProbe.calls)')
+  await delay(2200)
+  if(count!==await evaluate('JSON.stringify(window.__liveProbe.calls)'))throw Error('Destroyed Live view kept polling')
+  liveProbe=await evaluate('structuredClone(window.__liveProbe)')
+  if(liveProbe.aborted!==2)throw Error('Closing Live did not cancel both slow metadata requests')
+ }
+ const output={scope:'Linux headless Chromium; exact frontend and real localhost API on sanitized event772963; no photos, reader or background replay; not Mac WebKit',samples:measures,exceptions,liveProbe}
  writeFileSync(root+'/browser-result.json',JSON.stringify(output,null,2),{mode:0o600})
  const values=measures.map(m=>m.paint-m.start).sort((a,b)=>a-b)
  console.log(JSON.stringify({samples:values.length,two_raf_p50_ms:values[7],two_raf_p95_ms:values[13],two_raf_max_ms:values[14],exceptions}))

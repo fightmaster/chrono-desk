@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:unit": "node --test scripts/latest-request.test.mjs",
+    "test:unit": "node --test scripts/latest-request.test.mjs scripts/coalesced-task.test.mjs",
     "test:smoke": "node --test scripts/runtime-smoke-deadlines.test.mjs",
     "smoke": "node scripts/runtime-smoke.mjs",
     "smoke:edge": "node scripts/runtime-smoke.mjs --edge"

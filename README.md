@@ -256,3 +256,5 @@ and durable audit images preserve this choice across restart and other clients.
 See canonical `chrono-docs/contracts/packet-issuance-release-number.md` for
 `clear_number`, `return_to_reserve`, `assign_reserve`, virtual row/atomic feed
 semantics and compatibility. Legacy commands retain their replay semantics.
+
+CHR-DESK-PERF-001: [shared snapshot calculation, reader pool and UI lifecycle](docs/snapshot-recount.md); candidate not installed, shared source publication pending.

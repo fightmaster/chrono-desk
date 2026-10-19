@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
 )
 
@@ -43,16 +44,13 @@ func (s *Server) handleLiveStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLiveFeed(w http.ResponseWriter, r *http.Request) {
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
 	limit := 50
 	if v := r.URL.Query().Get("limit"); v != "" {
 		fmt.Sscanf(v, "%d", &limit) //nolint:errcheck
 	}
-	passes, err := store.ListRecentPasses(r.Context(), r.PathValue("id"), limit)
+	passes, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) ([]sqlite.LivePass, error) {
+		return read.ListRecentPasses(r.Context(), r.PathValue("id"), limit)
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -146,12 +144,9 @@ func (s *Server) handleCreateCapture(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListCaptures(w http.ResponseWriter, r *http.Request) {
-	store, err := s.events.Open(r.PathValue("id"))
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	captures, err := store.ListPendingCaptures(r.Context(), r.PathValue("id"))
+	captures, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) ([]sqlite.PendingCapture, error) {
+		return read.ListPendingCaptures(r.Context(), r.PathValue("id"))
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
