@@ -211,12 +211,21 @@ func (s *Server) handleListCheckpoints(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMemberPasses(w http.ResponseWriter, r *http.Request) {
+	load := service.LoadMemberPasses
+	switch r.URL.Query().Get("scope") {
+	case "", "all":
+	case "accepted":
+		load = service.LoadAcceptedMemberPasses
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Неизвестный фильтр отсечек"})
+		return
+	}
 	store, err := s.events.Open(r.PathValue("id"))
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	passes, err := service.LoadMemberPasses(r.Context(), store, r.PathValue("memberID"))
+	passes, err := load(r.Context(), store, r.PathValue("memberID"))
 	if err != nil {
 		s.fail(w, err)
 		return

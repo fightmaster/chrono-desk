@@ -7,9 +7,10 @@ import {join,normalize,extname,resolve,dirname} from 'node:path'
 import {fileURLToPath} from 'node:url'
 if (!process.argv[2] || !process.env.CHRONO_DESK_BROWSER) throw Error('Usage: CHRONO_DESK_BROWSER=/path/to/chromium node scripts/perf/ui-browser.mjs /private/serve-ui-copy')
 const root=resolve(process.argv[2])
+const assertLazy=process.argv.includes('--lazy-history')
 const meta=JSON.parse(readFileSync(root+'/server.log','utf8').trim())
 const distDir=resolve(dirname(fileURLToPath(import.meta.url)), '../../frontend/dist')
-const bootstrap=`<script>window.go={main:{App:{APIBaseURL:async()=>${JSON.stringify(meta.base)},APIToken:async()=> 'isolated-performance-probe'}}};window.__http=[];const original=window.fetch;window.fetch=async(...args)=>{if((args[1]?.method||'GET')!=='GET')throw Error('Diagnostic browser permits GET only');const start=performance.now();let res=await original(...args);const json=res.json.bind(res);res.json=async()=>{const data=await json();window.__http.push({path:new URL(args[0],location.href).pathname,start,end:performance.now()});return data};return res};</script>`
+const bootstrap=`<script>window.go={main:{App:{APIBaseURL:async()=>${JSON.stringify(meta.base)},APIToken:async()=> 'isolated-performance-probe'}}};window.__http=[];const original=window.fetch;window.fetch=async(...args)=>{if((args[1]?.method||'GET')!=='GET')throw Error('Diagnostic browser permits GET only');const start=performance.now();let res=await original(...args);const json=res.json.bind(res);res.json=async()=>{const data=await json();window.__http.push({path:new URL(args[0],location.href).pathname+new URL(args[0],location.href).search,start,end:performance.now()});return data};return res};</script>`
 const server=createServer((req,res)=>{const name=new URL(req.url,'http://localhost').pathname;const p=normalize(join(distDir,name==='/'?'index.html':name));if(!p.startsWith(distDir+'/')||!existsSync(p)){res.writeHead(404);res.end();return}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2'})[extname(p)]||'application/octet-stream');if(name==='/'){res.end(readFileSync(p,'utf8').replace('<head>','<head>'+bootstrap));return}createReadStream(p).pipe(res)})
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const address=server.address()
 const profile=mkdtempSync(root+'/browser-')
@@ -84,7 +85,23 @@ try{
   await waitFor("!!document.querySelector('.bar .search .match')")
   await evaluate(`(()=>{window.__http=[];window.__measure={start:performance.now(),shell:null,fields:null,paint:null};const o=new MutationObserver(()=>{const m=window.__measure;if(m.shell===null&&document.querySelector('.drawer'))m.shell=performance.now();if(m.fields===null&&document.querySelector('.drawer .reg')){m.fields=performance.now();requestAnimationFrame(()=>requestAnimationFrame(()=>{m.paint=performance.now()}));o.disconnect()}});o.observe(document.body,{subtree:true,childList:true});const b=[...document.querySelectorAll('.bar .search .match')].find(x=>x.querySelector('.mname').textContent.trim()===${JSON.stringify(meta.member+' Participant')});if(!b)throw Error('Expected synthetic member missing');b.click()})()`)
   await waitFor('window.__measure?.paint!==null')
-  const m=await evaluate('({...window.__measure,requests:window.__http})');measures.push(m)
+  const m=await evaluate('({...window.__measure,rows:document.querySelectorAll(".drawer .srow").length,requests:window.__http})');measures.push(m)
+  if(assertLazy){
+   const passes=m.requests.filter(r=>r.path.includes('/passes'))
+   if(passes.length!==1||!passes[0].path.endsWith('?scope=accepted'))throw Error('Initial drawer fetched full history')
+   if(n===0){
+    await evaluate("document.querySelector('.onlyhits input').click()")
+    await waitFor("window.__http.some(r=>r.path.endsWith('/passes?scope=all'))")
+    const allRows=await evaluate("document.querySelectorAll('.drawer .srow').length")
+    if(allRows<m.rows)throw Error('Full history lost accepted rows')
+    await evaluate("document.querySelector('.onlyhits input').click()")
+    await waitFor(`document.querySelectorAll('.drawer .srow').length===${m.rows}`)
+    await evaluate("document.querySelector('.onlyhits input').click()")
+    await waitFor(`document.querySelectorAll('.drawer .srow').length===${allRows}`)
+    if(await evaluate("window.__http.filter(r=>r.path.endsWith('/passes?scope=all')).length")!==1)throw Error('Cached history fetched again')
+    m.lazy_history={initial_rows:m.rows,expanded_rows:allRows,full_requests:1}
+   }
+  }
   await evaluate("document.querySelector('.drawer .x').click()")
   await waitFor("!document.querySelector('.drawer')")
  }

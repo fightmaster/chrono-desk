@@ -63,14 +63,7 @@ func (c meteredConn) PrepareContext(ctx context.Context, q string) (driver.Stmt,
 	return meteredStmt{p}, nil
 }
 func (c meteredConn) Begin() (driver.Tx, error) {
-	sqlBegins.Add(1)
-	s := time.Now()
-	defer measure(s)
-	tx, e := c.Conn.Begin()
-	if e != nil {
-		return nil, e
-	}
-	return meteredTx{tx}, nil
+	return c.BeginTx(context.Background(), driver.TxOptions{})
 }
 func (c meteredConn) BeginTx(ctx context.Context, o driver.TxOptions) (driver.Tx, error) {
 	sqlBegins.Add(1)
@@ -92,20 +85,34 @@ func (c meteredConn) Ping(ctx context.Context) error {
 type meteredStmt struct{ driver.Stmt }
 
 func (s meteredStmt) Exec(v []driver.Value) (driver.Result, error) {
+	return s.ExecContext(context.Background(), namedValues(v))
+}
+func (s meteredStmt) ExecContext(ctx context.Context, v []driver.NamedValue) (driver.Result, error) {
 	sqlExecs.Add(1)
 	start := time.Now()
 	defer measure(start)
-	return s.Stmt.Exec(v)
+	return s.Stmt.(driver.StmtExecContext).ExecContext(ctx, v)
 }
 func (s meteredStmt) Query(v []driver.Value) (driver.Rows, error) {
+	return s.QueryContext(context.Background(), namedValues(v))
+}
+func (s meteredStmt) QueryContext(ctx context.Context, v []driver.NamedValue) (driver.Rows, error) {
 	sqlQueries.Add(1)
 	start := time.Now()
 	defer measure(start)
-	r, e := s.Stmt.Query(v)
+	r, e := s.Stmt.(driver.StmtQueryContext).QueryContext(ctx, v)
 	if e != nil {
 		return nil, e
 	}
 	return meteredRows{r}, nil
+}
+
+func namedValues(v []driver.Value) []driver.NamedValue {
+	args := make([]driver.NamedValue, len(v))
+	for i := range v {
+		args[i] = driver.NamedValue{Ordinal: i + 1, Value: v[i]}
+	}
+	return args
 }
 
 type meteredRows struct{ driver.Rows }

@@ -384,5 +384,20 @@
     },
     "parity": true,
     "scope": "Linux Python sqlite3 warm SQL only, not Go HTTP or Mac UI"
+  },
+  "lazy_card_candidate": {
+    "scope": "Linux headless Chromium and real localhost API; two RAF frame opportunity after fields, not Mac WebKit or physical paint; single run",
+    "samples": 15,
+    "p50_ms": 70.6000000005588,
+    "p95_ms": 81.6000000005588,
+    "max_ms": 163.20000000018626,
+    "js_exceptions": 0,
+    "lazy_history": {
+      "initial_rows": 1,
+      "expanded_rows": 1010,
+      "full_requests": 1
+    },
+    "initial_scope": "accepted",
+    "default_legacy_api_scope": "all"
   }
 }

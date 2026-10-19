@@ -37,6 +37,16 @@ type MemberPasses struct {
 // LoadMemberPasses lists the member's reads in chronological order with the
 // result (if any) each one produced.
 func LoadMemberPasses(ctx context.Context, store *sqlite.Store, memberID string) (MemberPasses, error) {
+	return loadMemberPasses(ctx, store, memberID, false)
+}
+
+// LoadAcceptedMemberPasses omits unaccepted and disabled raw history from the
+// initial drawer response. Manual judge results remain available in both views.
+func LoadAcceptedMemberPasses(ctx context.Context, store *sqlite.Store, memberID string) (MemberPasses, error) {
+	return loadMemberPasses(ctx, store, memberID, true)
+}
+
+func loadMemberPasses(ctx context.Context, store *sqlite.Store, memberID string, acceptedOnly bool) (MemberPasses, error) {
 	out := MemberPasses{MemberID: memberID, Passes: []MemberPass{}, ManualResults: []sqlite.ManualResult{}}
 
 	member, err := store.GetMember(ctx, memberID)
@@ -61,7 +71,11 @@ func LoadMemberPasses(ctx context.Context, store *sqlite.Store, memberID string)
 		return out, nil // no tag — nothing to show
 	}
 
-	passes, err := store.ListMemberPasses(ctx, member.EventID, memberID, *member.EPC)
+	list := store.ListMemberPasses
+	if acceptedOnly {
+		list = store.ListAcceptedMemberPasses
+	}
+	passes, err := list(ctx, member.EventID, memberID, *member.EPC)
 	if err != nil {
 		return out, err
 	}

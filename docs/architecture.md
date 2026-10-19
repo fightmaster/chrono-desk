@@ -52,6 +52,10 @@ RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HT
 
 ## Key decisions
 
+The participant drawer uses accepted-only initial reads and explicitly requested
+full history; see [member card loading](member-card-history.md). This bounds the
+first response without changing stored observations or result calculation.
+
 1. **One event = one SQLite file** (e.g. `marathon-2026.chrono`). Portable by flash
    drive between laptops, backup = file copy, corruption is isolated per event.
    The file-system concerns and open-store cache now live in `sqlite.EventCatalog`;

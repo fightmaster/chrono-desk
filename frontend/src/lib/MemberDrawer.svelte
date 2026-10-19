@@ -1,7 +1,8 @@
 <script>
-  import {createEventDispatcher} from 'svelte'
+  import {createEventDispatcher, onDestroy} from 'svelte'
   import {call, fmtTime, fmtDateTime, msToInput, inputToMs, timeStrToMs, memberMatches} from './api.js'
   import PhotoPanel from './PhotoPanel.svelte'
+  import {latestRequest} from './latest-request.js'
 
   export let eventId
   export let races = []
@@ -43,6 +44,14 @@
   let member = null // registration fields
   let error = ''
   let onlyHits = true
+  let loadedMemberId = null
+  let historyLoaded = false
+  let historyLoading = false
+  let historyError = ''
+  const cardRequest = latestRequest()
+  const historyRequest = latestRequest()
+  const categoryRequest = latestRequest()
+  onDestroy(() => { cardRequest.cancel(); historyRequest.cancel(); categoryRequest.cancel() })
   let selectedCategoryId = ''
 
   // A manual finish already attached to the bound member (reopen case): expose
@@ -65,12 +74,58 @@
     : []
 
   async function load() {
+    const request = cardRequest.begin()
+    historyRequest.cancel()
+    historyLoaded = false
+    historyLoading = false
+    historyError = ''
+    if (loadedMemberId !== boundMemberId) {
+      loadedMemberId = boundMemberId
+      onlyHits = true
+      data = null
+      member = null
+    }
     if (!boundMemberId) { data = null; member = null; return }
+    const path = `/api/events/${eventId}/members/${boundMemberId}`
     try {
-      data = await call('GET', `/api/events/${eventId}/members/${boundMemberId}/passes`)
-      member = await call('GET', `/api/events/${eventId}/members/${boundMemberId}`)
+      const [nextData, nextMember] = await Promise.all([
+        call('GET', `${path}/passes?scope=accepted`, undefined, undefined, request.signal),
+        call('GET', path, undefined, undefined, request.signal),
+      ])
+      if (!request.current()) return
+      data = nextData
+      member = nextMember
+      if (!onlyHits) loadHistory()
     } catch (e) {
-      error = e.message
+      if (request.current()) error = e.message
+    }
+  }
+
+  async function loadHistory() {
+    if (onlyHits || historyLoaded || historyLoading || !data) return
+    const request = historyRequest.begin()
+    historyLoading = true
+    historyError = ''
+    try {
+      const nextData = await call('GET', `/api/events/${eventId}/members/${boundMemberId}/passes?scope=all`, undefined, undefined, request.signal)
+      if (!request.current()) return
+      data = nextData
+      historyLoaded = true
+    } catch (e) {
+      if (request.current()) historyError = e.message
+    } finally {
+      if (request.current()) historyLoading = false
+    }
+  }
+
+  function changePassFilter(event) {
+    onlyHits = event.target.checked
+    if (onlyHits) {
+      historyRequest.cancel()
+      historyLoading = false
+      historyError = ''
+    } else {
+      loadHistory()
     }
   }
   // Reload on member change or parent refresh.
@@ -81,9 +136,13 @@
   let raceCategories = []
   $: loadRaceCategories(member?.race_id, reloadToken)
   async function loadRaceCategories(raceId) {
+    const request = categoryRequest.begin()
     if (!raceId) { raceCategories = []; return }
-    try { raceCategories = await call('GET', `/api/events/${eventId}/races/${raceId}/categories`) }
-    catch (_) { raceCategories = [] }
+    try {
+      const next = await call('GET', `/api/events/${eventId}/races/${raceId}/categories`, undefined, undefined, request.signal)
+      if (request.current()) raceCategories = next
+    }
+    catch (_) { if (request.current()) raceCategories = [] }
   }
   // Show the member's current group even if it isn't attached to the race (a
   // legacy/detached assignment shouldn't silently vanish from the dropdown).
@@ -100,8 +159,8 @@
   $: packetState = members.find(m => m.id === boundMemberId) ?? null
 
   $: passes = data ? data.passes : []
-  $: hitCount = passes.filter(p => p.checkpoint_name).length
-  $: interesting = passes.filter(p => p.checkpoint_name || p.disabled_at)
+  $: interesting = passes.filter(p => p.checkpoint_id != null && !p.disabled_at)
+  $: hitCount = interesting.length
   $: shownPasses = onlyHits ? interesting : passes
 
   async function bindNumber(m) {
@@ -395,13 +454,13 @@
     </div>
 
     <div class="splits-head">
-      <span class="sh-title">Отсечки — засчитано {hitCount} из {passes.length}</span>
-      {#if passes.length > interesting.length}
-        <label class="onlyhits faint">
-          <input type="checkbox" bind:checked={onlyHits}/> только засчитанные и отключённые
-        </label>
-      {/if}
+      <span class="sh-title">Отсечки — засчитано {hitCount}{#if historyLoaded} из {passes.length}{/if}</span>
+      <label class="onlyhits faint">
+        <input type="checkbox" checked={onlyHits} on:change={changePassFilter}/> только засчитанные
+      </label>
     </div>
+    {#if historyLoading}<p class="faint" role="status">Загружаем остальные отсечки…</p>{/if}
+    {#if historyError}<p class="error">{historyError} <button class="btn" on:click={loadHistory}>Повторить загрузку</button></p>{/if}
     <div class="splits">
       <div class="grid shead">
         <span>Время</span><span>Считыватель</span><span>RSSI</span><span>Засчитано</span><span></span>
@@ -423,7 +482,11 @@
         </div>
       {/each}
       {#if !shownPasses.length}
-        <p class="faint empty">{passes.length ? 'нет засчитанных отсечек — снимите фильтр' : 'прочтений по этому чипу нет'}</p>
+        {#if onlyHits}
+          <p class="faint empty">Нет засчитанных отсечек — снимите фильтр, чтобы загрузить все считывания.</p>
+        {:else if !historyLoading}
+          <p class="faint empty">Прочтений по этому чипу нет.</p>
+        {/if}
       {/if}
     </div>
   {/if}

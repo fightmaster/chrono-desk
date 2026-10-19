@@ -7,8 +7,9 @@ export function setBase(url, apiToken) {
   token = apiToken
 }
 
-export async function call(method, path, body, contentType) {
+export async function call(method, path, body, contentType, signal) {
   const opts = {method, headers: {'Authorization': `Bearer ${token}`}}
+  if (signal) opts.signal = signal
   if (body !== undefined) {
     opts.body = body
     opts.headers['Content-Type'] = contentType || 'application/json'

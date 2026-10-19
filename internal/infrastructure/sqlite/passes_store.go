@@ -20,7 +20,7 @@ type MemberPassRow struct {
 
 // ListMemberPasses returns the tagged reads associated with a participant.
 func (s *Store) ListMemberPasses(ctx context.Context, eventID, memberID, epc string) ([]MemberPassRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	return s.listMemberPassRows(ctx, memberID, `
 		SELECT l.id, l.time_ms, l.board, l.ant, l.rssi, l.disabled_at,
 		       c.id, c.name, c.sort
 		FROM rfid_logs l
@@ -28,6 +28,28 @@ func (s *Store) ListMemberPasses(ctx context.Context, eventID, memberID, epc str
 		LEFT JOIN checkpoints c ON c.id = r.checkpoint_id
 		WHERE l.epc = ? AND l.event_id = ?
 		ORDER BY l.time_ms, l.id`, memberID, epc, eventID)
+}
+
+// ListAcceptedMemberPasses starts from the member's derived results, avoiding
+// scanning the raw event history when the drawer only needs accepted passes.
+func (s *Store) ListAcceptedMemberPasses(ctx context.Context, eventID, memberID, epc string) ([]MemberPassRow, error) {
+	return s.listMemberPassRows(ctx, memberID, acceptedMemberPassQuery, memberID, eventID, epc)
+}
+
+// CROSS JOIN deliberately keeps the small member-results lookup before raw
+// history even on event files without ANALYZE statistics.
+const acceptedMemberPassQuery = `
+		SELECT l.id, l.time_ms, l.board, l.ant, l.rssi, l.disabled_at,
+		       c.id, c.name, c.sort
+		FROM results r
+		CROSS JOIN rfid_logs l ON l.id = r.rfid_log_id
+		JOIN checkpoints c ON c.id = r.checkpoint_id
+		WHERE r.member_id = ? AND l.event_id = ? AND l.epc = ?
+		  AND l.disabled_at IS NULL
+		ORDER BY l.time_ms, l.id`
+
+func (s *Store) listMemberPassRows(ctx context.Context, memberID, query string, args ...any) ([]MemberPassRow, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("passes for %s: %w", memberID, err)
 	}
