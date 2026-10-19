@@ -131,7 +131,7 @@ func (s *Server) handleMergedPhotos(w http.ResponseWriter, r *http.Request) {
 		fmt.Sscanf(v, "%d", &windowMs) //nolint:errcheck
 	}
 	finishes, err := readEventView(r.Context(), s.events, eventID, func(read *sqlite.Store) ([]service.MergedFinish, error) {
-		return service.LoadMergedFinishes(r.Context(), read, eventID, windowMs, limit)
+		return s.photoViews.Merged(r.Context(), read, eventID, windowMs, limit)
 	})
 	if err != nil {
 		s.fail(w, err)
@@ -183,11 +183,7 @@ func (s *Server) handlePhotoStatus(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		count, err := read.CountPhotos(r.Context(), eventID)
-		if err != nil {
-			return nil, err
-		}
-		finishes, err := service.CountMergedFinishes(r.Context(), read, eventID)
+		count, finishes, err := s.photoViews.Counts(r.Context(), read, eventID)
 		if err != nil {
 			return nil, err
 		}

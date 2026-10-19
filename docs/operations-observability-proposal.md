@@ -16,7 +16,9 @@ status; the local document describes UX, evidence and proposed resource budgets.
    does not prove a physical start, and silence never automatically becomes DNS.
    Preserve official ranking/CSV and card navigation. Derive one coherent read
    response in bulk, no per-participant SQL or writes.
-2. **End-to-end operating status.** A compact app-wide view of listener state,
+2. **End-to-end operating status.** Reuse the existing heartbeat and `/live/status` rather than introducing a
+   second status endpoint or duplicate polling. Inspect existing payload fields
+   before adding anything. A compact view of listener state,
    reader heartbeat age, last arrival/commit age, inserts/duplicates/errors,
    local outbound pending count/oldest age, site acknowledgement and publication
    freshness where actually supported. Existing counters/outboxes remain the
@@ -35,9 +37,9 @@ status; the local document describes UX, evidence and proposed resource budgets.
 
 Proposed initial budgets, **not measured guarantees**: operation counters and
 latency buckets under1% added CPU in the representative ingest workload;
-telemetry buffers/caches at most5MiB; no extra per-reading diagnostic SQL; compact
-UI status at most one request every2s while visible, no global polling from every
-component; periodic diagnostic summaries every5s plus state transitions, bounded
+telemetry buffers/caches at most5MiB; no extra per-reading diagnostic SQL; existing
+heartbeat/status refresh only, no additional status endpoint or duplicate polling
+from components; periodic diagnostic summaries every5s plus state transitions, bounded
 10–20MiB on-disk retention. Keep receive/commit timing locally; do not log every
 observation. Compare disabled/enabled runs and p95/p99 before accepting these
 numbers; retain a bounded failure signal even if diagnostic writing fails.

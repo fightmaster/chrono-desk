@@ -258,3 +258,5 @@ See canonical `chrono-docs/contracts/packet-issuance-release-number.md` for
 semantics and compatibility. Legacy commands retain their replay semantics.
 
 CHR-DESK-PERF-001: [shared snapshot calculation, reader pool and UI lifecycle](docs/snapshot-recount.md); candidate not installed, shared source publication pending.
+
+Prepared [0.6.13 performance candidate](docs/releases/0.6.13.md): shared snapshot recount, independent readers, lazy card/Live and revision-keyed photo views. Native packaging/installation status is recorded separately; on-course roster is deferred to the next task.

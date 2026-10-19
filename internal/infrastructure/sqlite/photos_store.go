@@ -160,8 +160,8 @@ func (s *Store) ListRecentPhotos(ctx context.Context, eventID string, limit int)
 }
 
 // ListPhotosForMerge returns the event's photos with only the fields MergeFinishes
-// needs (no frames_json) — cheap enough to run on every status poll and for the
-// combined-finishes export.
+// needs (no frames_json). Interactive list/status views cache this projection
+// by PhotoMetadataVersion; exports can load a fresh coherent view.
 func (s *Store) ListPhotosForMerge(ctx context.Context, eventID string) ([]Photo, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, source_id, camera_label, time_ms, bib, bib_source, best_photo_url

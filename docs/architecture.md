@@ -50,6 +50,10 @@ internal/infrastructure/sqlite — event catalog, repositories, schema, migratio
 Wails v2 hosts the frontend and the Go process in one binary (pattern proven in
 RaceTorchApp: `app.go` exposes only `APIBaseURL()`; everything else goes over HTTP).
 
+Photo metadata list/status views share a revision-keyed cache inside coherent
+read snapshots; see [photo view cache](photo-view-cache.md). It does not govern
+camera polling or image downloads.
+
 ## Key decisions
 
 The candidate uses a shared snapshot calculator and independent coherent reads;
@@ -380,14 +384,15 @@ resolution remain release gates; the localhost bearer is never sent to a tablet.
 - Resilience fallback: because the UI talks to an embedded HTTP API, the core can run
   headless with the UI in a regular browser if the webview misbehaves on old macOS.
 - **Private module provenance.** Release workflows fetch immutable
-  `timing-core v0.8.0` and `rfid-core v0.4.0` tags with one read-only
+  the exact timing-core pseudo-version in go.mod and `rfid-core v0.4.2`
+  with one read-only
   `TIMING_MODULES_READ_TOKEN` GitHub Actions secret. It must be a GitLab
   Personal Access Token with access to both private projects: legacy
   `read_repository`, or fine-grained `Code: Download`. Fine-grained
   `Code: Read` does not authorize Git-over-HTTPS. A project Deploy Token cannot
-  span the independent repositories. The edge branch currently pins the
-  unpublished v0.4.0 source candidate; its exact tag must be published before
-  remote release jobs. Local file-proxy verification is not tag publication.
+  span the independent repositories. This performance candidate pins timing-core commit6e3c998; its source must
+  be published before remote release jobs. The unchanged RFID core archive
+  matches the existing v0.4.2 go.sum checksums. Local file-proxy verification is not tag publication.
   A missing/invalid secret fails in a dedicated preflight, and no local
   `replace` is permitted for either release dependency.
 - **Release identity.** `VERSION`, full Git revision and the source commit

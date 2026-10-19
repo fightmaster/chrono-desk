@@ -474,3 +474,36 @@ CREATE TABLE IF NOT EXISTS packet_issuance_reserve_origins (
     event_id TEXT PRIMARY KEY REFERENCES events(id),
     origins_json TEXT NOT NULL
 );
+
+-- Local derived photo-view cache token. Meaningful metadata changes invalidate
+-- merge/count views atomically with the photo write; poll freshness and frame
+-- growth alone do not. Visible burst frames are always read from the same view.
+CREATE TABLE IF NOT EXISTS photo_metadata_revisions (
+    event_id TEXT PRIMARY KEY,
+    revision INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TRIGGER IF NOT EXISTS photo_metadata_insert_v1 AFTER INSERT ON photos
+BEGIN
+    INSERT INTO photo_metadata_revisions(event_id,revision) VALUES(NEW.event_id,1)
+    ON CONFLICT(event_id) DO UPDATE SET revision=revision+1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS photo_metadata_delete_v1 AFTER DELETE ON photos
+BEGIN
+    INSERT INTO photo_metadata_revisions(event_id,revision) VALUES(OLD.event_id,1)
+    ON CONFLICT(event_id) DO UPDATE SET revision=revision+1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS photo_metadata_update_v1 AFTER UPDATE ON photos
+WHEN OLD.id IS NOT NEW.id OR OLD.event_id IS NOT NEW.event_id
+ OR OLD.source_id IS NOT NEW.source_id OR OLD.camera_label IS NOT NEW.camera_label
+ OR OLD.time_ms IS NOT NEW.time_ms OR OLD.bib IS NOT NEW.bib
+ OR OLD.bib_source IS NOT NEW.bib_source OR OLD.best_photo_url IS NOT NEW.best_photo_url
+BEGIN
+    INSERT INTO photo_metadata_revisions(event_id,revision) VALUES(OLD.event_id,1)
+    ON CONFLICT(event_id) DO UPDATE SET revision=revision+1;
+    INSERT INTO photo_metadata_revisions(event_id,revision)
+    SELECT NEW.event_id,1 WHERE NEW.event_id IS NOT OLD.event_id
+    ON CONFLICT(event_id) DO UPDATE SET revision=revision+1;
+END;

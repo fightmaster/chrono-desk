@@ -107,7 +107,11 @@ func main() {
 	cpu := flag.String("cpu-profile", "", "Optional private CPU profile")
 	serve := flag.Bool("serve-ui", false, "Serve the API on a query-only private copy for 2 minutes; no benchmark replay or ingest")
 	parity := flag.Bool("local-parity", false, "Recount only an owner-local sealed copy and emit hashes/counts, never serve HTTP or export personal fields")
+	photoCompare := flag.Bool("local-photo-cache", false, "Compare old and cached photo views on an owner-local sealed copy; only aggregate statistics leave the process")
 	flag.Parse()
+	if *photoCompare && (*parity || *serve) {
+		panic("photo comparison cannot serve HTTP or recount")
+	}
 	if *dir == "" || (*mode != "single" && *mode != "separate" && *mode != "production") {
 		panic("explicit private copy and mode required")
 	}
@@ -126,8 +130,8 @@ func main() {
 		panic("sanitized seed metadata/mode required")
 	}
 	if seed.Scope == "owner-mac-local-only" {
-		if !*parity || *mode != "single" || seed.NativeSHA == "" || *serve {
-			panic("native owner-local copies require single-mode local-parity only")
+		if (!*parity && !*photoCompare) || *mode != "single" || seed.NativeSHA == "" || *serve {
+			panic("native owner-local copies require single-mode local-only comparison")
 		}
 		sealed, e := os.ReadFile(filepath.Join(abs, seed.Event+".chrono"))
 		must(e)
@@ -154,6 +158,10 @@ func main() {
 	defer events.Close()
 	store, e := events.Open(eventID)
 	must(e)
+	if *photoCompare {
+		runLocalPhotoCache(store, eventID)
+		return
+	}
 	if *parity {
 		runLocalParity(store, eventID, logger)
 		return

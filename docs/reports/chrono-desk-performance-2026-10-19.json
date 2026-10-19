@@ -573,5 +573,46 @@
       "two_raf_max_ms": 108.40000000037253,
       "exceptions": []
     }
+  },
+  "photo_metadata_cache_candidate": {
+    "cached": {
+      "duration_ms": 186.741582,
+      "finishes": 920,
+      "mean_pair_ms": 7.46966328,
+      "photos": 920,
+      "response_sha256": "f975d6be4c8c5acae0b9612592a61c0c9f43208ef23cdb46b6985171b559f9b7",
+      "sql": {
+        "queries": 76,
+        "execs": 0,
+        "prepares": 0,
+        "begins": 25,
+        "commits": 0,
+        "rollbacks": 25,
+        "rows": 2470,
+        "driver_ms": 125.90117199999997
+      }
+    },
+    "facts_unchanged": true,
+    "iterations": 25,
+    "responses_equal": true,
+    "scope": "owner-local sealed copy; metadata and visible frame JSON only; no HTTP, images, ingest or recount",
+    "uncached": {
+      "duration_ms": 525.176944,
+      "finishes": 920,
+      "mean_pair_ms": 21.00707776,
+      "photos": 920,
+      "response_sha256": "f975d6be4c8c5acae0b9612592a61c0c9f43208ef23cdb46b6985171b559f9b7",
+      "sql": {
+        "queries": 100,
+        "execs": 0,
+        "prepares": 0,
+        "begins": 25,
+        "commits": 0,
+        "rollbacks": 25,
+        "rows": 47525,
+        "driver_ms": 331.353155
+      }
+    },
+    "visible_limit": 60
   }
 }

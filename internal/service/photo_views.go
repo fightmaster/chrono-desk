@@ -17,6 +17,10 @@ func LoadMergedFinishes(ctx context.Context, store *sqlite.Store, eventID string
 	if limit > 0 && len(finishes) > limit {
 		finishes = finishes[:limit]
 	}
+	return hydrateMergedFrames(ctx, store, eventID, finishes)
+}
+
+func hydrateMergedFrames(ctx context.Context, store photoMergeStore, eventID string, finishes []MergedFinish) ([]MergedFinish, error) {
 	ids := make([]string, len(finishes))
 	for i := range finishes {
 		ids[i] = finishes[i].ID

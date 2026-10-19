@@ -25,6 +25,7 @@ type Server struct {
 	syncPull   *service.SyncPullManager
 	edgeRelay  *service.EdgeRelayManager
 	photos     *service.PhotoManager
+	photoViews *service.PhotoViewCache
 	photoCache *service.PhotoCache
 	public     *publicweb.Server
 	packetLAN  *packetlan.Server
@@ -59,6 +60,7 @@ func New(
 		live:       live,
 		photos:     photos,
 		photoCache: photoCache,
+		photoViews: service.NewPhotoViewCache(),
 		public:     public,
 		packetLAN:  packetLAN,
 		logger:     logger,

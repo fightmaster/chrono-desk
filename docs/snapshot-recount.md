@@ -9,6 +9,8 @@ same pure package is consumed by rfid-sync's numeric-ID wrapper; Desk keeps opaq
 string IDs. SQL, transaction lifetime, durable raw storage and publication remain
 consumer responsibilities. The module was validated from a private file proxy
 built from the exact clean source commit; remote publication is still pending.
+The unchanged tagged rfid-core v0.4.2 archive also matches its existing go.sum,
+so final checks and native packaging use ordinary modules without local replace.
 
 ## Calculation and atomicity
 
