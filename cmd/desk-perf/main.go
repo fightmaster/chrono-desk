@@ -103,6 +103,7 @@ func main() {
 	dir := flag.String("data-dir", "", "Private directory with a preseeded sanitized event database")
 	mode := flag.String("mode", "single", "single or separate (diagnostic read-connection prototype)")
 	cpu := flag.String("cpu-profile", "", "Optional private CPU profile")
+	serve := flag.Bool("serve-ui", false, "Serve the API on a query-only private copy for 2 minutes; no benchmark replay or ingest")
 	flag.Parse()
 	if *dir == "" || (*mode != "single" && *mode != "separate") {
 		panic("explicit private copy and mode required")
@@ -155,6 +156,13 @@ func main() {
 		defer cancel()
 		must(server.Shutdown(ctx))
 	}()
+	if *serve {
+		_, e = uiStore.DB().Exec("PRAGMA query_only=ON")
+		must(e)
+		must(json.NewEncoder(os.Stdout).Encode(map[string]string{"base": server.BaseURL(), "event": seed.Event, "member": seed.Member, "race": seed.Race}))
+		time.Sleep(2 * time.Minute)
+		return
+	}
 	if *cpu != "" {
 		f, e := os.Create(*cpu)
 		must(e)
