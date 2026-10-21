@@ -17,18 +17,21 @@ import (
 	"gitlab.com/fightmaster1/chrono-desk/internal/transport/httpapi"
 	"gitlab.com/fightmaster1/chrono-desk/internal/transport/packetlan"
 	"gitlab.com/fightmaster1/chrono-desk/internal/transport/publicweb"
+	"gitlab.com/fightmaster1/chrono-desk/internal/version"
+	"gitlab.com/fightmaster1/rfid-core/diagnostics"
 )
 
 // App is the only struct bound to the Wails frontend. The UI talks to the Go
 // core exclusively over the embedded HTTP API (pattern from RaceTorchApp);
 // bootstrap bindings hand it the localhost URL and per-process API token.
 type App struct {
-	ctx       context.Context
-	api       *httpapi.Server
-	public    *publicweb.Server
-	packetLAN *packetlan.Server
-	events    *service.EventService
-	apiToken  string
+	connectionHistory *diagnostics.History
+	ctx               context.Context
+	api               *httpapi.Server
+	public            *publicweb.Server
+	packetLAN         *packetlan.Server
+	events            *service.EventService
+	apiToken          string
 }
 
 func NewApp() *App {
@@ -55,7 +58,12 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.packetLAN = packetLAN
 
-	live := service.NewLiveManager(logger)
+	history, err := diagnostics.New(filepath.Join(dataDir(), "diagnostics"), version.Semver+"+"+version.Commit)
+	if err != nil {
+		logger.Print("connection diagnostics unavailable; timing reception remains enabled")
+	}
+	a.connectionHistory = history
+	live := service.NewLiveManager(logger, service.WithConnectionHistory(history))
 	photos := service.NewPhotoManager(logger)
 	photoCache := newPhotoCache(logger)
 
@@ -90,6 +98,9 @@ func (a *App) shutdown(_ context.Context) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = a.api.Shutdown(ctx)
+	}
+	if a.connectionHistory != nil {
+		a.connectionHistory.Close()
 	}
 	if a.events != nil {
 		a.events.Close()

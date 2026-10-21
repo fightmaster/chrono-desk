@@ -185,3 +185,18 @@ func (s *Server) handleDeleteCapture(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
+
+// This route is on the authenticated localhost control server, never public LAN.
+func (s *Server) handleExportConnections(w http.ResponseWriter, r *http.Request) {
+	data, err := s.live.ExportConnectionHistory()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	path, err := service.SaveToDownloads("chrono-desk-connections.jsonl", data)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": path})
+}

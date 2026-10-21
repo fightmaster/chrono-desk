@@ -273,3 +273,6 @@ last. START offsets use actual race gun; other roles use personal start then gun
 Changing configuration requires recount; a new/late read on a windowed event uses
 member replay so last selections and subsequent passes stay coherent. Extended
 exports require schema4/capable Desk and site. Existing raw data is retained.
+
+Local connection history and safe incident export are described in
+[connection diagnostics](docs/connection-diagnostics.md) (CHR-OBS-001).

@@ -152,6 +152,13 @@
   // Coordinated export: one self-contained ZIP of merged finishes across all cameras
   // (CSV + bundled best photos), saved to Downloads (Wails webviews are unreliable at
   // direct file downloads).
+  async function exportConnections() {
+    try {
+      const res = await call('POST', '/api/diagnostics/connections/export')
+      alert(`Журнал соединений сохранён: ${res.path}`)
+    } catch (e) { error = e.message }
+  }
+
   async function exportFinishes() {
     try {
       const res = await call('POST', `/api/events/${eventId}/photos/export`)
@@ -297,10 +304,17 @@
   </div>
 
   {#if error}<p class="error">{error}</p>{/if}
+  {#if status.connection_history?.storage_errors}
+    <p class="error">Журнал соединений: ошибка записи. Приём отметок продолжается.</p>
+  {/if}
+  {#if status.connection_history?.dropped}
+    <p class="dim">Журнал соединений сокращён при высокой нагрузке ({status.connection_history.dropped}).</p>
+  {/if}
 
   <EdgeReceiver {eventId} status={status.edge || {}} />
 
   <div class="statusbar">
+    <button class="srclink" on:click={exportConnections}>⤓ Журнал соединений</button>
     <span class="dot" class:pulsing={receiving}></span>
     <span class="dim">
       {receiving ? `Приём на порту ${activeInput.port}` : 'Ожидание heartbeat от считывателей…'}
@@ -319,7 +333,7 @@
     <div class="readers">
       {#each status.readers as r (r.device)}
         <span class="reader mono" class:stale={r.age_seconds > 30}>
-          {r.device} · 🔋{r.battery_percent}% · меток {r.total_tags_read}{#if r.different_tags_read} ({r.different_tags_read} уник.){/if} · heartbeat {agoLabel(r.age_seconds)}
+          {#if r.age_seconds > 30}⚠ Нет свежего heartbeat · {/if}{r.device} · 🔋{r.battery_percent}% · меток {r.total_tags_read}{#if r.different_tags_read} ({r.different_tags_read} уник.){/if} · heartbeat {agoLabel(r.age_seconds)}
         </span>
       {/each}
     </div>

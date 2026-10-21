@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gitlab.com/fightmaster1/rfid-core/diagnostics"
 	"gitlab.com/fightmaster1/rfid-core/edge"
 	"gitlab.com/fightmaster1/rfid-core/ingest"
 	"gitlab.com/fightmaster1/rfid-core/tcp"
@@ -48,18 +50,19 @@ type ReaderStatus struct {
 
 // LiveStatus is the JSON snapshot for the UI.
 type LiveStatus struct {
-	AnyRunning bool           `json:"any_running"`
-	Edge       EdgeLiveStatus `json:"edge"`
-	Running    bool           `json:"running"`
-	Port       string         `json:"port"`
-	IPs        []string       `json:"ips"`
-	Received   int64          `json:"received"`
-	Inserted   int64          `json:"inserted"`
-	Duplicates int64          `json:"duplicates"`
-	Errors     int64          `json:"errors"`
-	LastReadMs int64          `json:"last_read_ms"`
-	LastError  string         `json:"last_error"`
-	Readers    []ReaderStatus `json:"readers"`
+	ConnectionHistory *diagnostics.Stats `json:"connection_history,omitempty"`
+	AnyRunning        bool               `json:"any_running"`
+	Edge              EdgeLiveStatus     `json:"edge"`
+	Running           bool               `json:"running"`
+	Port              string             `json:"port"`
+	IPs               []string           `json:"ips"`
+	Received          int64              `json:"received"`
+	Inserted          int64              `json:"inserted"`
+	Duplicates        int64              `json:"duplicates"`
+	Errors            int64              `json:"errors"`
+	LastReadMs        int64              `json:"last_read_ms"`
+	LastError         string             `json:"last_error"`
+	Readers           []ReaderStatus     `json:"readers"`
 }
 
 type liveSession struct {
@@ -77,7 +80,8 @@ type liveSession struct {
 
 // LiveManager runs at most one listener per event and transport profile.
 type LiveManager struct {
-	logger *log.Logger
+	history *diagnostics.History
+	logger  *log.Logger
 
 	mu           sync.Mutex
 	sessions     map[string]*liveSession
@@ -85,8 +89,27 @@ type LiveManager struct {
 	closed       bool
 }
 
-func NewLiveManager(logger *log.Logger) *LiveManager {
-	return &LiveManager{logger: logger, sessions: map[string]*liveSession{}, edgeSessions: map[string]*liveSession{}}
+type LiveOption func(*LiveManager)
+
+func WithConnectionHistory(history *diagnostics.History) LiveOption {
+	return func(m *LiveManager) { m.history = history }
+}
+
+func NewLiveManager(logger *log.Logger, options ...LiveOption) *LiveManager {
+	m := &LiveManager{logger: logger, sessions: map[string]*liveSession{}, edgeSessions: map[string]*liveSession{}}
+	for _, option := range options {
+		option(m)
+	}
+	return m
+}
+
+// ExportConnectionHistory exports only local bounded metadata, not event rows.
+func (m *LiveManager) ExportConnectionHistory() ([]byte, error) {
+	var data bytes.Buffer
+	if err := m.history.Export(&data); err != nil {
+		return nil, err
+	}
+	return data.Bytes(), nil
 }
 
 // Start launches ordinary trusted-LAN Feibot input. Numeric events accept both
@@ -167,7 +190,7 @@ func (m *LiveManager) startListener(store *sqlite.Store, eventID, port string, e
 		eventID: eventID,
 		stats:   session.stats,
 	}
-	cfg := tcp.ListenerConfig{Name: "chrono-desk:" + eventID, Host: "", Port: port, Adapter: tcp.FeibotAdapter{}, AckMode: tcp.AckModeOK, MaxInFlight: 64, Metrics: session.metrics}
+	cfg := tcp.ListenerConfig{Name: "chrono-desk:" + eventID, Host: "", Port: port, Adapter: tcp.FeibotAdapter{}, AckMode: tcp.AckModeOK, MaxInFlight: 64, Metrics: session.metrics, History: m.history}
 	if edgeMode {
 		cfg.Name = "chrono-desk-edge:" + eventID
 		cfg.Adapter = tcp.EdgeAdapter{}
@@ -217,6 +240,10 @@ func (m *LiveManager) Status(eventID string) LiveStatus {
 	m.mu.Unlock()
 
 	status := LiveStatus{IPs: lanIPs(), Edge: edgeSessionStatus(edgeSession)}
+	if m.history != nil {
+		stats := m.history.Stats()
+		status.ConnectionHistory = &stats
+	}
 	status.Readers = readerStatuses(s, edgeSession)
 	status.AnyRunning = status.Edge.Running
 	if !ok {

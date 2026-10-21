@@ -6,6 +6,7 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /api/version", s.handleVersion)
+	mux.HandleFunc("POST /api/diagnostics/connections/export", s.handleExportConnections)
 	mux.HandleFunc("GET /api/events", s.handleListEvents)
 	mux.HandleFunc("POST /api/events/import", s.handleImportEvent)
 	mux.HandleFunc("POST /api/events/{id}/rfid-import", s.handleRfidImport)
