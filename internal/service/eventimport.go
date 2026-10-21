@@ -78,6 +78,9 @@ type exportCheckpoint struct {
 	Sort                  int64   `json:"sort"`
 	Board                 string  `json:"board"`
 	Since                 *string `json:"since"`
+	Until                 *string `json:"until,omitempty"`
+	UntilOffsetSeconds    *int64  `json:"until_offset_seconds,omitempty"`
+	ReadSelection         string  `json:"read_selection,omitempty"`
 	SinceOffsetSeconds    *int64  `json:"since_offset_seconds"`
 	SleepAfterPrevSeconds *int64  `json:"sleep_after_prev_seconds"`
 }
@@ -163,8 +166,13 @@ func ParseEventExport(r io.Reader) (*EventExport, error) {
 	// v1: categories[] are only those used by members, no category_races pivot.
 	// v2: categories[] is the full global catalog + a category_races pivot.
 	// v3: event.use_race_date_for_age adds the event-level age rule.
-	if export.SchemaVersion != 1 && export.SchemaVersion != 2 && export.SchemaVersion != 3 {
-		return nil, fmt.Errorf("unsupported schema_version %d (want 1, 2 or 3)", export.SchemaVersion)
+	if export.SchemaVersion != 1 && export.SchemaVersion != 2 && export.SchemaVersion != 3 && export.SchemaVersion != 4 {
+		return nil, fmt.Errorf("unsupported schema_version %d (want 1, 2, 3 or 4)", export.SchemaVersion)
+	}
+	for _, cp := range export.Checkpoints {
+		if export.SchemaVersion < 4 && (cp.Until != nil || cp.UntilOffsetSeconds != nil || cp.ReadSelection == "last") {
+			return nil, fmt.Errorf("checkpoint window settings require export schema4")
+		}
 	}
 	if export.Event.ID == "" {
 		return nil, fmt.Errorf("event export has no event id")
@@ -248,10 +256,15 @@ func buildImportData(export *EventExport) (sqlite.EventImportData, error) {
 		if err != nil {
 			return sqlite.EventImportData{}, fmt.Errorf("checkpoint %s since: %w", cp.ID, err)
 		}
+		until, err := parseTimeMs(cp.Until)
+		if err != nil {
+			return sqlite.EventImportData{}, fmt.Errorf("checkpoint %s until: %w", cp.ID, err)
+		}
 		d.Checkpoints = append(d.Checkpoints, domain.Checkpoint{
 			ID: cp.ID, EventID: cp.EventID, RaceID: cp.RaceID, Name: cp.Name,
 			Type: domain.CheckpointType(cp.Type), Sort: cp.Sort, Board: cp.Board,
-			SinceMs: since, SinceOffsetSeconds: cp.SinceOffsetSeconds, SleepAfterPrevSeconds: cp.SleepAfterPrevSeconds,
+			SinceMs: since, SinceOffsetSeconds: cp.SinceOffsetSeconds,
+			UntilMs: until, UntilOffsetSeconds: cp.UntilOffsetSeconds, ReadSelection: cp.ReadSelection, WindowSettingsPresent: export.SchemaVersion >= 4, SleepAfterPrevSeconds: cp.SleepAfterPrevSeconds,
 		})
 	}
 	for _, m := range export.Members {

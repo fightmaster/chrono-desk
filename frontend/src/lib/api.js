@@ -31,12 +31,13 @@ export function imgURL(eventId, url, w) {
 }
 
 // Local-time <input type="datetime-local"> helpers (unix ms ↔ input value).
-export function msToInput(ms) {
+export function msToInput(ms, milliseconds = false) {
   if (ms === null || ms === undefined) return ''
   const d = new Date(ms)
   const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+    (milliseconds ? `.${String(d.getMilliseconds()).padStart(3, '0')}` : '')
 }
 
 export function inputToMs(value) {

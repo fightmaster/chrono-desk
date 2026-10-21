@@ -37,6 +37,15 @@ func (s *Store) UpdateEntityField(ctx context.Context, table, field, id string, 
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil, fmt.Errorf("%s %s not found", table, id)
 	}
+	if table == "checkpoints" {
+		cp, err := s.GetCheckpoint(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateCheckpointRowWindow(cp); err != nil {
+			return nil, err
+		}
+	}
 	return old, nil
 }
 

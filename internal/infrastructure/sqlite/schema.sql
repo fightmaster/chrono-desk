@@ -61,7 +61,10 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     board                    TEXT NOT NULL,
     since_ms                 INTEGER,
     since_offset_seconds     INTEGER,
-    sleep_after_prev_seconds INTEGER
+    sleep_after_prev_seconds INTEGER,
+    until_ms INTEGER,
+    until_offset_seconds INTEGER,
+    read_selection TEXT NOT NULL DEFAULT 'first'
 );
 
 CREATE INDEX IF NOT EXISTS idx_checkpoints_race_board ON checkpoints(race_id, board, sort);

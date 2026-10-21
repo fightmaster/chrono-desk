@@ -46,7 +46,7 @@
   let adding = false
   let nf = blank()
   function blank() {
-    return {name: '', type: 2, sort: '', board: '', since_offset_seconds: '', sleep_after_prev_seconds: ''}
+    return {name: '', type: 2, sort: '', board: '', since_offset_seconds: '', sleep_after_prev_seconds: '', until_input: '', until_offset_seconds: '', read_selection: 'first'}
   }
 
   async function addCheckpoint() {
@@ -59,6 +59,7 @@
         sort: Number(nf.sort) || 0,
         board: nf.board.trim(),
         since_offset_seconds: numOrNull(nf.since_offset_seconds),
+        until_ms: inputToMs(nf.until_input), until_offset_seconds: numOrNull(nf.until_offset_seconds), read_selection: nf.read_selection,
         sleep_after_prev_seconds: numOrNull(nf.sleep_after_prev_seconds),
       }))
       adding = false
@@ -79,12 +80,13 @@
 
 <div class="head">Чекпоинты <span class="faint">({checkpoints.length})</span></div>
 <div class="faint desc">Точки отсечки: считыватель, время активности, офсет от старта и пауза между повторными чтениями.</div>
+<p class="desc faint">Для START относительные границы считаются от общего фактического старта. Для последнего чтения сначала задайте «Активен до» или «До: от старта». Границы включены.</p>
 {#if error}<p class="error">{error}</p>{/if}
 
 <div class="scroll">
   <div class="grid head-row">
     <span>Чекпоинт</span><span>Тип</span><span>Sort</span><span>Считыватель</span>
-    <span>Активен с</span><span>Офсет от старта, с</span><span>Сон после отсечки, с</span><span></span>
+    <span>Активен с</span><span>Офсет от старта, с</span><span>Сон после отсечки, с</span><span>Активен до</span><span>До: от старта, с</span><span>Чтение</span><span></span>
   </div>
 
   {#each checkpoints as cp (cp.id)}
@@ -106,6 +108,11 @@
              on:change={e => save(cp, 'since_offset_seconds', numOrNull(e.target.value))}/>
       <input class="cell mono" type="number" value={cp.sleep_after_prev_seconds ?? ''}
              on:change={e => save(cp, 'sleep_after_prev_seconds', numOrNull(e.target.value))}/>
+      <input class="cell mono" aria-label="Учитывать до" type="datetime-local" step="0.001" value={msToInput(cp.until_ms, true)} on:change={e => save(cp, 'until_ms', inputToMs(e.target.value))}/>
+      <input class="cell mono" aria-label="Учитывать до от старта" type="number" min="0" value={cp.until_offset_seconds ?? ''} on:change={e => save(cp, 'until_offset_seconds', numOrNull(e.target.value))}/>
+      <select class="cell" aria-label="Выбирать чтение" value={cp.read_selection || 'first'} on:change={e => save(cp, 'read_selection', e.target.value)}>
+        <option value="first">Первое</option><option value="last">Последнее</option>
+      </select>
       <button class="x" title="Удалить чекпоинт" on:click={() => removeCheckpoint(cp)}>✕</button>
     </div>
   {/each}
@@ -123,6 +130,9 @@
       <span class="cell-na faint">—</span>
       <input class="cell mono" type="number" bind:value={nf.since_offset_seconds}/>
       <input class="cell mono" type="number" bind:value={nf.sleep_after_prev_seconds}/>
+      <input class="cell mono" aria-label="Учитывать до нового чекпоинта" type="datetime-local" step="0.001" bind:value={nf.until_input}/>
+      <input class="cell mono" aria-label="До от старта нового чекпоинта" type="number" min="0" bind:value={nf.until_offset_seconds}/>
+      <select class="cell" bind:value={nf.read_selection}><option value="first">Первое</option><option value="last">Последнее</option></select>
       <span class="confirm">
         <button class="ok" title="Добавить" on:click={addCheckpoint}>✓</button>
         <button class="x" title="Отмена" on:click={() => { adding = false; nf = blank() }}>✕</button>
@@ -139,8 +149,8 @@
   .scroll { overflow-x: auto; }
   .grid {
     display: grid;
-    grid-template-columns: minmax(150px, 1.4fr) 100px 88px 150px 172px 144px 152px 64px;
-    gap: 12px; align-items: center; min-width: 960px;
+    grid-template-columns: minmax(150px, 1.4fr) 100px 88px 150px 172px 144px 152px 172px 144px 130px 64px;
+    gap: 12px; align-items: center; min-width: 1400px;
   }
   .head-row {
     padding: 0 0 10px; border-bottom: 1px solid var(--border);

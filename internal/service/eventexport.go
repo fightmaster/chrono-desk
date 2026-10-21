@@ -83,10 +83,14 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 		return nil, "", err
 	}
 	for _, cp := range checkpoints {
+		if cp.UntilMs != nil || cp.UntilOffsetSeconds != nil || cp.ReadSelection == "last" || (int(cp.Type) == 1 && cp.SinceOffsetSeconds != nil) {
+			export.SchemaVersion = 4
+		}
 		export.Checkpoints = append(export.Checkpoints, exportCheckpoint{
 			ID: cp.ID, EventID: cp.EventID, RaceID: cp.RaceID, Name: cp.Name,
 			Type: int(cp.Type), Sort: cp.Sort, Board: cp.Board,
 			Since: msToISO(cp.SinceMs), SinceOffsetSeconds: cp.SinceOffsetSeconds,
+			Until: msToISO(cp.UntilMs), UntilOffsetSeconds: cp.UntilOffsetSeconds, ReadSelection: exportReadSelection(cp.ReadSelection),
 			SleepAfterPrevSeconds: cp.SleepAfterPrevSeconds,
 		})
 	}
@@ -147,4 +151,11 @@ func msToISO(ms *int64) *string {
 	}
 	s := time.UnixMilli(*ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 	return &s
+}
+
+func exportReadSelection(value string) string {
+	if value == "first" {
+		return ""
+	}
+	return value
 }

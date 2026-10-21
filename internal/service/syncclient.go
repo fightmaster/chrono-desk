@@ -51,6 +51,7 @@ func newSyncHTTPClient() *http.Client {
 }
 
 type SyncCapabilities struct {
+	CheckpointWindowSelectionVersion int   `json:"checkpoint_window_selection_version"`
 	PushSchemaVersions               []int `json:"push_schema_versions"`
 	PreferredPushSchemaVersion       int   `json:"preferred_push_schema_version"`
 	ChangeFeedSchemaVersions         []int `json:"change_feed_schema_versions"`
@@ -110,7 +111,8 @@ type SyncPushResponse struct {
 // PushSync POSTs the assembled payload to run5 and returns the decoded summary.
 func PushSync(ctx context.Context, baseURL, token, eventID string, payload []byte) (SyncPushResponse, error) {
 	var header struct {
-		SchemaVersion int `json:"schema_version"`
+		SchemaVersion                    int `json:"schema_version"`
+		CheckpointWindowSelectionVersion int `json:"checkpoint_window_selection_version"`
 	}
 	if err := json.Unmarshal(payload, &header); err != nil || header.SchemaVersion <= 0 {
 		return SyncPushResponse{}, fmt.Errorf("не определить версию payload")
@@ -121,6 +123,9 @@ func PushSync(ctx context.Context, baseURL, token, eventID string, payload []byt
 	}
 	if !supportsSyncSchema(capabilities.PushSchemaVersions, header.SchemaVersion) {
 		return SyncPushResponse{}, fmt.Errorf("сайт не поддерживает безопасную схему синхронизации v%d", header.SchemaVersion)
+	}
+	if header.CheckpointWindowSelectionVersion > capabilities.CheckpointWindowSelectionVersion {
+		return SyncPushResponse{}, fmt.Errorf("сайт не поддерживает настройки окна чекпоинта; обновите сервер")
 	}
 	url, err := syncURL(baseURL, eventID)
 	if err != nil {

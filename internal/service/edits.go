@@ -45,6 +45,9 @@ var editWhitelist = map[string]map[string]editableField{
 		"category_excludes_top_by_gender": {table: "races", kind: kindInt},
 	},
 	"checkpoint": {
+		"until_ms":                 {table: "checkpoints", kind: kindInt, recountNeeded: true},
+		"until_offset_seconds":     {table: "checkpoints", kind: kindInt, recountNeeded: true},
+		"read_selection":           {table: "checkpoints", kind: kindText, recountNeeded: true},
 		"since_ms":                 {table: "checkpoints", kind: kindInt, recountNeeded: true},
 		"since_offset_seconds":     {table: "checkpoints", kind: kindInt, recountNeeded: true},
 		"sleep_after_prev_seconds": {table: "checkpoints", kind: kindInt, recountNeeded: true},

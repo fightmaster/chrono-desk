@@ -66,15 +66,22 @@ func (s *Store) UpsertCheckpoint(ctx context.Context, cp domain.Checkpoint) erro
 }
 
 func upsertCheckpoint(ctx context.Context, ex execer, cp domain.Checkpoint) error {
+	if err := validateCheckpointWindow(cp); err != nil {
+		return err
+	}
+	hasWindow := cp.WindowSettingsPresent || cp.UntilMs != nil || cp.UntilOffsetSeconds != nil || cp.ReadSelection != ""
 	_, err := ex.ExecContext(ctx, `
-		INSERT INTO checkpoints (id, event_id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO checkpoints (id, event_id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds, until_ms, until_offset_seconds, read_selection)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			event_id=excluded.event_id, race_id=excluded.race_id, name=excluded.name,
 			type=excluded.type, sort=excluded.sort, board=excluded.board, since_ms=excluded.since_ms,
 			since_offset_seconds=excluded.since_offset_seconds,
-			sleep_after_prev_seconds=excluded.sleep_after_prev_seconds`,
-		cp.ID, cp.EventID, cp.RaceID, cp.Name, int(cp.Type), cp.Sort, cp.Board, cp.SinceMs, cp.SinceOffsetSeconds, cp.SleepAfterPrevSeconds)
+			sleep_after_prev_seconds=excluded.sleep_after_prev_seconds,
+            until_ms=CASE WHEN ? THEN excluded.until_ms ELSE checkpoints.until_ms END,
+            until_offset_seconds=CASE WHEN ? THEN excluded.until_offset_seconds ELSE checkpoints.until_offset_seconds END,
+            read_selection=CASE WHEN ? THEN excluded.read_selection ELSE checkpoints.read_selection END`,
+		cp.ID, cp.EventID, cp.RaceID, cp.Name, int(cp.Type), cp.Sort, cp.Board, cp.SinceMs, cp.SinceOffsetSeconds, cp.SleepAfterPrevSeconds, cp.UntilMs, cp.UntilOffsetSeconds, defaultReadSelection(cp.ReadSelection), hasWindow, hasWindow, hasWindow)
 	if err != nil {
 		return fmt.Errorf("upsert checkpoint %s: %w", cp.ID, err)
 	}

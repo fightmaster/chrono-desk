@@ -266,3 +266,10 @@ Operational roster and explicit race counters: [On course](docs/on-course.md).
 Shared engine alignment for CHR-CUT-002: [timing-core 0.11 adoption](docs/timing-core-0.11-adoption.md) documents the compatibility update and the boundary between existing member replay and the new optional merged-projection API.
 
 Prepared [0.6.14 compatibility update](docs/releases/0.6.14.md): align the shared timing-core dependency while preserving existing desktop calculation and sync behavior.
+
+Checkpoint windows (CHR-CHIP-002): distance settings support inclusive "Учитывать
+до" (absolute/relative) and first/last reading. Set an upper bound before selecting
+last. START offsets use actual race gun; other roles use personal start then gun.
+Changing configuration requires recount; a new/late read on a windowed event uses
+member replay so last selections and subsequent passes stay coherent. Extended
+exports require schema4/capable Desk and site. Existing raw data is retained.

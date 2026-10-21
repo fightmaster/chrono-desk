@@ -27,7 +27,7 @@ var (
 	syncEventFields      = set("use_race_date_for_age")
 	syncMemberFields     = set("status", "number", "epc", "category_id", "first_name", "last_name", "gender", "dob", "team", "city", "start_time_ms", "race_id")
 	syncRaceFields       = set("started_at_ms", "name", "category_excludes_top_by_gender")
-	syncCheckpointFields = set("since_ms", "since_offset_seconds", "sleep_after_prev_seconds", "board", "sort", "type")
+	syncCheckpointFields = set("until_ms", "until_offset_seconds", "read_selection", "since_ms", "since_offset_seconds", "sleep_after_prev_seconds", "board", "sort", "type")
 )
 
 type syncEventEdit struct {
@@ -127,15 +127,19 @@ type syncCheckpointCreate struct {
 	Sort                  int64  `json:"sort"`
 	Board                 string `json:"board"`
 	SinceMs               *int64 `json:"since_ms"`
+	UntilMs               *int64 `json:"until_ms,omitempty"`
+	UntilOffsetSeconds    *int64 `json:"until_offset_seconds,omitempty"`
+	ReadSelection         string `json:"read_selection,omitempty"`
 	SinceOffsetSeconds    *int64 `json:"since_offset_seconds"`
 	SleepAfterPrevSeconds *int64 `json:"sleep_after_prev_seconds"`
 }
 
 type syncPayload struct {
-	SchemaVersion int    `json:"schema_version"`
-	EventID       string `json:"event_id"`
-	Source        string `json:"source"`
-	Overwrite     bool   `json:"overwrite"`
+	CheckpointWindowSelectionVersion int    `json:"checkpoint_window_selection_version,omitempty"`
+	SchemaVersion                    int    `json:"schema_version"`
+	EventID                          string `json:"event_id"`
+	Source                           string `json:"source"`
+	Overwrite                        bool   `json:"overwrite"`
 
 	RfidLogs             []syncRfidLog          `json:"rfid_logs,omitempty"`
 	ObservationBatch     *syncObservationBatch  `json:"observation_batch,omitempty"`
@@ -341,12 +345,16 @@ func buildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 		return nil, SyncSummary{}, err
 	}
 	for _, cp := range checkpoints {
+		if cp.UntilMs != nil || cp.UntilOffsetSeconds != nil || cp.ReadSelection == "last" || (int(cp.Type) == 1 && cp.SinceOffsetSeconds != nil) {
+			p.CheckpointWindowSelectionVersion = 1
+		}
 		if !strings.HasPrefix(cp.ID, "local-") {
 			continue
 		}
 		p.CheckpointCreates = append(p.CheckpointCreates, syncCheckpointCreate{
 			ID: cp.ID, RaceID: cp.RaceID, Name: cp.Name, Type: int(cp.Type), Sort: cp.Sort, Board: cp.Board,
-			SinceMs: cp.SinceMs, SinceOffsetSeconds: cp.SinceOffsetSeconds, SleepAfterPrevSeconds: cp.SleepAfterPrevSeconds,
+			SinceMs: cp.SinceMs, SinceOffsetSeconds: cp.SinceOffsetSeconds,
+			UntilMs: cp.UntilMs, UntilOffsetSeconds: cp.UntilOffsetSeconds, ReadSelection: exportReadSelection(cp.ReadSelection), SleepAfterPrevSeconds: cp.SleepAfterPrevSeconds,
 		})
 	}
 	// Site checkpoints deleted offline (local- ones never reached the site).
@@ -405,6 +413,18 @@ func buildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 		p.RfidLogEdits = append(p.RfidLogEdits, syncRfidLogEdit{ID: id, DisabledAt: rfidLogEdits[id]})
 	}
 
+	for _, cp := range p.CheckpointCreates {
+		if cp.UntilMs != nil || cp.UntilOffsetSeconds != nil || cp.ReadSelection == "last" {
+			p.CheckpointWindowSelectionVersion = 1
+		}
+	}
+	for _, cp := range p.CheckpointEdits {
+		for field := range cp.Fields {
+			if field == "until_ms" || field == "until_offset_seconds" || field == "read_selection" {
+				p.CheckpointWindowSelectionVersion = 1
+			}
+		}
+	}
 	data, err := json.Marshal(p)
 	if err != nil {
 		return nil, SyncSummary{}, fmt.Errorf("encode sync payload: %w", err)

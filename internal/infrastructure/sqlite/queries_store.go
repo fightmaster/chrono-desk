@@ -136,13 +136,16 @@ type CheckpointRow struct {
 	Sort                  int64  `json:"sort"`
 	Board                 string `json:"board"`
 	SinceMs               *int64 `json:"since_ms"`
+	UntilMs               *int64 `json:"until_ms"`
+	UntilOffsetSeconds    *int64 `json:"until_offset_seconds"`
+	ReadSelection         string `json:"read_selection"`
 	SinceOffsetSeconds    *int64 `json:"since_offset_seconds"`
 	SleepAfterPrevSeconds *int64 `json:"sleep_after_prev_seconds"`
 }
 
 func (s *Store) ListCheckpointsByEvent(ctx context.Context, eventID string) ([]CheckpointRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds
+		SELECT id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds, until_ms, until_offset_seconds, read_selection
 		FROM checkpoints WHERE event_id = ? ORDER BY race_id, sort`, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("list checkpoints: %w", err)
@@ -153,7 +156,7 @@ func (s *Store) ListCheckpointsByEvent(ctx context.Context, eventID string) ([]C
 	for rows.Next() {
 		var cp CheckpointRow
 		if err := rows.Scan(&cp.ID, &cp.RaceID, &cp.Name, &cp.Type, &cp.Sort, &cp.Board,
-			&cp.SinceMs, &cp.SinceOffsetSeconds, &cp.SleepAfterPrevSeconds); err != nil {
+			&cp.SinceMs, &cp.SinceOffsetSeconds, &cp.SleepAfterPrevSeconds, &cp.UntilMs, &cp.UntilOffsetSeconds, &cp.ReadSelection); err != nil {
 			return nil, err
 		}
 		out = append(out, cp)
@@ -244,10 +247,10 @@ func (s *Store) ListMembersByEvent(ctx context.Context, eventID string) ([]Membe
 func (s *Store) GetCheckpoint(ctx context.Context, id string) (CheckpointRow, error) {
 	var cp CheckpointRow
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds
+		SELECT id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds, until_ms, until_offset_seconds, read_selection
 		FROM checkpoints WHERE id = ?`, id).
 		Scan(&cp.ID, &cp.RaceID, &cp.Name, &cp.Type, &cp.Sort, &cp.Board,
-			&cp.SinceMs, &cp.SinceOffsetSeconds, &cp.SleepAfterPrevSeconds)
+			&cp.SinceMs, &cp.SinceOffsetSeconds, &cp.SleepAfterPrevSeconds, &cp.UntilMs, &cp.UntilOffsetSeconds, &cp.ReadSelection)
 	if err != nil {
 		return CheckpointRow{}, fmt.Errorf("get checkpoint %s: %w", id, err)
 	}
@@ -313,7 +316,7 @@ func (s *Store) ListMembersFullByEvent(ctx context.Context, eventID string) ([]d
 
 func (s *Store) ListCheckpointsFullByEvent(ctx context.Context, eventID string) ([]domain.Checkpoint, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, event_id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds
+		SELECT id, event_id, race_id, name, type, sort, board, since_ms, since_offset_seconds, sleep_after_prev_seconds, until_ms, until_offset_seconds, read_selection
 		FROM checkpoints WHERE event_id = ? ORDER BY race_id, sort`, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("list event checkpoints: %w", err)
@@ -325,7 +328,7 @@ func (s *Store) ListCheckpointsFullByEvent(ctx context.Context, eventID string) 
 		var cp domain.Checkpoint
 		var cpType int
 		if err := rows.Scan(&cp.ID, &cp.EventID, &cp.RaceID, &cp.Name, &cpType, &cp.Sort, &cp.Board,
-			&cp.SinceMs, &cp.SinceOffsetSeconds, &cp.SleepAfterPrevSeconds); err != nil {
+			&cp.SinceMs, &cp.SinceOffsetSeconds, &cp.SleepAfterPrevSeconds, &cp.UntilMs, &cp.UntilOffsetSeconds, &cp.ReadSelection); err != nil {
 			return nil, err
 		}
 		cp.Type = domain.CheckpointType(cpType)

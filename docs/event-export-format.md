@@ -154,3 +154,22 @@ Current native push uses ownership-journal batches in sync schema v3, not a
 full export of the local table or a CSV fallback. The separate owned edge
 source journal is not yet relayed. See [architecture](architecture.md) and
 [edge receiver](edge-receiver.md) for the two ownership paths and release gates.
+
+### Checkpoint window schema4 — CHR-CHIP-002
+
+Schema4 adds checkpoint `until` (UTC ISO milliseconds),
+`until_offset_seconds` and `read_selection` (`first`/`last`). Default events keep
+schema3; upper bounds, last selection or gun-relative START require schema4 so
+older applications reject rather than ignore changed rules. Bounds are inclusive.
+START relative bounds always use actual gun, not selected personal start. Other
+checkpoint roles retain personal-start/gun fallback. Last requires a finite upper
+bound. Readers accept1…4; missing fields in legacy imports preserve existing
+extended configuration. An explicit schema4 snapshot can clear those fields.
+
+Raw sync remains3; the payload requires checkpoint_window_selection_version1
+when the event uses extended rules, and PushSync checks that existing server
+capabilities advertise support before POST. Raw identity and ownership do not
+change. Native and member replay use the shared snapshot engine for windowed
+races, preserving manual facts and recalculating dependent timings. Pure last
+lookahead retains observations in the replay scope; first-only replay remains
+streaming. No gun/chip ranking mode is introduced here.

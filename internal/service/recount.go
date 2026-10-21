@@ -203,6 +203,15 @@ func (r *Recounter) recountLegacy(ctx context.Context, store recountTxStore, eve
 }
 
 func (r *Recounter) recountMembers(ctx context.Context, store recountTxStore, eventID string, memberIDs []string) (RecountStats, error) {
+	if window, ok := store.(interface {
+		RecountWindowMembers(context.Context, string, []string) (bool, error)
+	}); ok {
+		handled, err := window.RecountWindowMembers(ctx, eventID, memberIDs)
+		if handled || err != nil {
+			return RecountStats{MembersReplayed: len(memberIDs)}, err
+		}
+	}
+
 	if err := store.WipeDerivedResultsForMembers(ctx, eventID, memberIDs); err != nil {
 		return RecountStats{}, err
 	}

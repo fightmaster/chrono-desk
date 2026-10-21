@@ -22,6 +22,18 @@ func (r *Recounter) trySnapshotRecount(ctx context.Context, store recountTxStore
 		return RecountStats{}, false, nil
 	}
 	input, err := adapter.LoadFixedDistanceSnapshot(ctx, eventID)
+	all := false
+	if window, ok := store.(interface {
+		LoadWindowSnapshot(context.Context, string) (projection.Snapshot[string], bool, error)
+	}); ok {
+		candidate, enabled, windowErr := window.LoadWindowSnapshot(ctx, eventID)
+		if windowErr != nil {
+			return RecountStats{}, true, windowErr
+		}
+		if enabled {
+			input, err, all = candidate, nil, true
+		}
+	}
 	if errors.Is(err, sqlite.ErrSnapshotUnsupported) {
 		return RecountStats{}, false, nil
 	}
@@ -29,7 +41,11 @@ func (r *Recounter) trySnapshotRecount(ctx context.Context, store recountTxStore
 		return RecountStats{}, true, err
 	}
 	count := 0
-	result, err := projection.ComputeOrderedFixedDistance(ctx, input, func(yield func(projection.Reading[string]) error) error {
+	compute := projection.ComputeOrderedFixedDistance[string]
+	if all {
+		compute = projection.ComputeOrdered[string]
+	}
+	result, err := compute(ctx, input, func(yield func(projection.Reading[string]) error) error {
 		var readErr error
 		count, readErr = adapter.StreamSnapshotReadings(ctx, eventID, raceID, yield)
 		return readErr
@@ -56,4 +72,20 @@ func (s sqliteRecountTxStore) StreamSnapshotReadings(ctx context.Context, eventI
 
 func (s sqliteRecountTxStore) ReplaceFixedDistanceProjection(ctx context.Context, eventID, raceID string, result projection.Projection[string]) error {
 	return s.store.ReplaceFixedDistanceProjection(ctx, eventID, raceID, result)
+}
+
+func (s sqliteRecountTxStore) LoadWindowSnapshot(ctx context.Context, eventID string) (projection.Snapshot[string], bool, error) {
+	enabled, err := s.store.HasWindowCheckpoint(ctx, eventID)
+	if err != nil || !enabled {
+		return projection.Snapshot[string]{}, false, err
+	}
+	input, err := s.store.LoadTimingSnapshot(ctx, eventID)
+	return input, true, err
+}
+func (s sqliteRecountTxStore) RecountWindowMembers(ctx context.Context, eventID string, ids []string) (bool, error) {
+	enabled, err := s.store.HasWindowCheckpoint(ctx, eventID)
+	if err != nil || !enabled {
+		return false, err
+	}
+	return true, s.store.ReplayWindowMembers(ctx, eventID, ids)
 }

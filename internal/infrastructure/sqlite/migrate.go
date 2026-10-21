@@ -38,6 +38,9 @@ func migrate(db *sql.DB) error {
 	if err := addMemberStartProvenance(db); err != nil {
 		return err
 	}
+	if err := addCheckpointWindows(db); err != nil {
+		return err
+	}
 	if err := addProjectionRevisionFence(db); err != nil {
 		return err
 	}
@@ -232,7 +235,7 @@ func addProjectionRevisionFence(db *sql.DB) error {
 		},
 		{
 			table: "checkpoints", revision: "config_revision",
-			updateWhen: columnsChanged("id", "event_id", "race_id", "type", "sort", "board", "since_ms", "since_offset_seconds", "sleep_after_prev_seconds"),
+			updateWhen: columnsChanged("id", "event_id", "race_id", "type", "sort", "board", "since_ms", "since_offset_seconds", "sleep_after_prev_seconds", "until_ms", "until_offset_seconds", "read_selection"),
 		},
 		{
 			table: "members", revision: "config_revision",

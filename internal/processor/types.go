@@ -24,6 +24,9 @@ type Checkpoint struct {
 	Sort               int64
 	Type               domain.CheckpointType
 	SinceMs            *int64
+	UntilMs            *int64
+	UntilOffsetSeconds *int64
+	ReadSelection      string
 	SinceOffsetSeconds *int64
 	// SleepAfterPrevSeconds, when set, blocks this checkpoint until the given
 	// number of seconds has elapsed since the member's most recent result

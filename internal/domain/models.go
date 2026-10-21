@@ -88,6 +88,10 @@ type Checkpoint struct {
 	Sort                  int64
 	Board                 string
 	SinceMs               *int64
+	UntilMs               *int64 `json:"until_ms"`
+	UntilOffsetSeconds    *int64 `json:"until_offset_seconds"`
+	ReadSelection         string `json:"read_selection"`
+	WindowSettingsPresent bool   `json:"-"`
 	SinceOffsetSeconds    *int64
 	SleepAfterPrevSeconds *int64
 }

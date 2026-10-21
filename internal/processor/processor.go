@@ -34,6 +34,14 @@ func (p *Processor) Process(ctx context.Context, logEntry domain.RfidLog, raceFi
 		return nil
 	}
 
+	if replay, ok := p.repo.(interface {
+		ReplayWindowMember(context.Context, domain.RfidLog, string) (bool, error)
+	}); ok {
+		handled, err := replay.ReplayWindowMember(ctx, logEntry, raceFilter)
+		if handled || err != nil {
+			return err
+		}
+	}
 	eventTimeMs := logEntry.TimeMs
 	stored := false
 	memberID := ""
@@ -116,6 +124,7 @@ func selectCheckpoint(
 		coreCheckpoints = append(coreCheckpoints, timing.Checkpoint[string]{
 			ID: checkpoint.ID, Sort: checkpoint.Sort, Type: timing.CheckpointType(checkpoint.Type),
 			SinceMs: checkpoint.SinceMs, SinceOffsetSeconds: checkpoint.SinceOffsetSeconds,
+			UntilMs: checkpoint.UntilMs, UntilOffsetSeconds: checkpoint.UntilOffsetSeconds, ReadSelection: timing.ReadSelection(checkpoint.ReadSelection),
 			SleepAfterPrevSeconds: checkpoint.SleepAfterPrevSeconds,
 		})
 	}

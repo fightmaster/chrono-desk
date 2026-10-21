@@ -139,7 +139,7 @@ func (r *ProcessorRepo) LoadPassedCheckpoints(ctx context.Context, raceID, membe
 
 func (r *ProcessorRepo) LoadCheckpoints(ctx context.Context, raceID, board string) ([]processor.Checkpoint, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, sort, type, since_ms, since_offset_seconds, sleep_after_prev_seconds
+		SELECT id, sort, type, since_ms, since_offset_seconds, sleep_after_prev_seconds, until_ms, until_offset_seconds, read_selection
 		FROM checkpoints WHERE race_id = ? AND board = ? ORDER BY sort`, raceID, board)
 	if err != nil {
 		return nil, fmt.Errorf("load checkpoints: %w", err)
@@ -151,7 +151,7 @@ func (r *ProcessorRepo) LoadCheckpoints(ctx context.Context, raceID, board strin
 		var cp processor.Checkpoint
 		var cpType int
 		var since, offset, sleep sql.NullInt64
-		if err := rows.Scan(&cp.ID, &cp.Sort, &cpType, &since, &offset, &sleep); err != nil {
+		if err := rows.Scan(&cp.ID, &cp.Sort, &cpType, &since, &offset, &sleep, &cp.UntilMs, &cp.UntilOffsetSeconds, &cp.ReadSelection); err != nil {
 			return nil, err
 		}
 		cp.Type = domain.CheckpointType(cpType)

@@ -21,6 +21,9 @@ type CreateCheckpointRequest struct {
 	Sort                  int64  `json:"sort"`
 	Board                 string `json:"board"`
 	SinceMs               *int64 `json:"since_ms"`
+	UntilMs               *int64 `json:"until_ms,omitempty"`
+	UntilOffsetSeconds    *int64 `json:"until_offset_seconds,omitempty"`
+	ReadSelection         string `json:"read_selection,omitempty"`
 	SinceOffsetSeconds    *int64 `json:"since_offset_seconds"`
 	SleepAfterPrevSeconds *int64 `json:"sleep_after_prev_seconds"`
 }
@@ -37,6 +40,7 @@ func CreateCheckpoint(ctx context.Context, store *sqlite.Store, eventID string, 
 		ID: id, EventID: eventID, RaceID: req.RaceID, Name: req.Name,
 		Type: domain.CheckpointType(req.Type), Sort: req.Sort, Board: req.Board,
 		SinceMs: req.SinceMs, SinceOffsetSeconds: req.SinceOffsetSeconds,
+		UntilMs: req.UntilMs, UntilOffsetSeconds: req.UntilOffsetSeconds, ReadSelection: req.ReadSelection,
 		SleepAfterPrevSeconds: req.SleepAfterPrevSeconds,
 	}
 	payload, err := json.Marshal(req)
