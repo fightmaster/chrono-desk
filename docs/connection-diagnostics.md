@@ -32,5 +32,5 @@ An active export includes already-written records; it does not wait for all
 queued transitions. Stop reception before export if the final disconnect must
 be present. History supports network incident reconstruction; it cannot by
 itself measure SQL/algorithm/UI time or identify the physical cause of AP loss.
-Shared module source must be released and pinned before this candidate ships;
-local validation uses a temporary go.work, never a committed local replace.
+Release 0.6.15 pins published rfid-core 0.5.0 and timing-core 0.12.0.
+Release verification uses those immutable module versions without local replaces.

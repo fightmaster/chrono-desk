@@ -276,3 +276,6 @@ exports require schema4/capable Desk and site. Existing raw data is retained.
 
 Local connection history and safe incident export are described in
 [connection diagnostics](docs/connection-diagnostics.md) (CHR-OBS-001).
+
+Release [0.6.15](docs/releases/0.6.15.md) combines bounded checkpoint selection
+and local reader connection history, using published shared-core versions.
