@@ -32,5 +32,5 @@ An active export includes already-written records; it does not wait for all
 queued transitions. Stop reception before export if the final disconnect must
 be present. History supports network incident reconstruction; it cannot by
 itself measure SQL/algorithm/UI time or identify the physical cause of AP loss.
-Release 0.6.16 pins published rfid-core 0.5.0 and timing-core 0.12.0.
+Release 0.6.17 pins published rfid-core 0.5.0 and timing-core 0.12.0.
 Release verification uses those immutable module versions without local replaces.

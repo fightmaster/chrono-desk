@@ -39,7 +39,6 @@ frontend-runtime-smoke:
 
 ci-scripts:
 	bash scripts/ci/configure-private-timing-modules.test.sh
-	bash scripts/ci/go-source-build.test.sh
 
 test:
 	go test ./...

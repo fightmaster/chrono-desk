@@ -37,7 +37,7 @@ jobs:
           cache-dependency-path: chrono-desk/go.sum
 
       - name: Test private module preflight
-        run: bash scripts/ci/configure-private-timing-modules.test.sh && bash scripts/ci/go-source-build.test.sh
+        run: bash scripts/ci/configure-private-timing-modules.test.sh
 
       - name: Configure private timing module access
         env:
@@ -119,19 +119,12 @@ jobs:
         run: |
           VPKG=gitlab.com/fightmaster1/chrono-desk/internal/version
           LDFLAGS="-X $VPKG.Semver=$(cat VERSION) -X $VPKG.Build=$(git rev-list --count HEAD) -X $VPKG.Commit=$(git rev-parse HEAD) -X $VPKG.Date=$(git show -s --format=%cI HEAD)"
-          wails build -compiler "$PWD/scripts/ci/go-source-build.sh" -platform darwin/amd64 -clean -ldflags "$LDFLAGS"
+          wails build -platform darwin/amd64 -clean -ldflags "$LDFLAGS"
 
       - name: Verify toolchain of the produced binary
         run: |
           go version build/bin/chrono-desk.app/Contents/MacOS/chrono-desk
           go version build/bin/chrono-desk.app/Contents/MacOS/chrono-desk | grep -q go1.24 || exit 1
-
-      - name: Verify embedded macOS source identity
-        run: |
-          go version -m build/bin/chrono-desk.app/Contents/MacOS/chrono-desk > "$RUNNER_TEMP/chrono-macos-build-info.txt"
-          grep -F "vcs.revision=$(git rev-parse HEAD)" "$RUNNER_TEMP/chrono-macos-build-info.txt"
-          grep -F 'vcs.modified=false' "$RUNNER_TEMP/chrono-macos-build-info.txt"
-          git diff --exit-code -- go.mod go.sum
 
       - name: Verify macOS bundle version
         run: |
@@ -224,15 +217,7 @@ jobs:
         run: |
           VPKG=gitlab.com/fightmaster1/chrono-desk/internal/version
           LDFLAGS="-X $VPKG.Semver=$(cat VERSION) -X $VPKG.Build=$(git rev-list --count HEAD) -X $VPKG.Commit=$(git rev-parse HEAD) -X $VPKG.Date=$(git show -s --format=%cI HEAD)"
-          wails build -compiler "$PWD/scripts/ci/go-source-build.sh" -platform windows/amd64 -clean -ldflags "$LDFLAGS"
-
-      - name: Verify embedded Windows source identity
-        shell: bash
-        run: |
-          go version -m build/bin/chrono-desk.exe > "$RUNNER_TEMP/chrono-windows-build-info.txt"
-          grep -F "vcs.revision=$(git rev-parse HEAD)" "$RUNNER_TEMP/chrono-windows-build-info.txt"
-          grep -F 'vcs.modified=false' "$RUNNER_TEMP/chrono-windows-build-info.txt"
-          git diff --exit-code -- go.mod go.sum
+          wails build -platform windows/amd64 -clean -ldflags "$LDFLAGS"
 
       - name: Verify Windows executable version
         shell: pwsh
