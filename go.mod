@@ -5,8 +5,8 @@ go 1.24.0
 toolchain go1.24.13
 
 require (
-	github.com/grandcat/zeroconf v1.0.0
 	github.com/google/uuid v1.6.0
+	github.com/grandcat/zeroconf v1.0.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/wailsapp/wails/v2 v2.11.0
 	gitlab.com/fightmaster1/rfid-core v0.5.0
