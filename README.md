@@ -174,9 +174,9 @@ are closed at the deadline. Observation identity and outbound ownership are
 unchanged. `/api/version` and the version tooltip identify the reader module;
 diagnostics expose `reader_transport_version: 1`.
 
-`timing-core` is pinned to `v0.8.0` and canonical GitLab `rfid-core` to
+`timing-core` is pinned to `v0.11.0` and canonical GitLab `rfid-core` to
 `v0.4.2`; release builds never use mutable sibling replacements. The core pin
-now names a published tag, verified through Go's direct download and checksum,
+names a published tag, verified from its source and Go module checksum,
 not a sibling checkout. The patch includes the existing core CI cache fix;
 reader/edge contracts remain unchanged. See
 [release boundary](docs/edge-receiver.md#verification-and-release-boundary).
@@ -257,8 +257,12 @@ See canonical `chrono-docs/contracts/packet-issuance-release-number.md` for
 `clear_number`, `return_to_reserve`, `assign_reserve`, virtual row/atomic feed
 semantics and compatibility. Legacy commands retain their replay semantics.
 
-CHR-DESK-PERF-001: [shared snapshot calculation, reader pool and UI lifecycle](docs/snapshot-recount.md); candidate not installed, shared source publication pending.
+CHR-DESK-PERF-001: [shared snapshot calculation, reader pool and UI lifecycle](docs/snapshot-recount.md), released in v0.6.13; installation evidence is maintained separately.
 
-Prepared [0.6.13 performance candidate](docs/releases/0.6.13.md): shared snapshot recount, independent readers, lazy card/Live and revision-keyed photo views. Native packaging/installation status is recorded separately; on-course roster is deferred to the next task.
+Released [0.6.13](docs/releases/0.6.13.md): shared snapshot recount, independent readers, lazy card/Live, revision-keyed photo views and the «На дистанции» roster. Native packaging/installation status is recorded separately.
 
 Operational roster and explicit race counters: [On course](docs/on-course.md).
+
+Shared engine alignment for CHR-CUT-002: [timing-core 0.11 adoption](docs/timing-core-0.11-adoption.md) documents the compatibility update and the boundary between existing member replay and the new optional merged-projection API.
+
+Prepared [0.6.14 compatibility update](docs/releases/0.6.14.md): align the shared timing-core dependency while preserving existing desktop calculation and sync behavior.

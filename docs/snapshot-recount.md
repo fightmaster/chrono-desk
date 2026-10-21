@@ -3,15 +3,15 @@
 Task: CHR-DESK-PERF-001
 Docs-Impact: CROSS_PROJECT
 
-The candidate pins `timing-core v0.9.0`
-(commit `6e3c998`) and its `event-snapshot-fixed-distance-v1` calculator. The
-same pure package is consumed by rfid-sync's numeric-ID wrapper; Desk keeps opaque
-string IDs. SQL, transaction lifetime, durable raw storage and publication remain
-consumer responsibilities. The module was validated from a private file proxy
-built from the exact clean source commit. Release preparation now pins the same
-source as the immutable v0.9.0 tag; publish the core before the desktop tag.
-The unchanged tagged rfid-core v0.4.2 archive also matches its existing go.sum,
-so final checks and native packaging use ordinary modules without local replace.
+The current source pins published `timing-core v0.11.0`
+(commit `65793ffc88f3466b875293af58c04996d2b55bfc`) and retains its strict
+`event-snapshot-fixed-distance-v1` calculator. The initial adapter shipped with
+core v0.9.0; the compatibility update is described in
+[timing-core 0.11 adoption](timing-core-0.11-adoption.md). The same pure package is
+consumed by rfid-sync's numeric-ID wrapper; Desk keeps opaque string IDs. SQL,
+transaction lifetime, durable raw storage and publication remain consumer
+responsibilities. Both shared modules remain immutable published dependencies,
+without a local `replace` directive.
 
 ## Calculation and atomicity
 

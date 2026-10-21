@@ -22,7 +22,7 @@ func TestFrontendReleaseDependenciesMeetSecurityBaseline(t *testing.T) {
 	want := map[string]string{
 		"@sveltejs/vite-plugin-svelte": "^7.3.0",
 		"svelte":                       "^5.56.10",
-		"vite":                         "^8.2.2",
+		"vite":                         "^8.2.4",
 	}
 	for dependency, minimum := range want {
 		if got := packageJSON.DevDependencies[dependency]; got != minimum {

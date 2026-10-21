@@ -69,7 +69,7 @@ first response without changing stored observations or result calculation.
    The file-system concerns and open-store cache now live in `sqlite.EventCatalog`;
    application-level import/list logic stays in `service.EventService`.
 2. **Reuse one versioned timing-core, not a copied processor.** The immutable
-   `timing-core v0.9.0` candidate owns `legacy-once-v1` checkpoint eligibility,
+   `timing-core v0.11.0` dependency owns `legacy-once-v1` checkpoint eligibility,
    `member-time-v2-start-provenance`, `result-outcome-v2`, deterministic
    `ranking-v3-canonical-decimal-id`, age calculation and the
    ordered `impact-v3-preview` projection plan. Chrono Desk keeps the
