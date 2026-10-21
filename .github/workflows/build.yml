@@ -61,7 +61,7 @@ jobs:
         working-directory: chrono-desk/frontend
 
       - name: Frontend runtime smoke
-        run: npm run test:unit && npm run test:smoke && npm run smoke && npm run smoke:edge && npm run smoke:progress
+        run: npm run test:unit && npm run test:smoke && npm run smoke && npm run smoke:edge && npm run smoke:progress && npm run smoke:window
         working-directory: chrono-desk/frontend
 
       - name: Go quality gate
