@@ -12,12 +12,15 @@ import (
 
 // Row is one protocol line after ranking.
 type Row struct {
-	Member        domain.Member
-	Status        string // "ok" | "dns" | "dnf" | "dq"
-	CleanTimeMs   *int64
-	Place         *int // overall, dense over 'ok' rows
-	GenderPlace   *int
-	CategoryPlace *int
+	Member          domain.Member
+	Status          string // "ok" | "dns" | "dnf" | "dq"
+	CleanTimeMs     *int64
+	GunTimeMs       *int64
+	ChipTimeMs      *int64
+	ChipStartSource string
+	Place           *int // overall, dense over 'ok' rows
+	GenderPlace     *int
+	CategoryPlace   *int
 
 	// TimeLimited extras (run5's TimeLimitedResultPayload analog).
 	LastCheckpointName *string
@@ -37,12 +40,15 @@ type LastPass struct {
 
 // rankRow mirrors run5's member_results semantics.
 type rankRow struct {
-	member        domain.Member
-	status        string
-	rankPrimary   *int64
-	rankSecondary *int64
-	rankTertiary  *int64
-	cleanTimeMs   *int64
+	member          domain.Member
+	status          string
+	rankPrimary     *int64
+	rankSecondary   *int64
+	rankTertiary    *int64
+	cleanTimeMs     *int64
+	gunTimeMs       *int64
+	chipTimeMs      *int64
+	chipStartSource string
 
 	// TimeLimited payload analog.
 	elapsedMs          *int64
@@ -66,9 +72,16 @@ func statusString(s domain.MemberStatus) string {
 // materializeFixedDistance ports FixedDistanceFormat::materialize: a status
 // code wins over times; otherwise the member needs start+finish+clean to
 // enter the protocol; rank_primary = -cleanTimeMs.
-func materializeFixedDistance(m domain.Member) *rankRow {
+func materializeFixedDistance(race domain.Race, m domain.Member) *rankRow {
 	if m.Status != domain.StatusOK {
 		return &rankRow{member: m, status: statusString(m.Status)}
+	}
+	if race.TimingBasis.Dual() {
+		result, err := timing.FinalizeFixedDistance(domain.CoreMember(race, m), statusString(m.Status), nil)
+		if err != nil || result.Outcome == nil {
+			return nil
+		}
+		return rankRowFromCore(m, *result.Outcome)
 	}
 	if m.StartTimeMs == nil || m.FinishTimeMs == nil || m.CleanTime == nil {
 		return nil // not finished yet — absent from the protocol
@@ -112,6 +125,7 @@ func rankRowFromCore(member domain.Member, outcome timing.ResultOutcome[string])
 		member: member, status: outcome.Status,
 		rankPrimary: outcome.RankPrimary, rankSecondary: outcome.RankSecondary,
 		cleanTimeMs: outcome.CleanTimeMs, elapsedMs: outcome.ElapsedMs,
+		gunTimeMs: outcome.GunTimeMs, chipTimeMs: outcome.ChipTimeMs, chipStartSource: outcome.ChipStartSource,
 		lastPassAtMs:       outcome.LastPassAtMs,
 		lastCheckpointName: outcome.LastCheckpointName,
 	}
@@ -134,7 +148,7 @@ func Protocol(race domain.Race, members []domain.Member, lastPasses map[string]L
 			}
 			r = materializeTimeLimited(race, m, pass)
 		default: // FixedDistance (Run5Stopwatch pending)
-			r = materializeFixedDistance(m)
+			r = materializeFixedDistance(race, m)
 		}
 		if r != nil {
 			rows = append(rows, r)
@@ -153,9 +167,10 @@ func Protocol(race domain.Race, members []domain.Member, lastPasses map[string]L
 	for _, rankedRow := range ranked {
 		r := rowsByMember[rankedRow.Input.MemberID]
 		row := Row{
-			Member:             r.member,
-			Status:             r.status,
-			CleanTimeMs:        r.cleanTimeMs,
+			Member:      r.member,
+			Status:      r.status,
+			CleanTimeMs: r.cleanTimeMs,
+			GunTimeMs:   r.gunTimeMs, ChipTimeMs: r.chipTimeMs, ChipStartSource: r.chipStartSource,
 			ElapsedMs:          r.elapsedMs,
 			LastPassAtMs:       r.lastPassAtMs,
 			LastCheckpointName: r.lastCheckpointName,

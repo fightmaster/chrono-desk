@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"path/filepath"
 	"time"
 
@@ -54,11 +55,26 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 	if err != nil {
 		return nil, "", err
 	}
+	members, err := store.ListMembersFullByEvent(ctx, eventID)
+	if err != nil {
+		return nil, "", err
+	}
+	extended := false
+	for _, race := range races {
+		extended = extended || race.TimingBasis.Dual() || race.ShiftAssignedStarts
+	}
+	for _, member := range members {
+		extended = extended || member.StartTimeMs != nil && (member.StartTimeSource == domain.StartTimeSourceObservation || member.StartTimeSource == domain.StartTimeSourceRaceDefault)
+	}
+	if extended {
+		export.SchemaVersion = 5
+	}
 	for _, r := range races {
 		export.Races = append(export.Races, exportRace{
 			ID: r.ID, EventID: r.EventID, Name: r.Name, Date: r.Date,
 			StartedAt: msToISO(r.StartedAtMs), LapID: r.LapID, Format: string(r.Format),
 			TimeLimitSeconds: r.TimeLimitSeconds, CategoryExcludesTopByGender: r.CategoryExcludesTopByGender,
+			TimingBasis: exportedTimingBasis(r, extended), ShiftAssignedStarts: exportedShift(r.ShiftAssignedStarts, extended),
 		})
 	}
 
@@ -84,7 +100,9 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 	}
 	for _, cp := range checkpoints {
 		if cp.UntilMs != nil || cp.UntilOffsetSeconds != nil || cp.ReadSelection == "last" || (int(cp.Type) == 1 && cp.SinceOffsetSeconds != nil) {
-			export.SchemaVersion = 4
+			if export.SchemaVersion < 4 {
+				export.SchemaVersion = 4
+			}
 		}
 		export.Checkpoints = append(export.Checkpoints, exportCheckpoint{
 			ID: cp.ID, EventID: cp.EventID, RaceID: cp.RaceID, Name: cp.Name,
@@ -95,10 +113,6 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 		})
 	}
 
-	members, err := store.ListMembersFullByEvent(ctx, eventID)
-	if err != nil {
-		return nil, "", err
-	}
 	for _, m := range members {
 		export.Members = append(export.Members, exportMember{
 			ID: m.ID, EventID: m.EventID, RaceID: m.RaceID, CategoryID: m.CategoryID,
@@ -106,6 +120,7 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 			FirstName: m.FirstName, LastName: m.LastName, Gender: m.Gender, DOB: m.DOB,
 			City: m.City, Team: m.Team, Status: int(m.Status),
 			StartTime: msToISO(m.StartTimeMs), FinishTime: msToISO(m.FinishTimeMs), CleanTime: m.CleanTime,
+			StartTimeSource: exportedSource(m.StartTimeSource, extended), StartObservationID: exportedObservation(m.StartObservationID, extended),
 		})
 	}
 
@@ -158,4 +173,37 @@ func exportReadSelection(value string) string {
 		return ""
 	}
 	return value
+}
+
+func exportedTimingBasis(race domain.Race, extended bool) *string {
+	if !extended {
+		return nil
+	}
+	s := string(race.TimingBasis)
+	if s == "" {
+		s = "legacy"
+	}
+	return &s
+}
+func exportedShift(shift, extended bool) *bool {
+	if !extended {
+		return nil
+	}
+	return &shift
+}
+func exportedSource(source domain.StartTimeSource, extended bool) *string {
+	if !extended {
+		return nil
+	}
+	s := string(source)
+	if s == "" {
+		s = "unknown"
+	}
+	return &s
+}
+func exportedObservation(id string, extended bool) *string {
+	if !extended || id == "" {
+		return nil
+	}
+	return &id
 }

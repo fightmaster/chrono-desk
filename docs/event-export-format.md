@@ -173,3 +173,20 @@ change. Native and member replay use the shared snapshot engine for windowed
 races, preserving manual facts and recalculating dependent timings. Pure last
 lookahead retains observations in the replay scope; first-only replay remains
 streaming. No gun/chip ranking mode is introduced here.
+
+### Schema5: assigned start / dual time (CHR-CHIP-003)
+
+Schema5 requires race `timing_basis` (`legacy`, `gun`, `chip`) and
+`shift_assigned_starts` boolean, and member `start_time_source` plus nullable
+`start_observation_id`. Member `start_time` is assigned input in dual mode.
+Measured chip start is recomputed locally and never exported as assigned input.
+Schema5 is emitted for dual policy, explicit shift setting, or retained machine
+start provenance. Other exports retain schema3/4. Older files cannot overwrite
+locally enabled dual timing settings; raw collection remains compatible.
+Sync push3 advertises `assigned_start_dual_time_version: 1` and requires the
+same server capability before posting policy/assigned inputs.
+
+Changing common gun does not shift personal inputs unless the explicit schedule
+shift switch is enabled. That operation journals absolute personal values;
+reimport and upload do not apply a delta again. Unknown legacy start values
+require explicit classification before enabling dual mode. Raw times never move.

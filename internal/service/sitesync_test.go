@@ -337,6 +337,9 @@ func TestRaceStartShiftSyncsMemberEdits(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 	importFixture(t, store)
+	if _, err := store.DB().Exec(`UPDATE races SET shift_assigned_starts=1 WHERE id='race-10k'`); err != nil {
+		t.Fatal(err)
+	}
 
 	const oldStart, delta = int64(1780812000000), int64(120000)
 	if _, err := store.DB().ExecContext(ctx,

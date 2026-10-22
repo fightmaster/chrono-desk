@@ -15,7 +15,8 @@
     "smoke": "node scripts/runtime-smoke.mjs",
     "smoke:edge": "node scripts/runtime-smoke.mjs --edge",
     "smoke:progress": "node scripts/runtime-smoke.mjs --progress",
-    "smoke:window": "node scripts/runtime-smoke.mjs --window"
+    "smoke:window": "node scripts/runtime-smoke.mjs --window",
+    "smoke:dual": "node scripts/runtime-smoke.mjs --dual"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

@@ -27,10 +27,10 @@ func (s *Store) LoadTimingSnapshot(ctx context.Context, eventID string) (project
 
 func (s *Store) loadTimingSnapshot(ctx context.Context, eventID string, all bool) (projection.Snapshot[string], error) {
 	input := projection.Snapshot[string]{EventID: eventID}
-	if err := s.scanSnapshotRows(ctx, `SELECT id,format,started_at_ms,category_excludes_top_by_gender,time_limit_seconds FROM races WHERE event_id=? ORDER BY id`, func(rows *sql.Rows) error {
+	if err := s.scanSnapshotRows(ctx, `SELECT id,format,started_at_ms,category_excludes_top_by_gender,time_limit_seconds,timing_basis FROM races WHERE event_id=? ORDER BY id`, func(rows *sql.Rows) error {
 		var race projection.Race[string]
 		var format string
-		if err := rows.Scan(&race.ID, &format, &race.StartedAtMs, &race.ExcludeTopByGender, &race.TimeLimitSeconds); err != nil {
+		if err := rows.Scan(&race.ID, &format, &race.StartedAtMs, &race.ExcludeTopByGender, &race.TimeLimitSeconds, &race.TimingBasis); err != nil {
 			return err
 		}
 		if !all && format != "FixedDistance" {
@@ -61,6 +61,12 @@ func (s *Store) loadTimingSnapshot(ctx context.Context, eventID string, all bool
 		statuses := [...]string{"ok", "dns", "dnf", "dq"}
 		if status < 0 || status >= len(statuses) {
 			return ErrSnapshotUnsupported
+		}
+		for _, race := range input.Races {
+			if race.ID == member.Timing.RaceID && race.TimingBasis.Dual() && member.Timing.StartTimeSource != timing.StartTimeObservation && member.Timing.StartTimeSource != timing.StartTimeRaceDefault {
+				member.Timing.AssignedStartTimeMs = member.Timing.StartTimeMs
+				break
+			}
 		}
 		member.Status, member.EPC, member.Timing.StartObservationID = statuses[status], epc.String, startObservation.String
 		input.Members = append(input.Members, member)
@@ -204,7 +210,7 @@ func (s *Store) replaceTimingProjection(ctx context.Context, eventID, raceID str
 	result.Passes = rawPasses
 	// Stay below even the historical SQLite999 bind limit; no statement or SQL
 	// read/write round trip is issued per observation or member.
-	const batchSize = 128
+	const batchSize = 64
 	for start := 0; start < len(result.Passes); start += batchSize {
 		end := min(start+batchSize, len(result.Passes))
 		args := make([]any, 0, (end-start)*6)
@@ -224,7 +230,7 @@ func (s *Store) replaceTimingProjection(ctx context.Context, eventID, raceID str
 	}
 	for start := 0; start < len(result.Members); start += batchSize {
 		end := min(start+batchSize, len(result.Members))
-		args := make([]any, 0, (end-start)*7)
+		args := make([]any, 0, (end-start)*11)
 		values := make([]string, 0, end-start)
 		for _, item := range result.Members[start:end] {
 			member := item.Member
@@ -232,11 +238,15 @@ func (s *Store) replaceTimingProjection(ctx context.Context, eventID, raceID str
 			if member.StartObservationID != "" {
 				observation = member.StartObservationID
 			}
-			values = append(values, "(?,?,?,?,?,?,?)")
-			args = append(args, member.ID, eventID, member.StartTimeMs, member.StartTimeSource, observation, member.FinishTimeMs, item.CleanTime)
+			values = append(values, "(?,?,?,?,?,?,?,?,?,?,?)")
+			args = append(args, member.ID, eventID, member.StartTimeMs, member.StartTimeSource, observation, member.FinishTimeMs, item.CleanTime, member.TimingBasis.Dual(), member.ChipStartTimeMs, string(member.ChipStartSource), nullableObservation(member.ChipStartObservationID))
 		}
-		query := `WITH projected(id,event_id,start_ms,source,observation,finish_ms,clean) AS (VALUES ` + strings.Join(values, ",") + `)
-			UPDATE members SET start_time_ms=p.start_ms,start_time_source=p.source,start_observation_id=p.observation,finish_time_ms=p.finish_ms,clean_time=p.clean
+		query := `WITH projected(id,event_id,start_ms,source,observation,finish_ms,clean,dual,chip_ms,chip_source,chip_observation) AS (VALUES ` + strings.Join(values, ",") + `)
+			UPDATE members SET start_time_ms=CASE WHEN p.dual THEN members.start_time_ms ELSE p.start_ms END,
+            start_time_source=CASE WHEN p.dual THEN members.start_time_source ELSE p.source END,
+            start_observation_id=CASE WHEN p.dual THEN members.start_observation_id ELSE p.observation END,
+            chip_start_time_ms=p.chip_ms,chip_start_source=p.chip_source,chip_start_observation_id=p.chip_observation,
+            finish_time_ms=p.finish_ms,clean_time=p.clean
 			FROM projected p WHERE members.id=p.id AND members.event_id=p.event_id`
 		if err := s.execSnapshotBatch(ctx, query, end-start, args...); err != nil {
 			return err

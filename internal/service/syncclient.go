@@ -51,6 +51,7 @@ func newSyncHTTPClient() *http.Client {
 }
 
 type SyncCapabilities struct {
+	AssignedStartDualTimeVersion     int   `json:"assigned_start_dual_time_version"`
 	CheckpointWindowSelectionVersion int   `json:"checkpoint_window_selection_version"`
 	PushSchemaVersions               []int `json:"push_schema_versions"`
 	PreferredPushSchemaVersion       int   `json:"preferred_push_schema_version"`
@@ -111,6 +112,7 @@ type SyncPushResponse struct {
 // PushSync POSTs the assembled payload to run5 and returns the decoded summary.
 func PushSync(ctx context.Context, baseURL, token, eventID string, payload []byte) (SyncPushResponse, error) {
 	var header struct {
+		AssignedStartDualTimeVersion     int `json:"assigned_start_dual_time_version"`
 		SchemaVersion                    int `json:"schema_version"`
 		CheckpointWindowSelectionVersion int `json:"checkpoint_window_selection_version"`
 	}
@@ -126,6 +128,9 @@ func PushSync(ctx context.Context, baseURL, token, eventID string, payload []byt
 	}
 	if header.CheckpointWindowSelectionVersion > capabilities.CheckpointWindowSelectionVersion {
 		return SyncPushResponse{}, fmt.Errorf("сайт не поддерживает настройки окна чекпоинта; обновите сервер")
+	}
+	if header.AssignedStartDualTimeVersion > capabilities.AssignedStartDualTimeVersion {
+		return SyncPushResponse{}, fmt.Errorf("сайт не поддерживает раздельные назначенный и chip старты; обновите сервер")
 	}
 	url, err := syncURL(baseURL, eventID)
 	if err != nil {

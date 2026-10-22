@@ -38,8 +38,10 @@ var editWhitelist = map[string]map[string]editableField{
 		"use_race_date_for_age": {table: "events", kind: kindInt},
 	},
 	"race": {
-		"started_at_ms": {table: "races", kind: kindInt, recountNeeded: true},
-		"name":          {table: "races", kind: kindText},
+		"timing_basis":          {table: "races", kind: kindText, recountNeeded: true},
+		"shift_assigned_starts": {table: "races", kind: kindInt},
+		"started_at_ms":         {table: "races", kind: kindInt, recountNeeded: true},
+		"name":                  {table: "races", kind: kindText},
 		// 0/1: exclude the overall top-3 per gender from category standings
 		// (run5's ExcludeTopByGender strategy). Ranking-only — no recount.
 		"category_excludes_top_by_gender": {table: "races", kind: kindInt},
@@ -78,10 +80,11 @@ var editWhitelist = map[string]map[string]editableField{
 
 // EditRequest is the API payload for one field change.
 type EditRequest struct {
-	Entity   string          `json:"entity"`
-	EntityID string          `json:"entity_id"`
-	Field    string          `json:"field"`
-	Value    json.RawMessage `json:"value"` // null | number | string
+	ConfirmLegacyAssigned bool            `json:"confirm_legacy_assigned,omitempty"`
+	Entity                string          `json:"entity"`
+	EntityID              string          `json:"entity_id"`
+	Field                 string          `json:"field"`
+	Value                 json.RawMessage `json:"value"` // null | number | string
 }
 
 // EditResult tells the UI whether a recount is required to see the effect.
@@ -263,6 +266,53 @@ func packetString(value *string) string {
 }
 
 func applyValidatedEdit(ctx context.Context, store editTxStore, req EditRequest, spec editableField, value any) error {
+	if req.Entity == "race" && req.Field == "shift_assigned_starts" {
+		flag, ok := value.(int64)
+		if !ok || flag < 0 || flag > 1 {
+			return fmt.Errorf("выберите, сдвигать ли назначенные старты")
+		}
+		if flag == 1 {
+			race, err := store.GetRace(ctx, req.EntityID)
+			if err != nil {
+				return err
+			}
+			if !race.ShiftAssignedStarts {
+				preparer, ok := store.(interface {
+					PrepareAssignedStarts(context.Context, string, bool, bool) error
+				})
+				if !ok {
+					return fmt.Errorf("хранилище не поддерживает назначенные старты")
+				}
+				if err := preparer.PrepareAssignedStarts(ctx, req.EntityID, req.ConfirmLegacyAssigned, false); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if req.Entity == "race" && req.Field == "timing_basis" {
+		basis, ok := value.(string)
+		if !ok || basis != "legacy" && basis != "gun" && basis != "chip" {
+			return fmt.Errorf("неизвестный режим расчёта времени")
+		}
+		if basis != "legacy" {
+			race, err := store.GetRace(ctx, req.EntityID)
+			if err != nil {
+				return err
+			}
+			if race.Format != domain.FormatFixedDistance {
+				return fmt.Errorf("gun/chip доступен для гонки на фиксированной дистанции")
+			}
+			preparer, ok := store.(interface {
+				PrepareDualTiming(context.Context, string, bool) error
+			})
+			if !ok {
+				return fmt.Errorf("хранилище не поддерживает назначенные старты")
+			}
+			if err := preparer.PrepareDualTiming(ctx, req.EntityID, req.ConfirmLegacyAssigned); err != nil {
+				return err
+			}
+		}
+	}
 	old, err := store.UpdateEntityField(ctx, spec.table, req.Field, req.EntityID, value)
 	if err != nil {
 		return err
@@ -295,7 +345,11 @@ func applyValidatedEdit(ctx context.Context, store editTxStore, req EditRequest,
 	// delta; UpdateEntityField returned it above. Each shift is journaled as a
 	// member edit so it survives re-import and syncs back to the site.
 	if req.Entity == "race" && req.Field == "started_at_ms" {
-		if newStart, ok := value.(int64); ok {
+		race, err := store.GetRace(ctx, req.EntityID)
+		if err != nil {
+			return err
+		}
+		if newStart, ok := value.(int64); ok && race.ShiftAssignedStarts {
 			if oldStart, ok := asInt64(old); ok {
 				if err := shiftMemberStarts(ctx, store, req.EntityID, newStart-oldStart); err != nil {
 					return err

@@ -92,7 +92,7 @@ func (s *Store) projectionEvidence(ctx context.Context, eventID string) (Project
 		args  []any
 	}{
 		{"event", `SELECT id, name, slug, date, timezone, use_race_date_for_age FROM events WHERE id = ? ORDER BY id`, []any{eventID}},
-		{"races", `SELECT id, event_id, date, started_at_ms, format, time_limit_seconds, category_excludes_top_by_gender FROM races WHERE event_id = ? ORDER BY id`, []any{eventID}},
+		{"races", `SELECT id, event_id, date, started_at_ms, format, time_limit_seconds, category_excludes_top_by_gender, timing_basis, shift_assigned_starts FROM races WHERE event_id = ? ORDER BY id`, []any{eventID}},
 		{"categories", `SELECT c.id, c.name, c.min, c.max, c.gender
 			FROM categories c
 			WHERE EXISTS (

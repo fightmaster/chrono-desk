@@ -1,6 +1,6 @@
 <script>
   import {createEventDispatcher} from 'svelte'
-  import {call, fmtTime, inputToMs, msToInput} from './api.js'
+  import {call, fmtTime, fmtDuration, inputToMs, msToInput} from './api.js'
   import CheckpointEditor from './CheckpointEditor.svelte'
   import AddMemberForm from './AddMemberForm.svelte'
   import OnCourseList from './OnCourseList.svelte'
@@ -22,6 +22,14 @@
   let protocolQuery = ''
   let protocolGender = 'all'
   let protocolCategory = 'all'
+  let timingDraftRace = null
+  let timingBasisDraft = 'legacy'
+  let confirmLegacyAssigned = false
+  $: if (currentRace && currentRace.id !== timingDraftRace) {
+    timingDraftRace = currentRace.id
+    timingBasisDraft = currentRace.timing_basis || 'legacy'
+    confirmLegacyAssigned = false
+  }
 
   const genderNames = {male: 'Мужчины', female: 'Женщины'}
   const genderMarks = {male: 'М', female: 'Ж'}
@@ -122,9 +130,8 @@
   }
 
   // Stamp the race start with the current system time to the millisecond — the
-  // judge presses this at the gun. Like any start edit it shifts every member by
-  // the same delta and recounts the distance. Date.now() keeps the ms; the
-  // seconds-only field below is for manual correction.
+  // judge presses this at the gun. An explicit setting controls assigned
+  // schedule movement; physical observations are never shifted.
   function startRaceNow() {
     saveRaceStartMs(Date.now())
   }
@@ -138,6 +145,18 @@
     } catch (err) {
       error = `Старт гонки: ${err.message}`
     }
+  }
+
+  async function saveTimingSetting(field, value) {
+    error = ''
+    try {
+      const result = await call('POST', `/api/events/${eventId}/edits`, JSON.stringify({
+        entity: 'race', entity_id: currentRace.id, field, value,
+        confirm_legacy_assigned: confirmLegacyAssigned,
+      }))
+      confirmLegacyAssigned = false
+      dispatch('changed', {recount: result.recount_needed, reloadRaces: true})
+    } catch (err) { error = `Настройки старта: ${err.message}` }
   }
 
   async function saveTop3(checked) {
@@ -294,7 +313,12 @@
               <span class="pname">{name(r)}</span>
               <span class="dim sm">{r.category_name ?? ''}</span>
               <span class="mono faint">{genderMark(r)}</span>
-              <span class="mono ptime">{r.clean_time ?? ''}</span>
+              <span class="mono ptime">
+                {#if r.gun_time_ms != null && r.chip_time_ms != null}
+                  <span class="block">Gun {fmtDuration(r.gun_time_ms)}</span>
+                  <span class="block" title={r.chip_start_source === 'assigned' ? 'Старт не считан: по назначенному времени' : r.chip_start_source === 'manual' ? 'Стартовая отсечка введена судьёй' : 'Старт считан по чипу'}>Chip {fmtDuration(r.chip_time_ms)}{r.chip_start_source === 'assigned' ? ' *' : ''}</span>
+                {:else}{r.clean_time ?? ''}{/if}
+              </span>
               {#if showCheckpoint}<span class="dim sm">{r.last_checkpoint_name ?? ''}</span>{/if}
               <span class="status">{({dns: 'DNS', dnf: 'DNF', dq: 'DSQ'})[r.status] ?? ''}</span>
             </button>
@@ -314,8 +338,8 @@
         <div class="card">
           <div class="eyebrow">Старт гонки</div>
           <div class="start-row">
-            <input class="input mono" type="datetime-local" step="1"
-                   value={msToInput(currentRace.started_at_ms)}
+            <input class="input mono" type="datetime-local" step="0.001"
+                   value={msToInput(currentRace.started_at_ms, true)}
                    on:change={e => saveRaceStart(e.target.value)}/>
             <button class="btn primary" on:click={startRaceNow}>⏱ Старт сейчас</button>
             {#if currentRace.started_at_ms}
@@ -324,9 +348,30 @@
           </div>
           <p class="faint start-note">
             Правка времени старта запускает автопересчёт этой дистанции. «Старт сейчас»
-            ставит текущее системное время с миллисекундами и сдвигает старты всех
-            участников на ту же величину.
+            ставит текущее системное время с миллисекундами. Назначенные личные старты
+            сдвигаются только при включённой настройке ниже; чтения чипов сохраняют своё время.
           </p>
+        </div>
+
+        <div class="card">
+          <div class="eyebrow">Расчёт времени и мест</div>
+          <select class="input" aria-label="Официальное время" bind:value={timingBasisDraft}>
+            <option value="legacy">Прежний режим</option>
+            <option value="gun">Gun — по назначенному старту</option>
+            <option value="chip">Chip — по считанному старту</option>
+          </select>
+          {#if timingBasisDraft !== 'legacy' || !currentRace.shift_assigned_starts}
+            <label class="check"><input type="checkbox" aria-label="Подтвердить назначенные старты" bind:checked={confirmLegacyAssigned}/>
+              Подтверждаю: сохранённые старты без происхождения являются назначенными
+            </label>
+            <p class="faint">Личный назначенный старт имеет приоритет над общим. Если чип-старт не считан, chip time равен gun time.</p>
+          {/if}
+          <button class="btn" on:click={() => saveTimingSetting('timing_basis', timingBasisDraft)}>Применить режим</button>
+          <label class="check"><input type="checkbox" aria-label="Сдвигать назначенные старты" checked={currentRace.shift_assigned_starts}
+            on:change={e => saveTimingSetting('shift_assigned_starts', e.target.checked ? 1 : 0)}/>
+            При правке заданного общего старта сдвигать назначенные личные старты
+          </label>
+          <p class="faint">Сдвиг одинаковый для всего расписания. Считанные старты заново выбираются по обновлённому окну.</p>
         </div>
 
         <label class="card check">

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
+	timing "gitlab.com/fightmaster1/timing-core"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
@@ -22,17 +24,22 @@ type MemberPass struct {
 }
 
 type MemberPasses struct {
-	Registration  MemberRegistration    `json:"member"`
-	MemberID      string                `json:"member_id"`
-	FirstName     string                `json:"first_name"`
-	LastName      string                `json:"last_name"`
-	Number        *int64                `json:"number"`
-	Status        int                   `json:"status"`
-	StartTimeMs   *int64                `json:"start_time_ms"`
-	FinishTimeMs  *int64                `json:"finish_time_ms"`
-	CleanTime     *string               `json:"clean_time"`
-	Passes        []MemberPass          `json:"passes"`
-	ManualResults []sqlite.ManualResult `json:"manual_results"`
+	TimingBasis     string                `json:"timing_basis"`
+	ChipStartTimeMs *int64                `json:"chip_start_time_ms"`
+	GunTimeMs       *int64                `json:"gun_time_ms"`
+	ChipTimeMs      *int64                `json:"chip_time_ms"`
+	ChipStartSource string                `json:"chip_start_source"`
+	Registration    MemberRegistration    `json:"member"`
+	MemberID        string                `json:"member_id"`
+	FirstName       string                `json:"first_name"`
+	LastName        string                `json:"last_name"`
+	Number          *int64                `json:"number"`
+	Status          int                   `json:"status"`
+	StartTimeMs     *int64                `json:"start_time_ms"`
+	FinishTimeMs    *int64                `json:"finish_time_ms"`
+	CleanTime       *string               `json:"clean_time"`
+	Passes          []MemberPass          `json:"passes"`
+	ManualResults   []sqlite.ManualResult `json:"manual_results"`
 }
 
 // MemberRegistration is bundled with passes so the drawer's fields and timing
@@ -78,6 +85,23 @@ func loadMemberPasses(ctx context.Context, store *sqlite.Store, memberID string,
 	out.StartTimeMs = member.StartTimeMs
 	out.FinishTimeMs = member.FinishTimeMs
 	out.CleanTime = member.CleanTime
+	race, err := store.GetRace(ctx, member.RaceID)
+	if err != nil {
+		return out, err
+	}
+	out.TimingBasis = string(race.TimingBasis)
+	out.ChipStartTimeMs = member.ChipStartTimeMs
+	if race.TimingBasis.Dual() {
+		result, err := timing.FinalizeFixedDistance(domain.CoreMember(race, member), statusForDualCard(member.Status), nil)
+		if err != nil {
+			return out, err
+		}
+		if result.Outcome != nil {
+			out.GunTimeMs = result.Outcome.GunTimeMs
+			out.ChipTimeMs = result.Outcome.ChipTimeMs
+			out.ChipStartSource = result.Outcome.ChipStartSource
+		}
+	}
 
 	manual, err := store.ListManualResultsForMember(ctx, member.EventID, memberID)
 	if err != nil {
@@ -105,4 +129,17 @@ func loadMemberPasses(ctx context.Context, store *sqlite.Store, memberID string,
 		})
 	}
 	return out, nil
+}
+
+func statusForDualCard(status domain.MemberStatus) string {
+	switch status {
+	case domain.StatusDNS:
+		return "dns"
+	case domain.StatusDNF:
+		return "dnf"
+	case domain.StatusDSQ:
+		return "dq"
+	default:
+		return ""
+	}
 }

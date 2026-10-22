@@ -32,14 +32,16 @@ func (s *Store) UpsertRace(ctx context.Context, r domain.Race) error {
 
 func upsertRace(ctx context.Context, ex execer, r domain.Race) error {
 	_, err := ex.ExecContext(ctx, `
-		INSERT INTO races (id, event_id, name, date, started_at_ms, lap_id, format, time_limit_seconds, category_excludes_top_by_gender)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO races (id, event_id, name, date, started_at_ms, lap_id, format, time_limit_seconds, category_excludes_top_by_gender, timing_basis, shift_assigned_starts)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			event_id=excluded.event_id, name=excluded.name, date=excluded.date,
 			started_at_ms=excluded.started_at_ms, lap_id=excluded.lap_id, format=excluded.format,
 			time_limit_seconds=excluded.time_limit_seconds,
-			category_excludes_top_by_gender=excluded.category_excludes_top_by_gender`,
-		r.ID, r.EventID, r.Name, r.Date, r.StartedAtMs, r.LapID, string(r.Format), r.TimeLimitSeconds, r.CategoryExcludesTopByGender)
+			category_excludes_top_by_gender=excluded.category_excludes_top_by_gender,
+            timing_basis=CASE WHEN ? THEN excluded.timing_basis ELSE races.timing_basis END,
+            shift_assigned_starts=CASE WHEN ? THEN excluded.shift_assigned_starts ELSE races.shift_assigned_starts END`,
+		r.ID, r.EventID, r.Name, r.Date, r.StartedAtMs, r.LapID, string(r.Format), r.TimeLimitSeconds, r.CategoryExcludesTopByGender, defaultTimingBasis(r.TimingBasis), r.ShiftAssignedStarts, r.TimingSettingsPresent || r.TimingBasis.Dual(), r.TimingSettingsPresent || r.TimingBasis.Dual())
 	if err != nil {
 		return fmt.Errorf("upsert race %s: %w", r.ID, err)
 	}
@@ -110,7 +112,7 @@ func (s *Store) ShiftMemberStarts(ctx context.Context, raceID string, deltaMs in
 	err := s.WithinTx(ctx, func(txStore *Store) error {
 		rows, err := txStore.db.QueryContext(ctx,
 			`SELECT id, start_time_ms FROM members
-			 WHERE race_id = ? AND start_time_ms IS NOT NULL
+			 WHERE race_id = ? AND start_time_ms IS NOT NULL AND start_time_source NOT IN ('observation','race_default')
 			 ORDER BY id`, raceID)
 		if err != nil {
 			return fmt.Errorf("list members with start: %w", err)
@@ -134,7 +136,7 @@ func (s *Store) ShiftMemberStarts(ctx context.Context, raceID string, deltaMs in
 			if _, err := txStore.db.ExecContext(ctx,
 				`UPDATE members SET start_time_ms = start_time_ms + ?,
 				 start_time_source = 'manual', start_observation_id = NULL
-				 WHERE race_id = ? AND start_time_ms IS NOT NULL`,
+				 WHERE race_id = ? AND start_time_ms IS NOT NULL AND start_time_source NOT IN ('observation','race_default')`,
 				deltaMs, raceID); err != nil {
 				return fmt.Errorf("shift member starts: %w", err)
 			}
@@ -173,17 +175,19 @@ func upsertMember(ctx context.Context, ex execer, m domain.Member) error {
 		INSERT INTO members (id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
 			gender, dob, city, team, status, start_time_ms, start_time_source, start_observation_id,
 			finish_time_ms, clean_time)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', NULL, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			event_id=excluded.event_id, race_id=excluded.race_id, category_id=excluded.category_id,
 			number=excluded.number, epc=excluded.epc, rfid=excluded.rfid,
 			first_name=excluded.first_name, last_name=excluded.last_name, gender=excluded.gender,
 			dob=excluded.dob, city=excluded.city, team=excluded.team, status=excluded.status,
-			start_time_ms=excluded.start_time_ms, start_time_source='unknown', start_observation_id=NULL,
+			start_time_ms=excluded.start_time_ms,
+            start_time_source=CASE WHEN ? THEN excluded.start_time_source WHEN members.start_time_ms IS excluded.start_time_ms THEN members.start_time_source ELSE 'unknown' END,
+            start_observation_id=CASE WHEN ? THEN excluded.start_observation_id WHEN members.start_time_ms IS excluded.start_time_ms THEN members.start_observation_id ELSE NULL END,
 			finish_time_ms=excluded.finish_time_ms,
 			clean_time=excluded.clean_time`,
 		m.ID, m.EventID, m.RaceID, m.CategoryID, m.Number, m.EPC, m.RFID, m.FirstName, m.LastName,
-		m.Gender, m.DOB, m.City, m.Team, int(m.Status), m.StartTimeMs, m.FinishTimeMs, m.CleanTime)
+		m.Gender, m.DOB, m.City, m.Team, int(m.Status), m.StartTimeMs, importedStartSource(m), nullableObservation(m.StartObservationID), m.FinishTimeMs, m.CleanTime, m.StartProvenancePresent, m.StartProvenancePresent)
 	if err != nil {
 		return fmt.Errorf("upsert member %s: %w", m.ID, err)
 	}

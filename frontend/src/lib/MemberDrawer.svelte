@@ -1,6 +1,6 @@
 <script>
   import {createEventDispatcher, onDestroy} from 'svelte'
-  import {call, fmtTime, fmtDateTime, msToInput, inputToMs, timeStrToMs, memberMatches} from './api.js'
+  import {call, fmtTime, fmtDuration, fmtDateTime, msToInput, inputToMs, timeStrToMs, memberMatches} from './api.js'
   import PhotoPanel from './PhotoPanel.svelte'
   import {latestRequest} from './latest-request.js'
 
@@ -413,13 +413,17 @@
         </select>
       </div>
       <div class="field">
-        <span>Старт (ручной)</span>
-        <input class="input mono" type="datetime-local" step="1" value={msToInput(data.start_time_ms)}
+        <span>{data.timing_basis === 'gun' || data.timing_basis === 'chip' ? 'Назначенный личный старт' : 'Старт (ручной)'}</span>
+        <input class="input mono" type="datetime-local" step="0.001" value={msToInput(data.start_time_ms, true)}
                on:change={e => edit('start_time_ms', inputToMs(e.target.value))}/>
       </div>
       <div class="finfo mono dim">
         Финиш {data.finish_time_ms ? fmtTime(data.finish_time_ms) : '—'} ·
-        Чистое <b class="full">{data.clean_time ?? '—'}</b>
+        Время <b class="full">{data.clean_time ?? '—'}</b>
+        {#if data.gun_time_ms != null && data.chip_time_ms != null}
+          <div>Gun {fmtDuration(data.gun_time_ms)} · Chip {fmtDuration(data.chip_time_ms)}</div>
+          <div class="faint">{data.chip_start_source === 'assigned' ? 'Старт не считан: по назначенному времени' : `${data.chip_start_source === 'manual' ? 'Стартовая отсечка судьи' : 'Считанный старт'} ${fmtTime(data.chip_start_time_ms)}`}</div>
+        {/if}
       </div>
     </div>
 

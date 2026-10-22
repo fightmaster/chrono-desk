@@ -38,6 +38,9 @@ func migrate(db *sql.DB) error {
 	if err := addMemberStartProvenance(db); err != nil {
 		return err
 	}
+	if err := addAssignedStartDualTime(db); err != nil {
+		return err
+	}
 	if err := addCheckpointWindows(db); err != nil {
 		return err
 	}
@@ -231,7 +234,7 @@ func addProjectionRevisionFence(db *sql.DB) error {
 		},
 		{
 			table: "races", revision: "config_revision",
-			updateWhen: columnsChanged("id", "event_id", "date", "started_at_ms", "format", "time_limit_seconds", "category_excludes_top_by_gender"),
+			updateWhen: columnsChanged("id", "event_id", "date", "started_at_ms", "format", "time_limit_seconds", "category_excludes_top_by_gender", "timing_basis", "shift_assigned_starts"),
 		},
 		{
 			table: "checkpoints", revision: "config_revision",

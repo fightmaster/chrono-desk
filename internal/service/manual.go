@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	timing "gitlab.com/fightmaster1/timing-core"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
@@ -155,6 +156,25 @@ func applyManualFinish(ctx context.Context, store manualFinishStore, memberID st
 	if err != nil {
 		return err
 	}
+	race, err := store.GetRace(ctx, m.RaceID)
+	if err != nil {
+		return err
+	}
+	if race.TimingBasis.Dual() {
+		member := domain.CoreMember(race, m)
+		member.FinishTimeMs = &timeMs
+		finalized, err := timing.FinalizeFixedDistance(member, "", nil)
+		if err != nil {
+			return err
+		}
+		var clean *string
+		if finalized.Outcome != nil && finalized.Outcome.CleanTimeMs != nil {
+			value := processor.FormatCleanTime(0, *finalized.Outcome.CleanTimeMs)
+			clean = &value
+		}
+		return store.UpdateMemberFinish(ctx, memberID, nil, timeMs, clean)
+	}
+
 	start, err := memberStartRef(ctx, store, m)
 	if err != nil {
 		return err

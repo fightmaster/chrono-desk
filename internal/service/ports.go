@@ -159,6 +159,7 @@ func (s sqliteRecountTxStore) ProcessorRepository() processor.Repository {
 }
 
 type importStore interface {
+	ListRaces(ctx context.Context, eventID string) ([]domain.Race, error)
 	ApplyEventImport(ctx context.Context, d sqlite.EventImportData) (packetScopeActive bool, err error)
 	ReapplyLocalEdits(ctx context.Context) (int, error)
 }
@@ -169,6 +170,10 @@ type sqliteImportStore struct {
 
 func newSQLiteImportStore(store *sqlite.Store) importStore {
 	return sqliteImportStore{store: store}
+}
+
+func (s sqliteImportStore) ListRaces(ctx context.Context, eventID string) ([]domain.Race, error) {
+	return s.store.ListRaces(ctx, eventID)
 }
 
 func (s sqliteImportStore) ApplyEventImport(ctx context.Context, d sqlite.EventImportData) (bool, error) {

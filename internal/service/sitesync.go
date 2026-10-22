@@ -26,7 +26,7 @@ const (
 var (
 	syncEventFields      = set("use_race_date_for_age")
 	syncMemberFields     = set("status", "number", "epc", "category_id", "first_name", "last_name", "gender", "dob", "team", "city", "start_time_ms", "race_id")
-	syncRaceFields       = set("started_at_ms", "name", "category_excludes_top_by_gender")
+	syncRaceFields       = set("timing_basis", "shift_assigned_starts", "started_at_ms", "name", "category_excludes_top_by_gender")
 	syncCheckpointFields = set("until_ms", "until_offset_seconds", "read_selection", "since_ms", "since_offset_seconds", "sleep_after_prev_seconds", "board", "sort", "type")
 )
 
@@ -135,6 +135,7 @@ type syncCheckpointCreate struct {
 }
 
 type syncPayload struct {
+	AssignedStartDualTimeVersion     int    `json:"assigned_start_dual_time_version,omitempty"`
 	CheckpointWindowSelectionVersion int    `json:"checkpoint_window_selection_version,omitempty"`
 	SchemaVersion                    int    `json:"schema_version"`
 	EventID                          string `json:"event_id"`
@@ -423,6 +424,23 @@ func buildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 			if field == "until_ms" || field == "until_offset_seconds" || field == "read_selection" {
 				p.CheckpointWindowSelectionVersion = 1
 			}
+		}
+	}
+	races, err := store.ListRaces(ctx, eventID)
+	if err != nil {
+		return nil, SyncSummary{}, err
+	}
+	for _, race := range races {
+		if race.TimingBasis.Dual() || race.ShiftAssignedStarts {
+			p.AssignedStartDualTimeVersion = 1
+		}
+	}
+	for _, edit := range p.RaceEdits {
+		if _, ok := edit.Fields["timing_basis"]; ok {
+			p.AssignedStartDualTimeVersion = 1
+		}
+		if _, ok := edit.Fields["shift_assigned_starts"]; ok {
+			p.AssignedStartDualTimeVersion = 1
 		}
 	}
 	data, err := json.Marshal(p)

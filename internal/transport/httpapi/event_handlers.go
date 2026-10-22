@@ -91,6 +91,8 @@ func (s *Server) handleListRaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type raceJSON struct {
+		TimingBasis                 string `json:"timing_basis"`
+		ShiftAssignedStarts         bool   `json:"shift_assigned_starts"`
 		ID                          string `json:"id"`
 		Name                        string `json:"name"`
 		Date                        string `json:"date"`
@@ -102,6 +104,7 @@ func (s *Server) handleListRaces(w http.ResponseWriter, r *http.Request) {
 	for _, rc := range races {
 		out = append(out, raceJSON{
 			ID: rc.ID, Name: rc.Name, Date: rc.Date, Format: string(rc.Format),
+			TimingBasis: string(rc.TimingBasis), ShiftAssignedStarts: rc.ShiftAssignedStarts,
 			StartedAtMs:                 rc.StartedAtMs,
 			CategoryExcludesTopByGender: rc.CategoryExcludesTopByGender,
 		})

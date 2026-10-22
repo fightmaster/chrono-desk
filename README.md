@@ -279,3 +279,11 @@ Local connection history and safe incident export are described in
 
 Release [0.6.17](docs/releases/0.6.17.md) combines bounded checkpoint selection
 and local reader connection history, using published shared-core versions.
+
+### Assigned start and gun/chip time — CHR-CHIP-003
+
+Fixed-distance protocol settings choose legacy, gun or chip ranking and an
+independent schedule-shift switch (off by default). Dual mode displays both
+durations and missing-chip fallback. Measured START and assigned input use
+separate columns. SQLite migration is additive; old exports cannot erase
+new timing settings. Unknown old personal starts require confirmation.

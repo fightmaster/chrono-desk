@@ -260,6 +260,9 @@ func TestRaceStartShiftsMembersRelatively(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 	importFixture(t, store)
+	if _, err := store.DB().Exec(`UPDATE races SET shift_assigned_starts=1 WHERE id='race-10k'`); err != nil {
+		t.Fatal(err)
+	}
 
 	// Staggered start, 30s apart, anchored at the old race start.
 	const oldStart, delta = int64(1780812000000), int64(120000) // +2 min

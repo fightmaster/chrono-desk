@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"gitlab.com/fightmaster1/chrono-desk/internal/processor"
 	"regexp"
 	"strconv"
 	"strings"
@@ -43,7 +44,12 @@ func BuildProtocolCSV(ctx context.Context, store ProtocolStore, raceID string) (
 	w := csv.NewWriter(&buf)
 	w.Comma = ';'
 	w.UseCRLF = true
-	if err := w.Write(protocolHeaders); err != nil {
+	headers := append([]string(nil), protocolHeaders...)
+	dual := protocol.TimingBasis == "gun" || protocol.TimingBasis == "chip"
+	if dual {
+		headers = append(headers, "Gun time", "Chip time", "Источник старта")
+	}
+	if err := w.Write(headers); err != nil {
 		return nil, "", fmt.Errorf("write CSV header: %w", err)
 	}
 
@@ -72,6 +78,19 @@ func BuildProtocolCSV(ctx context.Context, store ProtocolStore, raceID string) (
 			cleanTimeCell(row),
 			gapCell(row, winnerCleanMs),
 			"", // Очки — site-side points config
+		}
+		if dual {
+			source := ""
+			if row.ChipTimeMs != nil {
+				source = "По чипу"
+				if row.ChipStartSource == "manual" {
+					source = "Стартовая отсечка судьи"
+				}
+				if row.ChipStartSource == "assigned" {
+					source = "По назначенному старту"
+				}
+			}
+			values = append(values, dualTimeCell(row.GunTimeMs), dualTimeCell(row.ChipTimeMs), source)
 		}
 		if err := w.Write(values); err != nil {
 			return nil, "", fmt.Errorf("write CSV row %d: %w", i+1, err)
@@ -185,4 +204,11 @@ func safeSpreadsheetText(value string) string {
 func safeFileName(value string) string {
 	value = strings.TrimSpace(value)
 	return unsafeExportFileChars.ReplaceAllString(value, "_")
+}
+
+func dualTimeCell(ms *int64) string {
+	if ms == nil {
+		return ""
+	}
+	return processor.FormatCleanTime(0, *ms)
 }

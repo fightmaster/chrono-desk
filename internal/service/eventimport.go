@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
+	timing "gitlab.com/fightmaster1/timing-core"
 )
 
 // Event export DTOs — the wire format produced by run5's `event:export`
@@ -45,6 +46,8 @@ type exportLap struct {
 }
 
 type exportRace struct {
+	TimingBasis                 *string `json:"timing_basis,omitempty"`
+	ShiftAssignedStarts         *bool   `json:"shift_assigned_starts,omitempty"`
 	ID                          string  `json:"id"`
 	EventID                     string  `json:"event_id"`
 	Name                        string  `json:"name"`
@@ -86,23 +89,25 @@ type exportCheckpoint struct {
 }
 
 type exportMember struct {
-	ID         string  `json:"id"`
-	EventID    string  `json:"event_id"`
-	RaceID     string  `json:"race_id"`
-	CategoryID *string `json:"category_id"`
-	Number     *int64  `json:"number"`
-	EPC        *string `json:"epc"`
-	RFID       *string `json:"rfid"`
-	FirstName  string  `json:"first_name"`
-	LastName   string  `json:"last_name"`
-	Gender     *string `json:"gender"`
-	DOB        *string `json:"dob"`
-	City       *string `json:"city"`
-	Team       *string `json:"team"`
-	Status     int     `json:"status"`
-	StartTime  *string `json:"start_time"`
-	FinishTime *string `json:"finish_time"`
-	CleanTime  *string `json:"clean_time"`
+	StartTimeSource    *string `json:"start_time_source,omitempty"`
+	StartObservationID *string `json:"start_observation_id,omitempty"`
+	ID                 string  `json:"id"`
+	EventID            string  `json:"event_id"`
+	RaceID             string  `json:"race_id"`
+	CategoryID         *string `json:"category_id"`
+	Number             *int64  `json:"number"`
+	EPC                *string `json:"epc"`
+	RFID               *string `json:"rfid"`
+	FirstName          string  `json:"first_name"`
+	LastName           string  `json:"last_name"`
+	Gender             *string `json:"gender"`
+	DOB                *string `json:"dob"`
+	City               *string `json:"city"`
+	Team               *string `json:"team"`
+	Status             int     `json:"status"`
+	StartTime          *string `json:"start_time"`
+	FinishTime         *string `json:"finish_time"`
+	CleanTime          *string `json:"clean_time"`
 }
 
 type exportRfidLog struct {
@@ -166,8 +171,11 @@ func ParseEventExport(r io.Reader) (*EventExport, error) {
 	// v1: categories[] are only those used by members, no category_races pivot.
 	// v2: categories[] is the full global catalog + a category_races pivot.
 	// v3: event.use_race_date_for_age adds the event-level age rule.
-	if export.SchemaVersion != 1 && export.SchemaVersion != 2 && export.SchemaVersion != 3 && export.SchemaVersion != 4 {
-		return nil, fmt.Errorf("unsupported schema_version %d (want 1, 2, 3 or 4)", export.SchemaVersion)
+	if export.SchemaVersion != 1 && export.SchemaVersion != 2 && export.SchemaVersion != 3 && export.SchemaVersion != 4 && export.SchemaVersion != 5 {
+		return nil, fmt.Errorf("unsupported schema_version %d (want 1, 2, 3, 4 or 5)", export.SchemaVersion)
+	}
+	if err := validateDualExport(&export); err != nil {
+		return nil, err
 	}
 	for _, cp := range export.Checkpoints {
 		if export.SchemaVersion < 4 && (cp.Until != nil || cp.UntilOffsetSeconds != nil || cp.ReadSelection == "last") {
@@ -182,6 +190,20 @@ func ParseEventExport(r io.Reader) (*EventExport, error) {
 
 func (i *EventImporter) Import(ctx context.Context, export *EventExport) (ImportStats, error) {
 	stats := ImportStats{EventID: export.Event.ID}
+	if err := validateDualExport(export); err != nil {
+		return stats, err
+	}
+	if export.SchemaVersion < 5 {
+		races, err := i.store.ListRaces(ctx, export.Event.ID)
+		if err != nil {
+			return stats, err
+		}
+		for _, race := range races {
+			if race.TimingBasis.Dual() || race.ShiftAssignedStarts {
+				return stats, fmt.Errorf("для события с назначенными стартами нужен экспорт schema5; старый файл не применён")
+			}
+		}
+	}
 
 	// Validate-first: parse every time field and build the full record set in
 	// memory before touching the DB. A malformed value aborts here, leaving the
@@ -244,6 +266,7 @@ func buildImportData(export *EventExport) (sqlite.EventImportData, error) {
 		}
 		d.Races = append(d.Races, domain.Race{
 			ID: r.ID, EventID: r.EventID, Name: r.Name, Date: r.Date,
+			TimingBasis: importTimingBasis(r.TimingBasis), ShiftAssignedStarts: r.ShiftAssignedStarts != nil && *r.ShiftAssignedStarts, TimingSettingsPresent: export.SchemaVersion >= 5,
 			StartedAtMs: startedAt, LapID: r.LapID, Format: domain.RaceFormat(r.Format),
 			TimeLimitSeconds: r.TimeLimitSeconds, CategoryExcludesTopByGender: r.CategoryExcludesTopByGender,
 		})
@@ -282,6 +305,7 @@ func buildImportData(export *EventExport) (sqlite.EventImportData, error) {
 			FirstName: m.FirstName, LastName: m.LastName, Gender: m.Gender, DOB: m.DOB,
 			City: m.City, Team: m.Team, Status: domain.MemberStatus(m.Status),
 			StartTimeMs: startMs, FinishTimeMs: finishMs, CleanTime: m.CleanTime,
+			StartTimeSource: domain.StartTimeSource(sourceText(m.StartTimeSource)), StartObservationID: observationText(m.StartObservationID), StartProvenancePresent: export.SchemaVersion >= 5,
 		})
 	}
 	for _, l := range export.RfidLogs {
@@ -356,4 +380,58 @@ func parseTimeMs(s *string) (*int64, error) {
 		}
 	}
 	return nil, fmt.Errorf("unparseable time %q", *s)
+}
+
+func sourceText(source *string) string {
+	if source == nil || *source == "" {
+		return "unknown"
+	}
+	return *source
+}
+func observationText(id *string) string {
+	if id == nil {
+		return ""
+	}
+	return *id
+}
+func importTimingBasis(basis *string) timing.TimingBasis {
+	if basis == nil {
+		return timing.TimingLegacy
+	}
+	return timing.TimingBasis(*basis)
+}
+
+func validateDualExport(export *EventExport) error {
+	for _, race := range export.Races {
+		if export.SchemaVersion < 5 && (race.TimingBasis != nil || race.ShiftAssignedStarts != nil) {
+			return fmt.Errorf("назначенные старты требуют export schema5")
+		}
+		if export.SchemaVersion >= 5 {
+			if race.TimingBasis == nil || race.ShiftAssignedStarts == nil {
+				return fmt.Errorf("schema5 не содержит настройки стартов дистанции")
+			}
+			basis := importTimingBasis(race.TimingBasis)
+			if !basis.Valid() || basis.Dual() && race.Format != string(domain.FormatFixedDistance) {
+				return fmt.Errorf("некорректный режим Gun/Chip")
+			}
+		}
+	}
+	for _, member := range export.Members {
+		if export.SchemaVersion < 5 && (member.StartTimeSource != nil || member.StartObservationID != nil) {
+			return fmt.Errorf("происхождение старта требует export schema5")
+		}
+		if export.SchemaVersion >= 5 {
+			if member.StartTimeSource == nil {
+				return fmt.Errorf("schema5 не содержит происхождение старта участника")
+			}
+			source := sourceText(member.StartTimeSource)
+			if source != "unknown" && source != "manual" && source != "race_default" && source != "observation" {
+				return fmt.Errorf("неизвестное происхождение старта")
+			}
+			if source != "observation" && observationText(member.StartObservationID) != "" {
+				return fmt.Errorf("ссылка на отсечку допускается только для считанного старта")
+			}
+		}
+	}
+	return nil
 }

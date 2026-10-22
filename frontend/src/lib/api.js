@@ -111,3 +111,11 @@ export function cleanToMs(str) {
   if (min > 59 || sec > 59) return null
   return ((h * 3600 + min * 60 + sec) * 1000) + millis
 }
+
+// A duration has no timezone; use this for already computed elapsed values.
+export function fmtDuration(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—'
+  const total = Math.floor(ms / 1000)
+  const suffix = ms % 1000 ? `.${String(ms % 1000).padStart(3, '0')}` : ''
+  return `${String(Math.floor(total / 3600)).padStart(2, '0')}:${String(Math.floor(total % 3600 / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}${suffix}`
+}

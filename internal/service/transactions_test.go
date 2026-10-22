@@ -65,6 +65,9 @@ func TestRaceStartShiftRollsBackAllChangesWhenMemberJournalFails(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 	importFixture(t, store)
+	if _, err := store.DB().Exec(`UPDATE races SET shift_assigned_starts=1 WHERE id='race-10k'`); err != nil {
+		t.Fatal(err)
+	}
 
 	const oldStart = int64(1_780_812_000_000)
 	if _, err := store.DB().ExecContext(ctx,

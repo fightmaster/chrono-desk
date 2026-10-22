@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS races (
     lap_id                          TEXT REFERENCES laps(id),
     format                          TEXT NOT NULL DEFAULT 'FixedDistance',
     time_limit_seconds              INTEGER,
-    category_excludes_top_by_gender INTEGER NOT NULL DEFAULT 0
+    category_excludes_top_by_gender INTEGER NOT NULL DEFAULT 0,
+    timing_basis TEXT NOT NULL DEFAULT 'legacy',
+    shift_assigned_starts INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -85,6 +87,9 @@ CREATE TABLE IF NOT EXISTS members (
     team           TEXT,
     status         INTEGER NOT NULL DEFAULT 0,
     start_time_ms  INTEGER,
+    chip_start_time_ms INTEGER,
+    chip_start_source TEXT NOT NULL DEFAULT '',
+    chip_start_observation_id TEXT,
     start_time_source TEXT NOT NULL DEFAULT 'unknown',
     start_observation_id TEXT,
     finish_time_ms INTEGER,

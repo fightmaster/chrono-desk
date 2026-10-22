@@ -48,7 +48,7 @@ func addCheckpointWindows(db *sql.DB) error {
 
 func (s *Store) HasWindowCheckpoint(ctx context.Context, eventID string) (bool, error) {
 	var found bool
-	err := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM checkpoints WHERE event_id=? AND (read_selection='last' OR until_ms IS NOT NULL OR until_offset_seconds IS NOT NULL OR (type=1 AND since_offset_seconds IS NOT NULL)))", eventID).Scan(&found)
+	err := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM races WHERE event_id=? AND timing_basis IN ('gun','chip')) OR EXISTS(SELECT 1 FROM checkpoints WHERE event_id=? AND (read_selection='last' OR until_ms IS NOT NULL OR until_offset_seconds IS NOT NULL OR (type=1 AND since_offset_seconds IS NOT NULL)))", eventID, eventID).Scan(&found)
 	return found, err
 }
 

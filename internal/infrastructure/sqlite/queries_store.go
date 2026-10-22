@@ -11,7 +11,7 @@ import (
 
 func (s *Store) ListRaces(ctx context.Context, eventID string) ([]domain.Race, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, event_id, name, date, started_at_ms, lap_id, format, time_limit_seconds, category_excludes_top_by_gender
+		SELECT id, event_id, name, date, started_at_ms, lap_id, format, time_limit_seconds, category_excludes_top_by_gender, timing_basis, shift_assigned_starts
 		FROM races WHERE event_id = ? ORDER BY name`, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("list races: %w", err)
@@ -23,7 +23,7 @@ func (s *Store) ListRaces(ctx context.Context, eventID string) ([]domain.Race, e
 		var r domain.Race
 		var format string
 		if err := rows.Scan(&r.ID, &r.EventID, &r.Name, &r.Date, &r.StartedAtMs, &r.LapID,
-			&format, &r.TimeLimitSeconds, &r.CategoryExcludesTopByGender); err != nil {
+			&format, &r.TimeLimitSeconds, &r.CategoryExcludesTopByGender, &r.TimingBasis, &r.ShiftAssignedStarts); err != nil {
 			return nil, err
 		}
 		r.Format = domain.RaceFormat(format)
@@ -36,10 +36,10 @@ func (s *Store) GetRace(ctx context.Context, raceID string) (domain.Race, error)
 	var r domain.Race
 	var format string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, event_id, name, date, started_at_ms, lap_id, format, time_limit_seconds, category_excludes_top_by_gender
+		SELECT id, event_id, name, date, started_at_ms, lap_id, format, time_limit_seconds, category_excludes_top_by_gender, timing_basis, shift_assigned_starts
 		FROM races WHERE id = ?`, raceID).
 		Scan(&r.ID, &r.EventID, &r.Name, &r.Date, &r.StartedAtMs, &r.LapID,
-			&format, &r.TimeLimitSeconds, &r.CategoryExcludesTopByGender)
+			&format, &r.TimeLimitSeconds, &r.CategoryExcludesTopByGender, &r.TimingBasis, &r.ShiftAssignedStarts)
 	if err != nil {
 		return domain.Race{}, fmt.Errorf("get race %s: %w", raceID, err)
 	}
@@ -50,7 +50,7 @@ func (s *Store) GetRace(ctx context.Context, raceID string) (domain.Race, error)
 func (s *Store) ListMembersByRace(ctx context.Context, raceID string) ([]domain.Member, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
-			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time
+			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time, start_time_source, COALESCE(start_observation_id,''), chip_start_time_ms, chip_start_source, COALESCE(chip_start_observation_id,'')
 		FROM members WHERE race_id = ? ORDER BY id`, raceID)
 	if err != nil {
 		return nil, fmt.Errorf("list members: %w", err)
@@ -63,7 +63,7 @@ func (s *Store) ListMembersByRace(ctx context.Context, raceID string) ([]domain.
 		var status int
 		if err := rows.Scan(&m.ID, &m.EventID, &m.RaceID, &m.CategoryID, &m.Number, &m.EPC, &m.RFID,
 			&m.FirstName, &m.LastName, &m.Gender, &m.DOB, &m.City, &m.Team, &status,
-			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime); err != nil {
+			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime, &m.StartTimeSource, &m.StartObservationID, &m.ChipStartTimeMs, &m.ChipStartSource, &m.ChipStartObservationID); err != nil {
 			return nil, err
 		}
 		m.Status = domain.MemberStatus(status)
@@ -169,11 +169,11 @@ func (s *Store) GetMember(ctx context.Context, memberID string) (domain.Member, 
 	var status int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
-			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time
+			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time, start_time_source, COALESCE(start_observation_id,''), chip_start_time_ms, chip_start_source, COALESCE(chip_start_observation_id,'')
 		FROM members WHERE id = ?`, memberID).
 		Scan(&m.ID, &m.EventID, &m.RaceID, &m.CategoryID, &m.Number, &m.EPC, &m.RFID,
 			&m.FirstName, &m.LastName, &m.Gender, &m.DOB, &m.City, &m.Team, &status,
-			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime)
+			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime, &m.StartTimeSource, &m.StartObservationID, &m.ChipStartTimeMs, &m.ChipStartSource, &m.ChipStartObservationID)
 	if err != nil {
 		return domain.Member{}, fmt.Errorf("get member %s: %w", memberID, err)
 	}
@@ -292,7 +292,7 @@ func (s *Store) ListLaps(ctx context.Context) ([]domain.Lap, error) {
 func (s *Store) ListMembersFullByEvent(ctx context.Context, eventID string) ([]domain.Member, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
-			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time
+			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time, start_time_source, COALESCE(start_observation_id,''), chip_start_time_ms, chip_start_source, COALESCE(chip_start_observation_id,'')
 		FROM members WHERE event_id = ? ORDER BY id`, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("list event members full: %w", err)
@@ -305,7 +305,7 @@ func (s *Store) ListMembersFullByEvent(ctx context.Context, eventID string) ([]d
 		var status int
 		if err := rows.Scan(&m.ID, &m.EventID, &m.RaceID, &m.CategoryID, &m.Number, &m.EPC, &m.RFID,
 			&m.FirstName, &m.LastName, &m.Gender, &m.DOB, &m.City, &m.Team, &status,
-			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime); err != nil {
+			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime, &m.StartTimeSource, &m.StartObservationID, &m.ChipStartTimeMs, &m.ChipStartSource, &m.ChipStartObservationID); err != nil {
 			return nil, err
 		}
 		m.Status = domain.MemberStatus(status)

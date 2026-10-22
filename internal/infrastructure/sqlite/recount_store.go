@@ -26,7 +26,7 @@ func (s *Store) WipeDerivedResultsForMembers(ctx context.Context, eventID string
 			start_time_ms = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_time_ms END,
 			start_time_source = CASE WHEN start_time_source IN ('observation', 'race_default') THEN 'unknown' ELSE start_time_source END,
 			start_observation_id = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_observation_id END,
-			finish_time_ms = NULL, clean_time = NULL
+			chip_start_time_ms=NULL, chip_start_source='', chip_start_observation_id=NULL, finish_time_ms = NULL, clean_time = NULL
 		 WHERE event_id = ? AND id IN (`+ids+`)`, args...); err != nil {
 		return fmt.Errorf("reset member derived times: %w", err)
 	}
@@ -49,7 +49,7 @@ func (s *Store) WipeDerivedResults(ctx context.Context, eventID, raceID string) 
 						start_time_ms = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_time_ms END,
 						start_time_source = CASE WHEN start_time_source IN ('observation', 'race_default') THEN 'unknown' ELSE start_time_source END,
 						start_observation_id = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_observation_id END,
-						finish_time_ms = NULL, clean_time = NULL
+						chip_start_time_ms=NULL, chip_start_source='', chip_start_observation_id=NULL, finish_time_ms = NULL, clean_time = NULL
 					 WHERE event_id = ?`, eventID)
 			}
 		} else {
@@ -61,7 +61,7 @@ func (s *Store) WipeDerivedResults(ctx context.Context, eventID, raceID string) 
 						start_time_ms = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_time_ms END,
 						start_time_source = CASE WHEN start_time_source IN ('observation', 'race_default') THEN 'unknown' ELSE start_time_source END,
 						start_observation_id = CASE WHEN start_time_source IN ('observation', 'race_default') THEN NULL ELSE start_observation_id END,
-						finish_time_ms = NULL, clean_time = NULL
+						chip_start_time_ms=NULL, chip_start_source='', chip_start_observation_id=NULL, finish_time_ms = NULL, clean_time = NULL
 					 WHERE event_id = ? AND race_id = ?`, eventID, raceID)
 			}
 		}

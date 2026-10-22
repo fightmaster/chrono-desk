@@ -77,3 +77,19 @@ func TestWindowSyncRefusesOldServerBeforePosting(t *testing.T) {
 		t.Fatalf("unsafe old-server sync err=%v posts=%d", err, posts)
 	}
 }
+
+func TestDualSyncRefusesOldServerBeforePosting(t *testing.T) {
+	posts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posts++
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"push_schema_versions":[2,3]}`))
+	}))
+	defer server.Close()
+	_, err := PushSync(context.Background(), server.URL, "synthetic", "ev-100", []byte(`{"schema_version":3,"assigned_start_dual_time_version":1}`))
+	if err == nil || !strings.Contains(err.Error(), "раздельные") || posts != 0 {
+		t.Fatalf("unsafe dual sync: err=%v posts=%d", err, posts)
+	}
+}

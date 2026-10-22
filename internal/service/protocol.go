@@ -12,22 +12,25 @@ import (
 
 // ProtocolRow is the JSON shape of one ranked protocol line.
 type ProtocolRow struct {
-	MemberID      string  `json:"member_id"`
-	Number        *int64  `json:"number"`
-	FirstName     string  `json:"first_name"`
-	LastName      string  `json:"last_name"`
-	Gender        *string `json:"gender"`
-	DOB           *string `json:"dob"`
-	Team          *string `json:"team"`
-	City          *string `json:"city"`
-	CategoryID    *string `json:"category_id"`
-	CategoryName  *string `json:"category_name"`
-	Status        string  `json:"status"`
-	Place         *int    `json:"place"`
-	GenderPlace   *int    `json:"gender_place"`
-	CategoryPlace *int    `json:"category_place"`
-	CleanTimeMs   *int64  `json:"clean_time_ms"`
-	CleanTime     *string `json:"clean_time"`
+	GunTimeMs       *int64  `json:"gun_time_ms"`
+	ChipTimeMs      *int64  `json:"chip_time_ms"`
+	ChipStartSource string  `json:"chip_start_source"`
+	MemberID        string  `json:"member_id"`
+	Number          *int64  `json:"number"`
+	FirstName       string  `json:"first_name"`
+	LastName        string  `json:"last_name"`
+	Gender          *string `json:"gender"`
+	DOB             *string `json:"dob"`
+	Team            *string `json:"team"`
+	City            *string `json:"city"`
+	CategoryID      *string `json:"category_id"`
+	CategoryName    *string `json:"category_name"`
+	Status          string  `json:"status"`
+	Place           *int    `json:"place"`
+	GenderPlace     *int    `json:"gender_place"`
+	CategoryPlace   *int    `json:"category_place"`
+	CleanTimeMs     *int64  `json:"clean_time_ms"`
+	CleanTime       *string `json:"clean_time"`
 
 	// TimeLimited races only.
 	LastCheckpointName *string `json:"last_checkpoint_name,omitempty"`
@@ -49,12 +52,13 @@ type ProtocolCounts struct {
 
 // ProtocolResponse bundles the race header with its ranked rows.
 type ProtocolResponse struct {
-	RaceID   string         `json:"race_id"`
-	RaceName string         `json:"race_name"`
-	Format   string         `json:"format"`
-	Counts   ProtocolCounts `json:"counts"`
-	Rows     []ProtocolRow  `json:"rows"`
-	Progress RaceProgress   `json:"progress"`
+	TimingBasis string         `json:"timing_basis"`
+	RaceID      string         `json:"race_id"`
+	RaceName    string         `json:"race_name"`
+	Format      string         `json:"format"`
+	Counts      ProtocolCounts `json:"counts"`
+	Rows        []ProtocolRow  `json:"rows"`
+	Progress    RaceProgress   `json:"progress"`
 }
 
 // BuildProtocol loads the race, ranks its members in memory and renders the
@@ -109,12 +113,13 @@ func BuildProtocol(ctx context.Context, store ProtocolStore, raceID string) (Pro
 	counts.Started = counts.Total - counts.DNS
 
 	resp := ProtocolResponse{
-		Progress: progress,
-		RaceID:   race.ID,
-		RaceName: race.Name,
-		Format:   string(race.Format),
-		Counts:   counts,
-		Rows:     make([]ProtocolRow, 0, len(ranked)),
+		Progress:    progress,
+		RaceID:      race.ID,
+		RaceName:    race.Name,
+		TimingBasis: string(race.TimingBasis),
+		Format:      string(race.Format),
+		Counts:      counts,
+		Rows:        make([]ProtocolRow, 0, len(ranked)),
 	}
 	for _, r := range ranked {
 		row := ProtocolRow{
@@ -132,6 +137,7 @@ func BuildProtocol(ctx context.Context, store ProtocolStore, raceID string) (Pro
 			GenderPlace:   r.GenderPlace,
 			CategoryPlace: r.CategoryPlace,
 			CleanTimeMs:   r.CleanTimeMs,
+			GunTimeMs:     r.GunTimeMs, ChipTimeMs: r.ChipTimeMs, ChipStartSource: r.ChipStartSource,
 		}
 		if r.CleanTimeMs != nil {
 			formatted := processor.FormatCleanTime(0, *r.CleanTimeMs)

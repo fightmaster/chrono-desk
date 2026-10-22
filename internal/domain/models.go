@@ -60,6 +60,9 @@ type Lap struct {
 }
 
 type Race struct {
+	TimingBasis                 timing.TimingBasis `json:"timing_basis"`
+	ShiftAssignedStarts         bool               `json:"shift_assigned_starts"`
+	TimingSettingsPresent       bool               `json:"-"`
 	ID                          string
 	EventID                     string
 	Name                        string
@@ -97,20 +100,26 @@ type Checkpoint struct {
 }
 
 type Member struct {
-	ID         string
-	EventID    string
-	RaceID     string
-	CategoryID *string
-	Number     *int64 // bib
-	EPC        *string
-	RFID       *string
-	FirstName  string
-	LastName   string
-	Gender     *string
-	DOB        *string // ISO date
-	City       *string
-	Team       *string
-	Status     MemberStatus
+	StartTimeSource        StartTimeSource
+	StartObservationID     string
+	StartProvenancePresent bool `json:"-"`
+	ChipStartTimeMs        *int64
+	ChipStartSource        StartTimeSource
+	ChipStartObservationID string
+	ID                     string
+	EventID                string
+	RaceID                 string
+	CategoryID             *string
+	Number                 *int64 // bib
+	EPC                    *string
+	RFID                   *string
+	FirstName              string
+	LastName               string
+	Gender                 *string
+	DOB                    *string // ISO date
+	City                   *string
+	Team                   *string
+	Status                 MemberStatus
 
 	// Derived locally on recount; export values are informational only.
 	StartTimeMs  *int64
