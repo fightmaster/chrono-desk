@@ -75,8 +75,9 @@ gets a read-only results board — a distance dropdown and three tabs:
 **Призёры** (absolute M/F top-3 plus age-group podiums) and **Протокол** (full table with
 search by surname/number), auto-refreshing as the judge recounts. **Финиши** is a
 tablet presenter feed at `/live`: the latest 10 confirmed FixedDistance finishes,
-with bib, name, team, city, race and official time, refreshed every 500 ms without
-recounting. Repeated reads never add duplicate participation cards; corrections
+with bib, name, Club, Team, city, race, official time and gender/category places.
+SSE sends a fresh latest-ten snapshot immediately after committed finish changes,
+without recounting or idle polling; **Обновить** reloads display metadata. Repeated reads never add duplicate participation cards; corrections
 update them and revoked finishes disappear. Broadcast settings include a dedicated
 presenter link/QR. See [presenter guide and acceptance](docs/presenter-live.md). The Призёры tab has a
 **copy-for-Telegram** button that puts the winners/prize-winners on the clipboard as
@@ -292,3 +293,7 @@ independent schedule-shift switch (off by default). Dual mode displays both
 durations and missing-chip fallback. Measured START and assigned input use
 separate columns. SQLite migration is additive; old exports cannot erase
 new timing settings. Unknown old personal starts require confirmation.
+
+Release [0.6.19](docs/releases/0.6.19.md): immediate SSE presenter snapshots,
+bounded slow-client isolation, reconnect/Refresh lifecycle and synthetic
+RFID/sidecar/resource regression coverage.

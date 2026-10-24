@@ -3,7 +3,11 @@
 Task: CHR-SSE-001
 Docs-Impact: LOCAL
 Date: 2026-10-24
-Stage: implementation design; the runtime still uses polling.
+Stage: implemented in source; synthetic acceptance passed.
+Evidence: [synthetic acceptance](../reports/presenter-sse-2026-10-25.md).
+Implementation details: [writer/lifecycle inventory](../presenter-sse-internals.md).
+The owner authorized commit/push, platform release and delivery to the Mac Desktop;
+platform publication/delivery evidence is recorded separately in chrono-docs.
 Open scope, priority and acceptance are owned only by `chrono-docs/TODO.md`.
 Decision: [ADR-0001](../adr/0001-presenter-sse.md).
 Reviewed source baseline: `b027a1e8370c48df01dc23f3f9d34711086140ea`.

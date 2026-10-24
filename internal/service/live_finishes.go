@@ -5,10 +5,20 @@ import (
 	"errors"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
+	"gitlab.com/fightmaster1/chrono-desk/internal/finishchange"
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
 var ErrLiveFinishRace = errors.New("дистанция недоступна в трансляции финишей")
+
+// FinishChanges gives the public view its store-lifetime commit signal.
+func (s *EventService) FinishChanges(eventID string) (*finishchange.Signal, error) {
+	store, err := s.catalog.Open(eventID)
+	if err != nil {
+		return nil, err
+	}
+	return store.FinishChanges(), nil
+}
 
 type LiveFinishSnapshot struct {
 	Event    domain.Event

@@ -112,5 +112,6 @@ func (s *Store) PrepareAssignedStarts(ctx context.Context, raceID string, confir
 			return err
 		}
 	}
+	s.finishChanged()
 	return nil
 }

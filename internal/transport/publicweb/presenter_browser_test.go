@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 )
 
 // Opt-in real Chromium test: no reader connections or real event files.
@@ -21,6 +23,7 @@ func TestPresenterBrowser(t *testing.T) {
 		t.Skip("set CHRONO_PRESENTER_BROWSER to run three-client tablet smoke")
 	}
 	s := newServer(t)
+	s.streamHeartbeat = 50 * time.Millisecond
 	seedFinishes(t, s, 60)
 	store, _ := s.events.Open("ev-100")
 	if _, err := store.DB().Exec(`UPDATE races SET category_excludes_top_by_gender=0; UPDATE members SET category_id='cat-m18' WHERE id LIKE 'presenter-%'`); err != nil {
@@ -52,16 +55,35 @@ func TestPresenterBrowser(t *testing.T) {
 			http.Error(w, "number", 400)
 			return
 		}
-		_, err = store.DB().Exec(`INSERT INTO members(id,event_id,race_id,number,first_name,last_name,status,finish_time_ms,clean_time,gender,start_time_ms) VALUES(?,'ev-100','race-10k',?,'Тест','Новый',0,?,'00:21:00','male',1000) ON CONFLICT(id) DO UPDATE SET clean_time='00:20:59',last_name='Исправлен'`, fmt.Sprintf("probe-%d", number), number, time.Now().UnixMilli())
+		id := fmt.Sprintf("probe-%d", number)
+		if member, getErr := store.GetMember(r.Context(), id); getErr == nil {
+			clean := "00:20:59"
+			member.LastName = "Исправлен"
+			member.CleanTime = &clean
+			err = store.UpsertMember(r.Context(), member)
+		} else {
+			finish, start, bib := time.Now().UnixMilli(), int64(1000), int64(number)
+			clean, gender := "00:21:00", "male"
+			err = store.UpsertMember(r.Context(), domain.Member{ID: id, EventID: "ev-100", RaceID: "race-10k", Number: &bib, FirstName: "Тест", LastName: "Новый", FinishTimeMs: &finish, CleanTime: &clean, Gender: &gender, StartTimeMs: &start})
+		}
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("X-Fixture-Commit-Ms", strconv.FormatInt(time.Now().UnixMilli(), 10))
+		w.WriteHeader(204)
+	})
+	mux.HandleFunc("POST /fixture/revoke", func(w http.ResponseWriter, r *http.Request) {
+		_, err := store.UpdateEntityField(r.Context(), "members", "finish_time_ms", "probe-"+r.URL.Query().Get("number"), nil)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
 		w.WriteHeader(204)
 	})
-	mux.HandleFunc("POST /fixture/revoke", func(w http.ResponseWriter, r *http.Request) {
-		_, err := store.DB().Exec(`UPDATE members SET finish_time_ms=NULL,clean_time=NULL WHERE id=?`, "probe-"+r.URL.Query().Get("number"))
-		if err != nil {
+	mux.HandleFunc("POST /fixture/club", func(w http.ResponseWriter, r *http.Request) {
+		club := "Обновлённый клуб"
+		if _, err := store.ApplyMemberClubs(r.Context(), "ev-100", map[string]*string{"probe-" + r.URL.Query().Get("number"): &club}); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -69,7 +91,7 @@ func TestPresenterBrowser(t *testing.T) {
 	})
 	mux.HandleFunc("POST /fixture/switch", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
-		s.publishedID = "ev-200"
+		s.setPublishedLocked("ev-200")
 		s.mu.Unlock()
 		w.WriteHeader(204)
 	})

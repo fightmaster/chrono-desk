@@ -35,6 +35,20 @@
 - Golden tests: real run5 event exports + reference results in `testdata/`; recount must
   reproduce the reference exactly. Add a golden fixture when touching derivation logic.
 
+## Presenter commit notifications
+
+- Infrastructure writers which change confirmed finish/progression state must mark
+  the transaction's finish-change flag; only its outer successful commit notifies
+  the store signal. Joined processor transactions must never notify early.
+- Raw-only, duplicate and intermediate observations do not trigger finish snapshots.
+  Writer notification stays nonblocking: no SQL, ranking, JSON, socket work,
+  subscriber iteration or per-reading goroutine creation in that callback.
+- Read views release DB leases before encoding/writing. Keep client pending frames,
+  worker admission and lifecycle cleanup bounded. Add real-writer/rollback and
+  slow-client tests when adding a writer; direct fixture SQL is not that evidence.
+- See `docs/presenter-sse-internals.md`; open scope/acceptance remains CHR-SSE-001
+  in the central TODO until release acceptance is recorded there.
+
 ## Agent Workflow Expectations
 
 - After changing Go code, run `gofmt` on touched files and `go test ./...` at minimum.

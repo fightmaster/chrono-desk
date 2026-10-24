@@ -3,12 +3,12 @@
 Date: 2026-10-24
 Task: CHR-SSE-001
 Docs-Impact: LOCAL
-Decision stage: accepted transport direction; implementation is planned.
+Decision stage: implemented in source; acceptance evidence and deployment are separate.
 Open work and acceptance: `chrono-docs/TODO.md`.
 
 ## Context
 
-The LAN presenter currently polls the latest ten finishes every 500 ms. Finish
+Before this change the LAN presenter polled the latest ten finishes every 500 ms. Finish
 arrivals vary from continuous bursts to long idle periods. The presenter and a
 second judge need low latency while the main judge operates the desktop. Two or
 three clients are expected; clients may sleep, disconnect or stop reading.

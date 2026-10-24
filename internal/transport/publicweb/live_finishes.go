@@ -35,13 +35,14 @@ type publicFinish struct {
 }
 
 type publicFinishes struct {
-	Published bool           `json:"published"`
-	Filtered  bool           `json:"filtered"`
-	EventKey  string         `json:"event_key"`
-	EventName string         `json:"event_name"`
-	EventDate string         `json:"event_date"`
-	Races     []raceJSON     `json:"races"`
-	Rows      []publicFinish `json:"rows"`
+	StreamVersion int            `json:"stream_version"`
+	Published     bool           `json:"published"`
+	Filtered      bool           `json:"filtered"`
+	EventKey      string         `json:"event_key"`
+	EventName     string         `json:"event_name"`
+	EventDate     string         `json:"event_date"`
+	Races         []raceJSON     `json:"races"`
+	Rows          []publicFinish `json:"rows"`
 }
 
 func (s *Server) opaqueKey(value string) string {
@@ -56,15 +57,10 @@ func (s *Server) handleLiveScript(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLiveFinishes(w http.ResponseWriter, r *http.Request) {
-	result := publicFinishes{Races: make([]raceJSON, 0), Rows: make([]publicFinish, 0)}
 	eventID := s.published()
-	if eventID == "" {
-		writeJSON(w, http.StatusOK, result)
-		return
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), time.Second)
 	defer cancel()
-	snapshot, err := s.events.LiveFinishes(ctx, eventID, r.URL.Query().Get("race_id"))
+	result, err := s.liveFinishPayload(ctx, eventID, r.URL.Query().Get("race_id"))
 	if errors.Is(err, service.ErrLiveFinishRace) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -75,11 +71,26 @@ func (s *Server) handleLiveFinishes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.published() != eventID {
-		writeJSON(w, http.StatusOK, result)
-		return
+		result = emptyFinishes()
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func emptyFinishes() publicFinishes {
+	return publicFinishes{StreamVersion: 1, Races: make([]raceJSON, 0), Rows: make([]publicFinish, 0)}
+}
+
+func (s *Server) liveFinishPayload(ctx context.Context, eventID, raceID string) (publicFinishes, error) {
+	result := emptyFinishes()
+	if eventID == "" {
+		return result, nil
+	}
+	snapshot, err := s.events.LiveFinishes(ctx, eventID, raceID)
+	if err != nil {
+		return result, err
 	}
 	result.Published = true
-	result.Filtered = r.URL.Query().Get("race_id") != ""
+	result.Filtered = raceID != ""
 	result.EventKey = s.opaqueKey("event:" + eventID)
 	result.EventName, result.EventDate = snapshot.Event.Name, snapshot.Event.Date
 	for _, race := range snapshot.Races {
@@ -90,9 +101,9 @@ func (s *Server) handleLiveFinishes(w http.ResponseWriter, r *http.Request) {
 			Key:    s.opaqueKey("finish:" + eventID + "\x00" + row.MemberID),
 			RaceID: row.RaceID, RaceName: row.RaceName, Number: row.Number,
 			FirstName: row.FirstName, LastName: row.LastName, Team: row.Team, City: row.City,
-			FinishTime: row.FinishTime, CleanTime: row.CleanTime,
-			Club: row.Club, Gender: row.Gender, GenderPlace: row.GenderPlace, CategoryName: row.CategoryName, CategoryPlace: row.CategoryPlace,
+			FinishTime: row.FinishTime, CleanTime: row.CleanTime, Club: row.Club,
+			Gender: row.Gender, GenderPlace: row.GenderPlace, CategoryName: row.CategoryName, CategoryPlace: row.CategoryPlace,
 		})
 	}
-	writeJSON(w, http.StatusOK, result)
+	return result, nil
 }

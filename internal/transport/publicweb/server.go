@@ -41,9 +41,14 @@ type Server struct {
 	port        int
 	identityKey [32]byte
 
-	mu          sync.Mutex
-	publishedID string       // the one event currently broadcast ("" = off)
-	httpServer  *http.Server // non-nil only while the LAN listener is up
+	mu                 sync.Mutex
+	publishedID        string       // the one event currently broadcast ("" = off)
+	httpServer         *http.Server // non-nil only while the LAN listener is up
+	finishHub          *finishHub
+	publicationEpoch   uint64
+	hubSequence        uint64
+	streamHeartbeat    time.Duration
+	streamWriteTimeout time.Duration
 }
 
 // New builds the server without opening any port. Call Publish to start
@@ -52,7 +57,7 @@ func New(events *service.EventService, logger *log.Logger, port int) *Server {
 	if port == 0 {
 		port = DefaultPort
 	}
-	s := &Server{events: events, logger: logger, port: port}
+	s := &Server{events: events, logger: logger, port: port, streamHeartbeat: 5 * time.Second, streamWriteTimeout: time.Second}
 	if _, err := rand.Read(s.identityKey[:]); err != nil {
 		panic(fmt.Errorf("create public identity key: %w", err))
 	}
@@ -72,7 +77,7 @@ func (s *Server) Publish(eventID string) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.publishedID = eventID
+	s.setPublishedLocked(eventID)
 	if s.httpServer != nil {
 		return nil // already serving
 	}
@@ -80,7 +85,7 @@ func (s *Server) Publish(eventID string) error {
 	addr := fmt.Sprintf("0.0.0.0:%d", s.port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		s.publishedID = ""
+		s.setPublishedLocked("")
 		return fmt.Errorf("не удалось открыть порт %d: %w", s.port, err)
 	}
 	protocols := new(http.Protocols)
@@ -101,14 +106,16 @@ func (s *Server) Unpublish() {
 	s.mu.Lock()
 	srv := s.httpServer
 	s.httpServer = nil
-	s.publishedID = ""
+	s.setPublishedLocked("")
 	s.mu.Unlock()
-	if srv == nil {
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_ = srv.Shutdown(ctx)
+	_ = s.stopFinishHub(ctx)
+	if srv != nil {
+		if err := srv.Shutdown(ctx); err != nil {
+			_ = srv.Close()
+		}
+	}
 }
 
 // Shutdown closes the listener (if any) on application exit.
@@ -116,12 +123,17 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	srv := s.httpServer
 	s.httpServer = nil
-	s.publishedID = ""
+	s.setPublishedLocked("")
 	s.mu.Unlock()
+	hubErr := s.stopFinishHub(ctx)
 	if srv == nil {
-		return nil
+		return hubErr
 	}
-	return srv.Shutdown(ctx)
+	err := srv.Shutdown(ctx)
+	if err != nil {
+		_ = srv.Close()
+	}
+	return errors.Join(hubErr, err)
 }
 
 // Status reports whether the broadcast is live, which event, and the LAN URLs
@@ -158,6 +170,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /live", s.handleIndex)
 	mux.HandleFunc("GET /live.js", s.handleLiveScript)
 	mux.HandleFunc("GET /api/live/finishes", s.handleLiveFinishes)
+	mux.HandleFunc("GET /api/live/finishes/stream", s.handleFinishStream)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})

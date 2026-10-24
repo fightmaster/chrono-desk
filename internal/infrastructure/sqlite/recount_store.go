@@ -30,6 +30,7 @@ func (s *Store) WipeDerivedResultsForMembers(ctx context.Context, eventID string
 		 WHERE event_id = ? AND id IN (`+ids+`)`, args...); err != nil {
 		return fmt.Errorf("reset member derived times: %w", err)
 	}
+	s.finishChanged()
 	return nil
 }
 
@@ -68,6 +69,7 @@ func (s *Store) WipeDerivedResults(ctx context.Context, eventID, raceID string) 
 		if err != nil {
 			return fmt.Errorf("wipe derived results: %w", err)
 		}
+		txStore.finishChanged()
 		return nil
 	})
 }

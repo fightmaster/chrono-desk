@@ -807,6 +807,7 @@ func (s *Store) PutPacketRegistration(ctx context.Context, row packetissuance.Re
 	if err != nil || affected != 1 {
 		return fmt.Errorf("packet member %s projection failed", row.ID)
 	}
+	s.finishChanged()
 	return nil
 }
 

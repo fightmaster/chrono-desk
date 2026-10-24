@@ -28,6 +28,11 @@ func (s *Store) UpdateEntityField(ctx context.Context, table, field, id string, 
 	if table == "members" && field == "club" {
 		return s.updateMemberClubField(ctx, id, value)
 	}
+	defer func() {
+		if err == nil && (table == "members" || table == "races" || table == "categories") {
+			s.finishChanged()
+		}
+	}()
 	// table/field come from a compile-time whitelist, never from user input —
 	// safe to interpolate.
 	row := s.db.QueryRowContext(ctx,

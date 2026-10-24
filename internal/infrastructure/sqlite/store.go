@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
+	"gitlab.com/fightmaster1/chrono-desk/internal/finishchange"
 )
 
 //go:embed schema.sql
@@ -24,6 +25,8 @@ type Store struct {
 	tx                 *sql.Tx
 	originInstanceID   string
 	nextOriginSequence func() (int64, error)
+	finishChanges      *finishchange.Signal
+	finishDirty        *bool
 }
 
 type StoreOption func(*Store)
@@ -69,7 +72,7 @@ func New(db *sql.DB, options ...StoreOption) (*Store, error) {
 	if err := seedRaceCategories(db); err != nil {
 		return nil, err
 	}
-	store := &Store{db: db, root: db}
+	store := &Store{db: db, root: db, finishChanges: finishchange.New()}
 	for _, option := range options {
 		option(store)
 	}
@@ -82,6 +85,9 @@ func (s *Store) DB() *sql.DB { return s.root }
 
 // Close releases the event database owned by the store.
 func (s *Store) Close() error {
+	if s.finishChanges != nil {
+		s.finishChanges.Close()
+	}
 	if s.readRoot != nil {
 		return errors.Join(s.readRoot.Close(), s.root.Close())
 	}
@@ -130,6 +136,7 @@ func (s *Store) WithinTx(ctx context.Context, fn func(*Store) error) error {
 	txStore := &Store{
 		db: tx, root: s.root, tx: tx,
 		originInstanceID: s.originInstanceID, nextOriginSequence: s.nextOriginSequence,
+		finishChanges: s.finishChanges, finishDirty: new(bool),
 	}
 	if err := fn(txStore); err != nil {
 		return err
@@ -137,6 +144,7 @@ func (s *Store) WithinTx(ctx context.Context, fn func(*Store) error) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
+	txStore.committedFinishes()
 	return nil
 }
 

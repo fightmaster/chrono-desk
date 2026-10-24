@@ -133,6 +133,7 @@ func (s *Store) ShiftMemberStarts(ctx context.Context, raceID string, deltaMs in
 		rows.Close()
 
 		if len(shifts) > 0 {
+			txStore.finishChanged()
 			if _, err := txStore.db.ExecContext(ctx,
 				`UPDATE members SET start_time_ms = start_time_ms + ?,
 				 start_time_source = 'manual', start_observation_id = NULL
@@ -148,9 +149,19 @@ func (s *Store) ShiftMemberStarts(ctx context.Context, raceID string, deltaMs in
 
 func (s *Store) UpsertMember(ctx context.Context, m domain.Member) error {
 	if m.Club == nil {
-		return upsertMember(ctx, s.db, m)
+		err := upsertMember(ctx, s.db, m)
+		if err == nil {
+			s.finishChanged()
+		}
+		return err
 	}
-	return s.WithinTx(ctx, func(tx *Store) error { return upsertMember(ctx, tx.db, m) })
+	return s.WithinTx(ctx, func(tx *Store) error {
+		if err := upsertMember(ctx, tx.db, m); err != nil {
+			return err
+		}
+		tx.finishChanged()
+		return nil
+	})
 }
 
 // UpdateMemberFinish applies a judge-entered finish. A non-nil start is persisted
@@ -170,6 +181,7 @@ func (s *Store) UpdateMemberFinish(ctx context.Context, memberID string, start *
 	if err != nil {
 		return fmt.Errorf("update member finish: %w", err)
 	}
+	s.finishChanged()
 	return nil
 }
 
@@ -329,7 +341,11 @@ func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) (bool, 
 	if err := upsertRfidLogs(ctx, tx, d.RfidLogs); err != nil {
 		return packetScopeExists, err
 	}
-	return packetScopeExists, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return packetScopeExists, err
+	}
+	s.finishChanged()
+	return packetScopeExists, nil
 }
 
 // updateImportedMemberTiming keeps the legacy event export useful for timing

@@ -176,7 +176,8 @@ func (r *ProcessorRepo) WithTx(ctx context.Context, fn func(tx processor.TxRepos
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	commit, err := fn(&ProcessorRepo{store: r.store, db: tx})
+	txStore := &Store{db: tx, root: r.store.root, tx: tx, finishChanges: r.store.finishChanges, finishDirty: new(bool)}
+	commit, err := fn(&ProcessorRepo{store: txStore, db: tx})
 	if err != nil {
 		tx.Rollback() //nolint:errcheck
 		return err
@@ -184,7 +185,11 @@ func (r *ProcessorRepo) WithTx(ctx context.Context, fn func(tx processor.TxRepos
 	if !commit {
 		return tx.Rollback()
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	txStore.committedFinishes()
+	return nil
 }
 
 func (r *ProcessorRepo) InsertResult(ctx context.Context, logEntry domain.RfidLog, member processor.Member, checkpoint processor.Checkpoint) (bool, error) {
@@ -228,15 +233,27 @@ func (r *ProcessorRepo) UpdateMemberTimes(ctx context.Context, member processor.
 		}
 	}
 
+	if member.FinishTimeMs != nil && (plan.StartWrite == timing.StartWriteIfNull || plan.StartWrite == timing.StartWriteReplace) {
+		r.store.finishChanged()
+	}
+
 	if plan.FinishTimeMs != nil {
 		var cleanTime sql.NullString
 		if plan.CleanTime != nil {
 			cleanTime = sql.NullString{String: *plan.CleanTime, Valid: true}
 		}
-		if _, err := r.db.ExecContext(ctx,
+		result, err := r.db.ExecContext(ctx,
 			`UPDATE members SET finish_time_ms = ?, clean_time = ? WHERE id = ? AND finish_time_ms IS NULL`,
-			*plan.FinishTimeMs, cleanTime, member.ID); err != nil {
+			*plan.FinishTimeMs, cleanTime, member.ID)
+		if err != nil {
 			return fmt.Errorf("set finish time: %w", err)
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected > 0 {
+			r.store.finishChanged()
 		}
 	}
 
