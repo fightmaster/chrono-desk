@@ -98,7 +98,8 @@ func TestClubOutboxAndReplayRetainOriginalPacketOwner(t *testing.T) {
 	store := packetStore(t, op)
 	ctx := context.Background()
 	row := op.Changes[0].Before
-	if _, err := ApplyEdit(ctx, store, EditRequest{Entity: "member", EntityID: row.ID, Field: "club", Value: json.RawMessage(`"Club A"`)}); err != nil {
+	ownerJSON, _ := json.Marshal(row.Person.ID)
+	if _, err := ApplyEdit(ctx, store, EditRequest{Entity: "member", EntityID: row.ID, Field: "club", ClubPersonID: ownerJSON, Value: json.RawMessage(`"Club A"`)}); err != nil {
 		t.Fatal(err)
 	}
 	payload, _, err := BuildSyncPayloadV3(ctx, store, row.EventID, true, nil)
@@ -112,8 +113,17 @@ func TestClubOutboxAndReplayRetainOriginalPacketOwner(t *testing.T) {
 			} `json:"member_ref"`
 		} `json:"member_edits"`
 	}
-	if err = json.Unmarshal(payload, &doc); err != nil || len(doc.Edits) != 1 || doc.Edits[0].Reference.Owner != row.Person.ID {
-		t.Fatalf("owner missing: %s, %v", payload, err)
+	if err = json.Unmarshal(payload, &doc); err != nil || len(doc.Edits) != 0 {
+		t.Fatalf("transported Club leaked into generic sync: %s, %v", payload, err)
+	}
+	queued, err := store.PendingPacketClubEdits(ctx, row.EventID)
+	if err != nil || len(queued) != 1 {
+		t.Fatal(queued, err)
+	}
+	original, err := ParsePacketClubOperation(queued[0].OperationJSON)
+	var originalOwner string
+	if err != nil || json.Unmarshal(original.PersonID, &originalOwner) != nil || originalOwner != row.Person.ID {
+		t.Fatal("original owner missing from durable outbox", err)
 	}
 	replacement := *row.Person
 	replacement.ID = "replacement-person"
@@ -125,8 +135,11 @@ func TestClubOutboxAndReplayRetainOriginalPacketOwner(t *testing.T) {
 	if _, err = store.ApplyMemberClubs(ctx, row.EventID, map[string]*string{row.ID: &club}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = BuildSyncPayloadV3(ctx, store, row.EventID, true, nil); err == nil {
-		t.Fatal("stale owner Club edit was rebound to replacement")
+	if _, err := ApplyEdit(ctx, store, EditRequest{Entity: "member", EntityID: row.ID, Field: "club", ClubPersonID: ownerJSON, Value: json.RawMessage(`"Stale drawer Club"`)}); err == nil {
+		t.Fatal("stale native editor rebound the old Club to replacement")
+	}
+	if _, _, err = BuildSyncPayloadV3(ctx, store, row.EventID, true, nil); err != nil {
+		t.Fatal("detached Club must not block unrelated generic sync", err)
 	}
 	if _, err = ReapplyLocalEdits(ctx, store); err != nil {
 		t.Fatal(err)
@@ -196,5 +209,74 @@ func TestClubJSONRejectsUnpairedSurrogatesWithoutRejectingLiteralEscapes(t *test
 		if _, err := decodeClubMetadata(json.RawMessage(raw)); err != nil {
 			t.Fatal("valid Unicode rejected", raw, err)
 		}
+	}
+}
+
+func TestPendingClubRelayProtectsLocalValueFromLateSnapshotUntilAcknowledged(t *testing.T) {
+	op := packetFixtureOperation(t)
+	store := packetStore(t, op)
+	ctx := context.Background()
+	row := op.Changes[0].Before
+	owner, _ := json.Marshal(row.Person.ID)
+	if _, err := ApplyEdit(ctx, store, EditRequest{Entity: "member", EntityID: row.ID, Field: "club", ClubPersonID: owner, Value: json.RawMessage(`"Pending local Club"`)}); err != nil {
+		t.Fatal(err)
+	}
+	stale := "Late server Club"
+	owners := map[string]*string{row.ID: &row.Person.ID}
+	if n, err := store.ApplyBoundMemberClubs(ctx, row.EventID, map[string]*string{row.ID: &stale}, owners); err != nil || n != 0 {
+		t.Fatal("late snapshot replaced pending edit", n, err)
+	}
+	member, err := store.GetMember(ctx, row.ID)
+	if err != nil || member.Club == nil || *member.Club != "Pending local Club" {
+		t.Fatal("pending Club lost", err)
+	}
+	queued, err := store.PendingPacketClubEdits(ctx, row.EventID)
+	if err != nil || len(queued) != 1 {
+		t.Fatal(queued, err)
+	}
+	if err = store.AcknowledgePacketClubEdit(ctx, queued[0].OperationID, "applied", nil); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := store.ApplyBoundMemberClubs(ctx, row.EventID, map[string]*string{row.ID: &stale}, owners); err != nil || n != 1 {
+		t.Fatal("confirmed metadata never refreshes", n, err)
+	}
+}
+
+func TestNativeClubRelayOutboxFailureRollsBackDisplayAndJournal(t *testing.T) {
+	op := packetFixtureOperation(t)
+	store := packetStore(t, op)
+	ctx := context.Background()
+	row := op.Changes[0].Before
+	before, err := store.MemberClubs(ctx, row.EventID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes, err := store.ListLocalChanges(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`CREATE TRIGGER fail_club_relay BEFORE INSERT ON packet_club_outbox BEGIN SELECT RAISE(FAIL,'forced outbox failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	owner, _ := json.Marshal(row.Person.ID)
+	if _, err := ApplyEdit(ctx, store, EditRequest{Entity: "member", EntityID: row.ID, Field: "club", ClubPersonID: owner, Value: json.RawMessage(`"Must roll back"`)}); err == nil {
+		t.Fatal("outbox failure was ignored")
+	}
+	after, err := store.MemberClubs(ctx, row.EventID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, _ := json.Marshal(before)
+	right, _ := json.Marshal(after)
+	if string(left) != string(right) {
+		t.Fatal("Club changed without durable delivery")
+	}
+	remaining, err := store.ListLocalChanges(ctx)
+	if err != nil || len(remaining) != len(changes) {
+		t.Fatal("private journal did not roll back", err)
+	}
+	queued, err := store.PendingPacketClubEdits(ctx, row.EventID)
+	if err != nil || len(queued) != 0 {
+		t.Fatal("partial outbox retained", err)
 	}
 }

@@ -33,7 +33,7 @@ func packetFixtureOperation(t *testing.T) packetissuance.Operation {
 
 func packetStore(t *testing.T, operation packetissuance.Operation) *sqlite.Store {
 	t.Helper()
-	store := newTestStore(t)
+	store := newTestStore(t, sqlite.WithOriginInstanceID("55555555-5555-4555-8555-555555555555"))
 	ctx := context.Background()
 	row := operation.Changes[0].Before
 	if err := store.UpsertEvent(ctx, domain.Event{ID: row.EventID, Name: "Тест", Date: "2026-09-13"}); err != nil {

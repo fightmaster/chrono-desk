@@ -334,6 +334,9 @@ func buildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 		// Field edits only for SITE members; local- ones ship in full as
 		// new_members (above), so an edit to them is redundant/unresolvable.
 		case c.Entity == "member" && syncMemberFields[c.Field] && !strings.HasPrefix(c.EntityID, "local-"):
+			if c.Field == "club" && c.ClubRelayOperationID != nil {
+				continue
+			}
 			if c.Field == "club" && schemaVersion != syncSchemaVersionV3 {
 				return nil, SyncSummary{}, fmt.Errorf("правка клуба требует безопасной схемы v3")
 			}

@@ -49,12 +49,18 @@ type PacketRelayStatus struct {
 	ExpiresAt       string `json:"expires_at,omitempty"`
 	FeedCursor      string `json:"feed_cursor,omitempty"`
 	RosterInstalled bool   `json:"roster_installed"`
+	ClubPending     int    `json:"club_pending"`
+	ClubReview      int    `json:"club_review"`
 }
 
 type PacketOperationSyncResult struct {
-	Attempted int `json:"attempted"`
-	Accepted  int `json:"accepted"`
-	Waiting   int `json:"waiting"`
+	ClubRefreshDeferred bool `json:"club_refresh_deferred,omitempty"`
+	ClubAttempted       int  `json:"club_attempted"`
+	ClubAccepted        int  `json:"club_accepted"`
+	ClubReview          int  `json:"club_review"`
+	Attempted           int  `json:"attempted"`
+	Accepted            int  `json:"accepted"`
+	Waiting             int  `json:"waiting"`
 }
 
 type PacketFeedSyncResult struct {
@@ -109,7 +115,7 @@ func ConnectPacketIssuanceSite(ctx context.Context, events *EventService, eventI
 
 func GetPacketRelayStatus(ctx context.Context, events *EventService, eventID string) (PacketRelayStatus, error) {
 	state, found, err := events.GetPacketRelay(ctx, eventID)
-	if err != nil || !found {
+	if err != nil {
 		return PacketRelayStatus{}, err
 	}
 	store, err := events.Open(eventID)
@@ -120,10 +126,15 @@ func GetPacketRelayStatus(ctx context.Context, events *EventService, eventID str
 	if err != nil {
 		return PacketRelayStatus{}, err
 	}
+	clubCounts, err := store.PacketClubDeliveryCounts(ctx, eventID)
+	if err != nil {
+		return PacketRelayStatus{}, err
+	}
 	return PacketRelayStatus{
-		Configured: state.RelayID != "", RelayID: state.RelayID, ScopeID: state.ScopeID,
+		Configured: found && state.RelayID != "", RelayID: state.RelayID, ScopeID: state.ScopeID,
 		ExpiresAt: state.ExpiresAt, FeedCursor: scope.SiteFeedCursor,
 		RosterInstalled: scope.ScopeID != "" && scope.ScopeID == state.ScopeID,
+		ClubPending:     clubCounts.Pending, ClubReview: clubCounts.Review,
 	}, nil
 }
 
@@ -140,10 +151,24 @@ func SyncPacketOperations(ctx context.Context, events *EventService, eventID str
 		return PacketOperationSyncResult{}, err
 	}
 	result := PacketOperationSyncResult{}
-	for batch := 0; batch < 16; batch++ {
-		operations, err := store.ListPendingPacketOperations(ctx, eventID, 64)
-		if err != nil || len(operations) == 0 {
+	for batch := 0; batch < 1024; batch++ {
+		pendingClub, err := flushPacketClubOutbox(ctx, store, state, &result)
+		if err != nil {
 			return result, err
+		}
+		limit := 64
+		if pendingClub {
+			limit = 1
+		}
+		operations, err := store.ListPendingPacketOperations(ctx, eventID, limit)
+		if err != nil {
+			return result, err
+		}
+		if len(operations) == 0 {
+			if !pendingClub {
+				result.ClubRefreshDeferred = refreshPacketRelayClubs(ctx, store, state) != nil
+			}
+			return result, nil
 		}
 		receipts, err := PushPacketOperations(ctx, state.APIBaseURL, state.Credential, operations)
 		if err != nil {
@@ -165,8 +190,11 @@ func SyncPacketOperations(ctx context.Context, events *EventService, eventID str
 			}
 			return nil
 		})
-		if err != nil || len(operations) < 64 || waitingThisBatch > 0 {
+		if err != nil || waitingThisBatch > 0 {
 			return result, err
+		}
+		if result.Attempted >= 1024 {
+			return result, errors.New("packet operation delivery limit reached; repeat synchronization")
 		}
 	}
 	return result, errors.New("packet operation delivery limit reached; repeat synchronization")

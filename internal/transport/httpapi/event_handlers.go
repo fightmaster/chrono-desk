@@ -244,19 +244,30 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"member_id": memberID, "recount_needed": res.RecountNeeded})
 }
 
+type memberClubEditor struct {
+	Member domain.Member
+	Owner  json.RawMessage
+}
+
 func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
-	m, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) (domain.Member, error) {
-		return read.GetMember(r.Context(), r.PathValue("memberID"))
+	editor, err := readEventView(r.Context(), s.events, r.PathValue("id"), func(read *sqlite.Store) (memberClubEditor, error) {
+		member, err := read.GetMember(r.Context(), r.PathValue("memberID"))
+		if err != nil {
+			return memberClubEditor{}, err
+		}
+		owner, err := read.ClubOwnerBinding(r.Context(), member.ID)
+		return memberClubEditor{Member: member, Owner: owner}, err
 	})
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
+	m := editor.Member
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": m.ID, "race_id": m.RaceID, "category_id": m.CategoryID,
 		"number": m.Number, "epc": m.EPC,
 		"first_name": m.FirstName, "last_name": m.LastName,
-		"gender": m.Gender, "dob": m.DOB, "club": m.Club, "team": m.Team, "city": m.City,
+		"club_person_id": editor.Owner, "gender": m.Gender, "dob": m.DOB, "club": m.Club, "team": m.Team, "city": m.City,
 	})
 }
 

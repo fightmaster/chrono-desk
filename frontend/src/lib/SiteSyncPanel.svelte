@@ -70,7 +70,10 @@
     try {
       result = await call('POST', `/api/events/${eventId}/sync`, JSON.stringify({overwrite}))
       await loadConfig()
-    } catch (e) { error = `Отправка: ${e.message}` } finally { busy = '' }
+    } catch (e) {
+      error = `Отправка: ${e.message}`
+      try { packetStatus = await call('GET', `/api/events/${eventId}/packet-issuance/site`) } catch (_) {}
+    } finally { busy = '' }
   }
 
   async function pull() {
@@ -239,6 +242,8 @@
       {#if packetStatus?.roster_installed}список сайта установлен
       {:else if packetStatus?.configured}доступ получен, список не установлен
       {:else}не подключена{/if}
+      {#if packetStatus?.club_pending} · клуб: ожидают отправки {packetStatus.club_pending}{/if}
+      {#if packetStatus?.club_review} · клуб: требуют проверки {packetStatus.club_review}{/if}
       {#if packetStatus?.expires_at} · доступ до {packetStatus.expires_at}{/if}
     </span>
     <button class="btn" disabled={!!busy || !baseUrl || !tokenSet || packetStatus?.roster_installed}
@@ -260,7 +265,10 @@
       ручные: <b>{result.sent?.manual_results ?? 0}</b> ·
       правки участников: <b>{result.sent?.member_edits ?? 0}</b> ·
       новые: <b>{result.sent?.new_members ?? 0}</b> ·
-      операции выдачи: <b>{result.packet_issuance?.accepted ?? 0}</b>
+      операции выдачи: <b>{result.packet_issuance?.accepted ?? 0}</b> ·
+      клуб: подтверждено сайтом <b>{result.packet_issuance?.club_accepted ?? 0}</b> ·
+      клуб: требуют проверки <b>{result.packet_issuance?.club_review ?? 0}</b>
+      {#if result.packet_issuance?.club_refresh_deferred} · актуальные клубы сайта пока не получены; прежние данные сохранены{/if}
     </div>
   {/if}
   {#if pullResult}

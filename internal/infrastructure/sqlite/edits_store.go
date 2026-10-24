@@ -9,14 +9,16 @@ import (
 
 // LocalChange is one journal entry; values are JSON-encoded.
 type LocalChange struct {
-	ClubPersonID json.RawMessage `json:"club_person_id,omitempty"`
-	ID           int64           `json:"id"`
-	Entity       string          `json:"entity"`
-	EntityID     string          `json:"entity_id"`
-	Field        string          `json:"field"`
-	OldValue     string          `json:"old_value"`
-	NewValue     string          `json:"new_value"`
-	ChangedAt    int64           `json:"changed_at"`
+	ClubRelayOperationID  *string         `json:"club_relay_operation_id,omitempty"`
+	ClubRelayAcknowledged bool            `json:"club_relay_acknowledged,omitempty"`
+	ClubPersonID          json.RawMessage `json:"club_person_id,omitempty"`
+	ID                    int64           `json:"id"`
+	Entity                string          `json:"entity"`
+	EntityID              string          `json:"entity_id"`
+	Field                 string          `json:"field"`
+	OldValue              string          `json:"old_value"`
+	NewValue              string          `json:"new_value"`
+	ChangedAt             int64           `json:"changed_at"`
 }
 
 // UpdateEntityField writes one whitelisted field (the caller validates the
@@ -89,8 +91,8 @@ func (s *Store) insertLocalChange(ctx context.Context, c LocalChange, binding js
 // ListLocalChanges returns the journal, oldest first (replay order).
 func (s *Store) ListLocalChanges(ctx context.Context) ([]LocalChange, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT l.id, l.entity, l.entity_id, l.field, l.old_value, l.new_value, l.changed_at,o.person_json
- FROM local_changes l LEFT JOIN club_change_owners o ON o.change_id=l.id ORDER BY l.id`)
+		SELECT l.id, l.entity, l.entity_id, l.field, l.old_value, l.new_value, l.changed_at,o.person_json,c.operation_id,COALESCE(c.site_acknowledged,0)
+ FROM local_changes l LEFT JOIN club_change_owners o ON o.change_id=l.id LEFT JOIN packet_club_outbox c ON c.change_id=l.id ORDER BY l.id`)
 	if err != nil {
 		return nil, fmt.Errorf("list changes: %w", err)
 	}
@@ -100,7 +102,7 @@ func (s *Store) ListLocalChanges(ctx context.Context) ([]LocalChange, error) {
 	for rows.Next() {
 		var c LocalChange
 		var owner *string
-		if err := rows.Scan(&c.ID, &c.Entity, &c.EntityID, &c.Field, &c.OldValue, &c.NewValue, &c.ChangedAt, &owner); err != nil {
+		if err := rows.Scan(&c.ID, &c.Entity, &c.EntityID, &c.Field, &c.OldValue, &c.NewValue, &c.ChangedAt, &owner, &c.ClubRelayOperationID, &c.ClubRelayAcknowledged); err != nil {
 			return nil, err
 		}
 		if owner != nil {

@@ -101,7 +101,11 @@ func ReadPacketClubAffiliations(ctx context.Context, store *sqlite.Store, connec
 		sort.Strings(ids)
 		for _, id := range ids {
 			if owner, exists := owners[id]; exists {
-				result.Affiliations = append(result.Affiliations, PacketClubAffiliation{RegistrationID: id, PersonID: owner, Club: clubs[id]})
+				club := clubs[id]
+				if owner == nil {
+					club = nil
+				}
+				result.Affiliations = append(result.Affiliations, PacketClubAffiliation{RegistrationID: id, PersonID: owner, Club: club})
 			}
 		}
 		return nil
@@ -166,8 +170,13 @@ func ApplyPacketClubAffiliation(ctx context.Context, store *sqlite.Store, connec
 			code := "club_owner_changed"
 			receipt.Outcome = "conflict"
 			receipt.Code = &code
-		} else if _, err = ApplyEdit(ctx, tx, EditRequest{Entity: "member", EntityID: op.RegistrationID, Field: "club", Value: op.Club}); err != nil {
+		} else if _, err = applyEdit(ctx, newSQLiteEditStore(tx), EditRequest{Entity: "member", EntityID: op.RegistrationID, Field: "club", Value: op.Club}); err != nil {
 			return err
+		}
+		if receipt.Outcome == "applied" {
+			if err := tx.EnqueuePacketClubEdit(ctx, connection.EventID, connection.ScopeID, op.RegistrationID, op.OperationID, encoded, registration.Heads); err != nil {
+				return err
+			}
 		}
 		saved, err := json.Marshal(receipt)
 		if err != nil {

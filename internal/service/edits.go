@@ -86,6 +86,7 @@ type EditRequest struct {
 	EntityID              string          `json:"entity_id"`
 	Field                 string          `json:"field"`
 	Value                 json.RawMessage `json:"value"` // null | number | string
+	ClubPersonID          json.RawMessage `json:"club_person_id,omitempty"`
 }
 
 // EditResult tells the UI whether a recount is required to see the effect.
@@ -96,6 +97,9 @@ type EditResult struct {
 // ApplyEdit validates against the whitelist, updates the field and journals
 // the change.
 func ApplyEdit(ctx context.Context, store *sqlite.Store, req EditRequest) (EditResult, error) {
+	if req.Entity == "member" && req.Field == "club" {
+		return applyNativeClubEdit(ctx, store, req)
+	}
 	return applyEdit(ctx, newSQLiteEditStore(store), req)
 }
 
@@ -515,6 +519,9 @@ func ReapplyLocalEdits(ctx context.Context, store editReplayStore) (applied int,
 			continue // other pseudo-fields (_created): audit/sync entries only
 		}
 		if c.Entity == "member" && c.Field == "club" {
+			if c.ClubRelayOperationID != nil && c.ClubRelayAcknowledged {
+				continue
+			}
 			if guard, ok := store.(interface {
 				ClubChangeOwnerMatches(context.Context, sqlite.LocalChange) (bool, error)
 			}); ok {

@@ -224,3 +224,33 @@ DTOs and terminal receipts match the shared registration-display-metadata
 contract; these do not enter canonical Person JSON, hashes or packet feed.
 Receipts capture original origin/connection and survive lost replies. Read
 ETags permit empty304 after authenticating the request; HTTP remains no-store.
+
+### Causal Club relay (CHR-REG-001)
+
+For active packet scopes, native and LAN tablet Club edits use a separate
+`packet_club_outbox`; original UUID/origin/body and required canonical heads are
+persisted atomically with the display edit and private journal. Native member
+GET returns `club_person_id`; Club edit requests must echo that captured owner
+so a stale drawer cannot edit a replacement. Generic member sync excludes these
+outbox-backed edits. Confirmed relay edits are not replayed over later site
+corrections.
+
+`SyncPacketOperations` drains ready Club metadata via the existing scoped relay
+grant at `relays/{relayId}/club-affiliations`, then accepts each required canonical
+operation before dependent Club metadata. It sends Club before later owner moves.
+Durable retry preserves UUID after a lost response or restart; terminal dependency
+conflicts remain visible for review and release later queued work. Native sync
+status exposes `club_pending`/`club_review` separately from canonical operations
+and accepted site receipt counts separately from local LAN acceptance.
+
+After successful delivery, an owner-checked metadata GET refreshes site corrections.
+Pending local edits are protected from a late GET. Refresh failure retains known
+metadata and sets `club_refresh_deferred` without undoing accepted uploads. Older
+sites returning404 to GET remain compatible; sending new Club metadata to an
+unsupported receiver requires review and cannot silently downgrade to generic sync.
+
+The opt-in `TestClubRelayActualLaravelLostReplyRestartMoveAndCreation` runs against
+an isolated actual Laravel fixture with synthetic data when
+`RUN5_ISSUANCE_FIXTURE_ROOT` names the RUN5 source checkout. It proves lost-reply
+restart/backoff, UUID/origin retention, edit-before-move, creation-before-Club,
+native edits, reverse site corrections and no generic echo/raw timing writes.

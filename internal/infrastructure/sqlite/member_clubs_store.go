@@ -210,6 +210,9 @@ func (s *Store) ApplyBoundMemberClubs(ctx context.Context, eventID string, clubs
 		if err != nil {
 			return err
 		}
+		if err := tx.protectPendingPacketClubs(ctx, eventID, filtered, owners); err != nil {
+			return err
+		}
 		count, err = applyMemberClubs(ctx, tx.db, eventID, filtered)
 		return err
 	})

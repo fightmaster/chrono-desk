@@ -267,7 +267,7 @@
     error = ''
     try {
       const res = await call('POST', `/api/events/${eventId}/edits`,
-        JSON.stringify({entity, entity_id: entityId, field, value}))
+        JSON.stringify({entity, entity_id: entityId, field, value, ...(entity === 'member' && field === 'club' ? {club_person_id: member?.club_person_id ?? null} : {})}))
       dispatch('changed', {recount: res.recount_needed})
       await load()
     } catch (e) {

@@ -62,6 +62,9 @@ func migrate(db *sql.DB) error {
 	if err := addMemberClubMetadata(db); err != nil {
 		return err
 	}
+	if err := addPacketClubOutbox(db); err != nil {
+		return err
+	}
 	if err := migrateLegacyClubAffiliation(db); err != nil {
 		return err
 	}

@@ -10,14 +10,14 @@ import (
 	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
-func newTestStore(t *testing.T) *sqlite.Store {
+func newTestStore(t *testing.T, options ...sqlite.StoreOption) *sqlite.Store {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "event.chrono"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	store, err := sqlite.New(db, sqlite.WithOriginInstanceID("test-desk"))
+	store, err := sqlite.New(db, append([]sqlite.StoreOption{sqlite.WithOriginInstanceID("test-desk")}, options...)...)
 	if err != nil {
 		t.Fatalf("store: %v", err)
 	}
