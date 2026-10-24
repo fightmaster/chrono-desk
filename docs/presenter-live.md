@@ -125,3 +125,19 @@ presenter eligibility revision, so cached gender/category places refresh without
 creating projection input work. Club changes still leave rank revisions alone.
 Regression coverage combines Club schema5 export/import with distinct assigned
 and measured starts and checks rank refresh after a chip-start correction.
+
+### Club editing and refresh counts — CHR-REG-001
+
+The member drawer loads its registration from the bundled accepted-passes response.
+Both accepted/all pass views now include `member.club_person_id`, captured with
+the registration in the same read snapshot. The standalone member endpoint keeps
+the same field. Fresh-card edits echo that owner successfully; a real replacement
+still rejects the stale card until reopened. A missing bundled owner previously
+caused a false owner-changed error even when no participant had moved.
+
+Club refresh reports `provided` (received Club metadata, including explicit null),
+`updated` (changed stored metadata rows) and `populated` (current nonempty Club
+values for the local event). The UI shows received and nonempty counts separately.
+A508-row response containing507nulls represents one populated Club. Unknown IDs
+never contribute a local populated count; explicit clears reduce it and absent
+fields preserve known metadata. Count readback shares the update transaction.

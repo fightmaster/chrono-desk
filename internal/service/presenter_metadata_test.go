@@ -53,7 +53,7 @@ func TestPresenterClubRefreshIsMetadataOnlyAndAbsencePreservesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Provided != 2 || stats.Updated != 1 {
+	if stats.Provided != 2 || stats.Updated != 1 || stats.Populated != 1 {
 		t.Fatal("wrong bounded metadata update count", stats)
 	}
 	after, _ := store.ListMembersFullByEvent(ctx, "ev-100")
@@ -76,7 +76,7 @@ func TestPresenterClubRefreshIsMetadataOnlyAndAbsencePreservesIt(t *testing.T) {
 	}
 	body = `{"schema_version":5,"event":{"id":"ev-100"},"members":[{"id":"mem-1"}]}`
 	stats, err = events.RefreshPresenterClubs(ctx, "ev-100")
-	if err != nil || stats.Updated != 0 {
+	if err != nil || stats.Updated != 0 || stats.Populated != 1 {
 		t.Fatal(stats, err)
 	}
 	clubs, _ = store.MemberClubs(ctx, "ev-100")
@@ -88,8 +88,8 @@ func TestPresenterClubRefreshIsMetadataOnlyAndAbsencePreservesIt(t *testing.T) {
 		t.Fatal("cross-event metadata accepted")
 	}
 	body = `{"schema_version":3,"event":{"id":"ev-100"},"members":[{"id":"mem-1","club":null}]}`
-	if _, err = events.RefreshPresenterClubs(ctx, "ev-100"); err != nil {
-		t.Fatal(err)
+	if stats, err = events.RefreshPresenterClubs(ctx, "ev-100"); err != nil || stats.Populated != 0 {
+		t.Fatal("explicit clear did not update nonempty count", stats, err)
 	}
 	clubs, _ = store.MemberClubs(ctx, "ev-100")
 	value, exists := clubs["mem-1"]

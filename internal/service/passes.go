@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 	timing "gitlab.com/fightmaster1/timing-core"
 
@@ -45,18 +46,19 @@ type MemberPasses struct {
 // MemberRegistration is bundled with passes so the drawer's fields and timing
 // come from one coherent read, rather than two independently committed views.
 type MemberRegistration struct {
-	Club       *string `json:"club"`
-	ID         string  `json:"id"`
-	RaceID     string  `json:"race_id"`
-	CategoryID *string `json:"category_id"`
-	Number     *int64  `json:"number"`
-	EPC        *string `json:"epc"`
-	FirstName  string  `json:"first_name"`
-	LastName   string  `json:"last_name"`
-	Gender     *string `json:"gender"`
-	DOB        *string `json:"dob"`
-	Team       *string `json:"team"`
-	City       *string `json:"city"`
+	ClubPersonID json.RawMessage `json:"club_person_id"`
+	Club         *string         `json:"club"`
+	ID           string          `json:"id"`
+	RaceID       string          `json:"race_id"`
+	CategoryID   *string         `json:"category_id"`
+	Number       *int64          `json:"number"`
+	EPC          *string         `json:"epc"`
+	FirstName    string          `json:"first_name"`
+	LastName     string          `json:"last_name"`
+	Gender       *string         `json:"gender"`
+	DOB          *string         `json:"dob"`
+	Team         *string         `json:"team"`
+	City         *string         `json:"city"`
 }
 
 // LoadMemberPasses lists the member's reads in chronological order with the
@@ -79,6 +81,11 @@ func loadMemberPasses(ctx context.Context, store *sqlite.Store, memberID string,
 		return out, err
 	}
 	out.Registration = MemberRegistration{ID: member.ID, RaceID: member.RaceID, CategoryID: member.CategoryID, Number: member.Number, EPC: member.EPC, FirstName: member.FirstName, LastName: member.LastName, Gender: member.Gender, DOB: member.DOB, Team: member.Team, Club: member.Club, City: member.City}
+	owner, err := store.ClubOwnerBinding(ctx, memberID)
+	if err != nil {
+		return out, err
+	}
+	out.Registration.ClubPersonID = owner
 	out.FirstName = member.FirstName
 	out.LastName = member.LastName
 	out.Number = member.Number

@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gitlab.com/fightmaster1/chrono-desk/internal/infrastructure/sqlite"
 )
 
 type PresenterMetadataStats struct {
-	Provided int `json:"provided"`
-	Updated  int `json:"updated"`
+	Populated int `json:"populated"`
+	Provided  int `json:"provided"`
+	Updated   int `json:"updated"`
 }
 
 // RefreshPresenterClubs imports display-only metadata without replay, cursors,
@@ -72,6 +74,22 @@ func (s *EventService) RefreshPresenterClubs(ctx context.Context, eventID string
 		clubs[member.ID] = club
 	}
 	stats.Provided = len(clubs)
-	stats.Updated, err = store.ApplyBoundMemberClubs(ctx, eventID, clubs, owners)
+	err = store.WithinTx(ctx, func(tx *sqlite.Store) error {
+		var err error
+		stats.Updated, err = tx.ApplyBoundMemberClubs(ctx, eventID, clubs, owners)
+		if err != nil {
+			return err
+		}
+		current, err := tx.MemberClubs(ctx, eventID)
+		if err != nil {
+			return err
+		}
+		for _, club := range current {
+			if club != nil {
+				stats.Populated++
+			}
+		}
+		return nil
+	})
 	return stats, err
 }

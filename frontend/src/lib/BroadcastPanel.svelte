@@ -41,7 +41,7 @@
     error = ''; metadataNotice = ''; busy = 'Обновляем клубы…'
     try {
       const result = await call('POST', `/api/events/${eventId}/presenter/clubs/refresh`)
-      metadataNotice = `Данные о клубах обновлены. Изменено записей: ${result.updated}.`
+      metadataNotice = `Получено записей: ${result.provided}. Непустых клубов: ${result.populated}.`
     } catch (e) { error = e.message } finally { busy = '' }
   }
 

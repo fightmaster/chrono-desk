@@ -280,3 +280,54 @@ func TestNativeClubRelayOutboxFailureRollsBackDisplayAndJournal(t *testing.T) {
 		t.Fatal("partial outbox retained", err)
 	}
 }
+
+func TestBundledDrawerRegistrationCarriesClubOwnerForFreshEditAndRejectsReplacement(t *testing.T) {
+	op := packetFixtureOperation(t)
+	store := packetStore(t, op)
+	ctx := context.Background()
+	row := op.Changes[0].Before
+	loadOwner := func(accepted bool) json.RawMessage {
+		t.Helper()
+		load := LoadMemberPasses
+		if accepted {
+			load = LoadAcceptedMemberPasses
+		}
+		card, err := load(ctx, store, row.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := json.Marshal(card)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire struct {
+			Member map[string]json.RawMessage `json:"member"`
+		}
+		if err = json.Unmarshal(body, &wire); err != nil {
+			t.Fatal(err)
+		}
+		owner, exists := wire.Member["club_person_id"]
+		if !exists || len(owner) == 0 || string(owner) == "null" {
+			t.Fatal("bundled drawer dropped the owner's Club binding")
+		}
+		return owner
+	}
+	for _, accepted := range []bool{false, true} {
+		if _, err := ApplyEdit(ctx, store, EditRequest{Entity: "member", EntityID: row.ID, Field: "club", ClubPersonID: loadOwner(accepted), Value: json.RawMessage(`"Fresh drawer Club"`)}); err != nil {
+			t.Fatal("fresh bundled card cannot save Club", err)
+		}
+	}
+	stale := loadOwner(true)
+	replacement := *row.Person
+	replacement.ID = "replacement-person"
+	row.Person = &replacement
+	if err := store.PutPacketRegistration(ctx, row, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyEdit(ctx, store, EditRequest{Entity: "member", EntityID: row.ID, Field: "club", ClubPersonID: stale, Value: json.RawMessage(`"Must reject stale card"`)}); err == nil {
+		t.Fatal("stale owner protection was removed")
+	}
+	if _, err := ApplyEdit(ctx, store, EditRequest{Entity: "member", EntityID: row.ID, Field: "club", ClubPersonID: loadOwner(true), Value: json.RawMessage(`"Replacement's own Club"`)}); err != nil {
+		t.Fatal("reopened replacement card cannot save Club", err)
+	}
+}
