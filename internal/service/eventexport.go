@@ -113,6 +113,10 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 		})
 	}
 
+	clubs, err := store.MemberClubs(ctx, eventID)
+	if err != nil {
+		return nil, "", err
+	}
 	for _, m := range members {
 		export.Members = append(export.Members, exportMember{
 			ID: m.ID, EventID: m.EventID, RaceID: m.RaceID, CategoryID: m.CategoryID,
@@ -122,6 +126,13 @@ func BuildEventExport(ctx context.Context, store *sqlite.Store, eventID string) 
 			StartTime: msToISO(m.StartTimeMs), FinishTime: msToISO(m.FinishTimeMs), CleanTime: m.CleanTime,
 			StartTimeSource: exportedSource(m.StartTimeSource, extended), StartObservationID: exportedObservation(m.StartObservationID, extended),
 		})
+		if club, present := clubs[m.ID]; present {
+			encoded, err := json.Marshal(club)
+			if err != nil {
+				return nil, "", err
+			}
+			export.Members[len(export.Members)-1].Club = encoded
+		}
 	}
 
 	logs, err := store.ListRfidLogs(ctx, eventID)

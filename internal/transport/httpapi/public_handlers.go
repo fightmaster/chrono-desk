@@ -38,9 +38,12 @@ func (s *Server) publicStatus() map[string]any {
 	endpoints := make([]map[string]string, 0, len(st.URLs))
 	if st.Running {
 		for _, url := range st.URLs {
-			ep := map[string]string{"url": url}
+			ep := map[string]string{"url": url, "presenter_url": url + "/live"}
 			if png, err := qrcode.Encode(url, qrcode.Medium, 320); err == nil {
 				ep["qr"] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+			}
+			if png, err := qrcode.Encode(url+"/live", qrcode.Medium, 320); err == nil {
+				ep["presenter_qr"] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
 			}
 			endpoints = append(endpoints, ep)
 		}

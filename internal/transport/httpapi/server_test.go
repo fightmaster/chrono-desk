@@ -357,6 +357,12 @@ func TestPublicBroadcastControl(t *testing.T) {
 		if qr, _ := ep["qr"].(string); !strings.HasPrefix(qr, "data:image/png;base64,") {
 			t.Fatalf("endpoint %+v missing a QR data-URI", ep)
 		}
+		if ep["presenter_url"] != ep["url"].(string)+"/live" {
+			t.Fatalf("endpoint %+v missing presenter URL", ep)
+		}
+		if qr, _ := ep["presenter_qr"].(string); !strings.HasPrefix(qr, "data:image/png;base64,") {
+			t.Fatalf("endpoint %+v missing presenter QR", ep)
+		}
 	}
 
 	// Stop.

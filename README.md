@@ -71,9 +71,14 @@ At a venue with no internet the only copy of the live results is on the desk. Pe
 sign certificates, engrave medal times or run social media can read them from their own
 phones: in **Настройки события → «Трансляция результатов по сети»** the operator turns the
 broadcast on and shows an address + QR code. Anyone on the same Wi-Fi opens that page and
-gets a read-only results board — a distance dropdown and two tabs like the desktop:
+gets a read-only results board — a distance dropdown and three tabs:
 **Призёры** (absolute M/F top-3 plus age-group podiums) and **Протокол** (full table with
-search by surname/number), auto-refreshing as the judge recounts. The Призёры tab has a
+search by surname/number), auto-refreshing as the judge recounts. **Финиши** is a
+tablet presenter feed at `/live`: the latest 10 confirmed FixedDistance finishes,
+with bib, name, team, city, race and official time, refreshed every 500 ms without
+recounting. Repeated reads never add duplicate participation cards; corrections
+update them and revoked finishes disappear. Broadcast settings include a dedicated
+presenter link/QR. See [presenter guide and acceptance](docs/presenter-live.md). The Призёры tab has a
 **copy-for-Telegram** button that puts the winners/prize-winners on the clipboard as
 Markdown, so the SMM person posts without retyping names.
 

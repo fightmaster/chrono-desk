@@ -10,6 +10,7 @@ package publicweb
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -35,9 +36,10 @@ var indexHTML []byte
 const DefaultPort = 8090
 
 type Server struct {
-	events *service.EventService
-	logger *log.Logger
-	port   int
+	events      *service.EventService
+	logger      *log.Logger
+	port        int
+	identityKey [32]byte
 
 	mu          sync.Mutex
 	publishedID string       // the one event currently broadcast ("" = off)
@@ -50,7 +52,11 @@ func New(events *service.EventService, logger *log.Logger, port int) *Server {
 	if port == 0 {
 		port = DefaultPort
 	}
-	return &Server{events: events, logger: logger, port: port}
+	s := &Server{events: events, logger: logger, port: port}
+	if _, err := rand.Read(s.identityKey[:]); err != nil {
+		panic(fmt.Errorf("create public identity key: %w", err))
+	}
+	return s
 }
 
 // Publish broadcasts eventID, opening the LAN listener on first use. Calling it
@@ -149,6 +155,9 @@ func (s *Server) routes() http.Handler {
 	// GET-only patterns: ServeMux answers any other method with 405, so the
 	// network can never reach a write path here.
 	mux.HandleFunc("GET /", s.handleIndex)
+	mux.HandleFunc("GET /live", s.handleIndex)
+	mux.HandleFunc("GET /live.js", s.handleLiveScript)
+	mux.HandleFunc("GET /api/live/finishes", s.handleLiveFinishes)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})

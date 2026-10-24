@@ -135,6 +135,21 @@
   .modal .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
   .modal button { padding: 10px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-weight: 600; cursor: pointer; }
   .modal button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; }
+
+  .finish-title { font-size: 20px; margin: 10px 0 12px; }
+  .finish-state, .finish-updated { font-size: 13px; color: var(--dim); margin: 8px 0; }
+  .finish-state.disconnected { color: var(--bad); font-weight: 600; }
+  .finish-card { background: var(--panel); border: 2px solid var(--border); border-radius: 14px; padding: 16px; margin: 12px 0; overflow-wrap: anywhere; }
+  .finish-card.finish-new { border-color: var(--accent); background: var(--panel2); }
+  .finish-heading { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+  .finish-number { color: var(--accent); font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .finish-name { font-size: 23px; font-weight: 750; }
+  .finish-details { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 18px; }
+  .finish-time { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .finish-places { margin-top: 8px; font-size: 17px; font-weight: 600; }
+  .finish-team, .finish-club { color: var(--text); font-weight: 600; }
+  .finish-extra { margin-top: 7px; color: var(--dim); font-size: 16px; }
+  .finish-jump { position: fixed; bottom: 20px; right: 20px; border: 1px solid var(--accent); border-radius: 12px; padding: 12px 18px; background: var(--panel); color: var(--text); font-size: 16px; cursor: pointer; z-index: 10; }
 </style>
 </head>
 <body>
@@ -148,7 +163,9 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script>
+<script type="module">
+import {createFinishFeed} from "/live.js"
+
 const app = document.getElementById('app')
 const elTitle = document.getElementById('title')
 const elSub = document.getElementById('subtitle')
@@ -159,11 +176,30 @@ let races = []
 let currentRaceId = null
 let protocol = null
 let query = ''
-let tab = 'awards'
+let tab = location.pathname === '/live' ? 'live' : 'awards'
 let published = false
 let eventName = ''
 let genderFilter = 'all'
 let categoryFilter = 'all'
+
+const finishFeed = createFinishFeed({
+  mount: app,
+  onTab: selectTab,
+  onMeta: data => {
+    elTitle.textContent = data.event_name || 'Финиши'
+    elSub.textContent = data.event_date || ''
+    document.title = data.event_name ? data.event_name + ' · Финиши' : 'Финиши'
+  },
+})
+
+function selectTab(next) {
+  if (next === tab) return
+  const wasLive = tab === 'live'
+  tab = next
+  history.replaceState(null, '', next === 'live' ? '/live' : '/')
+  render()
+  if (wasLive && next !== 'live') refresh()
+}
 
 const MEDALS = ['🥇', '🥈', '🥉']
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
@@ -336,6 +372,8 @@ function renderProtocol(rows) {
 }
 
 function render() {
+  if (tab === 'live') { elUpdated.textContent = ''; finishFeed.start(); return }
+  finishFeed.stop()
   if (!published) {
     elSub.textContent = ''
     app.innerHTML = `<div class="off"><div class="big">Трансляция результатов выключена</div>Результаты появятся, когда судья включит трансляцию.</div>`
@@ -347,24 +385,25 @@ function render() {
     `<option value="${esc(rc.id)}" ${rc.id === currentRaceId ? 'selected' : ''}>${esc(rc.name)}</option>`).join('')
   const selector = `<select class="dist" id="dist">${options}</select>`
 
+  const tabs = `<div class="seg">
+      <button class="seg-item ${tab === 'awards' ? 'active' : ''}" data-tab="awards">Призёры</button>
+      <button class="seg-item ${tab === 'protocol' ? 'active' : ''}" data-tab="protocol">Протокол</button>
+      <button class="seg-item" data-tab="live">Финиши</button>
+    </div>`
   let content = '<div class="empty">Загрузка…</div>'
   if (protocol) {
     const c = protocol.counts || {}
     const rows = protocol.rows || []
-    const tabs = `<div class="seg">
-      <button class="seg-item ${tab === 'awards' ? 'active' : ''}" data-tab="awards">Призёры</button>
-      <button class="seg-item ${tab === 'protocol' ? 'active' : ''}" data-tab="protocol">Протокол</button>
-    </div>`
     const counts = `<div class="counts">Финишировало ${c.finished ?? 0} из ${c.started ?? 0}</div>`
-    content = `${counts}${tabs}${tab === 'awards' ? renderAwards(rows) : renderProtocol(rows)}`
+    content = `${counts}${tab === 'awards' ? renderAwards(rows) : renderProtocol(rows)}`
   }
 
-  app.innerHTML = `${selector}${content}`
+  app.innerHTML = `${selector}${tabs}${content}`
 
   const dist = document.getElementById('dist')
   if (dist) dist.addEventListener('change', e => selectRace(e.target.value))
   app.querySelectorAll('.seg-item').forEach(b =>
-    b.addEventListener('click', () => { tab = b.dataset.tab; render() }))
+    b.addEventListener('click', () => selectTab(b.dataset.tab)))
   const copy = document.getElementById('copymd')
   if (copy) copy.addEventListener('click', copyMarkdown)
   const q = document.getElementById('q')
@@ -480,7 +519,10 @@ async function selectRace(id) {
 async function loadProtocol() {
   if (!currentRaceId) return
   try {
-    protocol = await getJSON('/api/races/' + encodeURIComponent(currentRaceId))
+    const id = currentRaceId
+    const result = await getJSON('/api/races/' + encodeURIComponent(id))
+    if (tab === 'live' || currentRaceId !== id) return
+    protocol = result
   } catch (e) {
     protocol = {rows: [], counts: {}}
   }
@@ -490,6 +532,7 @@ async function loadProtocol() {
 async function loadMeta() {
   try {
     const meta = await getJSON('/api/meta')
+    if (tab === 'live') return
     published = !!meta.published
     if (published) {
       eventName = meta.event_name || ''
@@ -503,6 +546,7 @@ async function loadMeta() {
 async function loadRaces() {
   try {
     const data = await getJSON('/api/races')
+    if (tab === 'live') return
     published = !!data.published
     races = data.races || []
     if (published && races.length && !races.some(r => r.id === currentRaceId)) {
@@ -512,11 +556,14 @@ async function loadRaces() {
 }
 
 async function refresh() {
+  if (tab === 'live') { render(); return }
   // Don't yank the page out from under an open copy dialog.
   if (document.querySelector('.modal')) return
   await loadMeta()
+  if (tab === 'live') return
   await loadRaces()
-  if (published && currentRaceId) await loadProtocol()
+  if (tab === 'live') return
+  if (published && currentRaceId) { if (!protocol) render(); await loadProtocol() }
   else render()
 }
 

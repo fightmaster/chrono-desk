@@ -190,3 +190,16 @@ Changing common gun does not shift personal inputs unless the explicit schedule
 shift switch is enabled. That operation journals absolute personal values;
 reimport and upload do not apply a delta again. Unknown legacy start values
 require explicit classification before enabling dual mode. Raw times never move.
+
+
+### Optional Club display metadata (CHR-DESK-UI-002)
+
+`members[].club` is an optional string (up to255UTF-8bytes) or null, independent
+of `team`. Omission retains stored Club; explicit null clears it. Source and
+consumer keep it in a separate metadata table, preserving registration/timing
+ownership. Club can be imported for an existing member even when a packet scope
+makes the legacy registration fields non-authoritative. It never changes packet
+Person canonical JSON, causal heads or timing projection. Old exports/clients
+remain compatible; envelope schema-version selection is unchanged. JSON backups
+include known Club metadata. Canonical contract/rollout is in sibling chrono-docs
+`contracts/registration-display-metadata.md` (registration-display-metadata-v1).

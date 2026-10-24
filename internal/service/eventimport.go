@@ -89,25 +89,26 @@ type exportCheckpoint struct {
 }
 
 type exportMember struct {
-	StartTimeSource    *string `json:"start_time_source,omitempty"`
-	StartObservationID *string `json:"start_observation_id,omitempty"`
-	ID                 string  `json:"id"`
-	EventID            string  `json:"event_id"`
-	RaceID             string  `json:"race_id"`
-	CategoryID         *string `json:"category_id"`
-	Number             *int64  `json:"number"`
-	EPC                *string `json:"epc"`
-	RFID               *string `json:"rfid"`
-	FirstName          string  `json:"first_name"`
-	LastName           string  `json:"last_name"`
-	Gender             *string `json:"gender"`
-	DOB                *string `json:"dob"`
-	City               *string `json:"city"`
-	Team               *string `json:"team"`
-	Status             int     `json:"status"`
-	StartTime          *string `json:"start_time"`
-	FinishTime         *string `json:"finish_time"`
-	CleanTime          *string `json:"clean_time"`
+	StartTimeSource    *string         `json:"start_time_source,omitempty"`
+	StartObservationID *string         `json:"start_observation_id,omitempty"`
+	ID                 string          `json:"id"`
+	EventID            string          `json:"event_id"`
+	RaceID             string          `json:"race_id"`
+	CategoryID         *string         `json:"category_id"`
+	Number             *int64          `json:"number"`
+	EPC                *string         `json:"epc"`
+	RFID               *string         `json:"rfid"`
+	FirstName          string          `json:"first_name"`
+	LastName           string          `json:"last_name"`
+	Gender             *string         `json:"gender"`
+	DOB                *string         `json:"dob"`
+	City               *string         `json:"city"`
+	Team               *string         `json:"team"`
+	Status             int             `json:"status"`
+	StartTime          *string         `json:"start_time"`
+	FinishTime         *string         `json:"finish_time"`
+	CleanTime          *string         `json:"clean_time"`
+	Club               json.RawMessage `json:"club,omitempty"`
 }
 
 type exportRfidLog struct {
@@ -291,6 +292,16 @@ func buildImportData(export *EventExport) (sqlite.EventImportData, error) {
 		})
 	}
 	for _, m := range export.Members {
+		if len(m.Club) > 0 {
+			club, err := decodeClubMetadata(m.Club)
+			if err != nil {
+				return sqlite.EventImportData{}, err
+			}
+			if d.Clubs == nil {
+				d.Clubs = make(map[string]*string)
+			}
+			d.Clubs[m.ID] = club
+		}
 		startMs, err := parseTimeMs(m.StartTime)
 		if err != nil {
 			return sqlite.EventImportData{}, fmt.Errorf("member %s start_time: %w", m.ID, err)

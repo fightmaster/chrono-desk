@@ -8,6 +8,7 @@
   let error = ''
   let copied = ''
   let loaded = false
+  let metadataNotice = ''
 
   // Broadcasting this event = the LAN server is up AND serving our id.
   $: live = status?.running && status.event_id === eventId
@@ -33,6 +34,14 @@
     error = ''; busy = 'Выключаем…'
     try {
       status = await call('POST', '/api/public/stop')
+    } catch (e) { error = e.message } finally { busy = '' }
+  }
+
+  async function refreshClubs() {
+    error = ''; metadataNotice = ''; busy = 'Обновляем клубы…'
+    try {
+      const result = await call('POST', `/api/events/${eventId}/presenter/clubs/refresh`)
+      metadataNotice = `Данные о клубах обновлены. Изменено записей: ${result.updated}.`
     } catch (e) { error = e.message } finally { busy = '' }
   }
 
@@ -63,6 +72,8 @@
     {/if}
   </div>
 
+  <button class="btn link" disabled={!!busy} on:click={refreshClubs}>Обновить клубы с сайта</button>
+  {#if metadataNotice}<p class="faint">{metadataNotice}</p>{/if}
   {#if error}<p class="error">{error}</p>{/if}
   {#if busy}<p class="faint busy">{busy}</p>{/if}
 
@@ -80,6 +91,12 @@
             <div class="ep-info">
               <code class="mono url">{ep.url}</code>
               <button class="btn link" on:click={() => copy(ep.url)}>{copied === ep.url ? 'скопировано' : 'копировать'}</button>
+              {#if ep.presenter_url}
+                <span class="faint">Для ведущего · Live-финиши</span>
+                <a href={ep.presenter_url} target="_blank" rel="noopener noreferrer">{ep.presenter_url}</a>
+                {#if ep.presenter_qr}<img class="qr" src={ep.presenter_qr} alt="QR ленты финишей для ведущего" width="150" height="150"/>{/if}
+                <button class="btn link" on:click={() => copy(ep.presenter_url)}>{copied === ep.presenter_url ? 'скопировано' : 'копировать ссылку ведущего'}</button>
+              {/if}
             </div>
           </div>
         {/each}

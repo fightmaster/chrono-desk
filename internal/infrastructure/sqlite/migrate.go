@@ -59,6 +59,29 @@ func migrate(db *sql.DB) error {
 	if err := addPacketIssuanceFeedRetention(db); err != nil {
 		return err
 	}
+	if err := addMemberClubMetadata(db); err != nil {
+		return err
+	}
+	if err := addLiveFinishEligibilityRevision(db); err != nil {
+		return err
+	}
+	if err := addLiveFinishIndexes(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+func addLiveFinishIndexes(db *sql.DB) error {
+	for _, statement := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_members_live_finish ON members(event_id,finish_time_ms DESC,id DESC)
+		 WHERE status=0 AND finish_time_ms IS NOT NULL AND clean_time IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_members_race_live_finish ON members(event_id,race_id,finish_time_ms DESC,id DESC)
+		 WHERE status=0 AND finish_time_ms IS NOT NULL AND clean_time IS NOT NULL`,
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			return fmt.Errorf("add live finish index: %w", err)
+		}
+	}
 	return nil
 }
 

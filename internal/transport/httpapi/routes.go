@@ -61,6 +61,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/public/start", s.handlePublicStart)
 	mux.HandleFunc("POST /api/public/stop", s.handlePublicStop)
 	mux.HandleFunc("GET /api/public/status", s.handlePublicStatus)
+	mux.HandleFunc("POST /api/events/{id}/presenter/clubs/refresh", s.handlePresenterClubsRefresh)
 	mux.HandleFunc("GET /api/events/{id}/sync-config", s.handleGetSyncConfig)
 	mux.HandleFunc("PUT /api/events/{id}/sync-config", s.handleSetSyncConfig)
 	mux.HandleFunc("POST /api/events/{id}/sync", s.handleSyncPush)

@@ -228,6 +228,7 @@ func upsertRfidLogs(ctx context.Context, tx *sql.Tx, logs []domain.RfidLog) erro
 
 // EventImportData is a fully-parsed event export, ready to apply atomically.
 type EventImportData struct {
+	Clubs       map[string]*string
 	Event       domain.Event
 	Laps        []domain.Lap
 	Races       []domain.Race
@@ -303,6 +304,9 @@ func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) (bool, 
 		} else if err := upsertMember(ctx, tx, m); err != nil {
 			return packetScopeExists, err
 		}
+	}
+	if _, err := applyMemberClubs(ctx, tx, d.Event.ID, d.Clubs); err != nil {
+		return packetScopeExists, err
 	}
 	if err := upsertRfidLogs(ctx, tx, d.RfidLogs); err != nil {
 		return packetScopeExists, err

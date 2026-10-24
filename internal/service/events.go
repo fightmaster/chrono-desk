@@ -14,8 +14,9 @@ import (
 // EventService hosts event-level use cases on top of the infrastructure
 // catalog: import, list, and store access for transports.
 type EventService struct {
-	catalog *sqlite.EventCatalog
-	logger  *log.Logger
+	catalog     *sqlite.EventCatalog
+	logger      *log.Logger
+	finishRanks liveFinishRankCache
 }
 
 func NewEventService(catalog *sqlite.EventCatalog, logger *log.Logger) *EventService {
