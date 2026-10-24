@@ -38,6 +38,12 @@ must remain running. Stopping the broadcast closes its LAN listener.
 
 ## Implementation
 
+Planned transport change (CHR-SSE-001): replace active-view polling with SSE
+snapshots, immediate post-commit notification and bounded client backpressure.
+The runtime described below still uses polling. See the
+[implementation/test plan](plans/presenter-sse.md) and
+[transport decision](adr/0001-presenter-sse.md).
+
 `GET /api/live/finishes?race_id=<optional>` returns a bounded snapshot of only the
 broadcast event: `published`, `filtered`, opaque `event_key`, event name/date,
 FixedDistance `races`, and at most 10 `rows`. Empty lists are `[]`. No broadcast

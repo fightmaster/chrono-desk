@@ -56,6 +56,11 @@ camera polling or image downloads.
 
 ## Key decisions
 
+Planned presenter transport (CHR-SSE-001):
+[ADR-0001](adr/0001-presenter-sse.md) specifies commit-triggered SSE snapshots,
+bounded slow-client isolation and lifecycle testing. This is a local read API;
+the current presenter still polls and shared timing/sync contracts are unchanged.
+
 The candidate uses a shared snapshot calculator and independent coherent reads;
 see [snapshot recount and read pools](snapshot-recount.md). App-owned ingestion
 continues while UI views are closed.
