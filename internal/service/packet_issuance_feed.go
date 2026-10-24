@@ -316,6 +316,16 @@ func applyPacketFeedChanges(ctx context.Context, store *sqlite.Store, eventID st
 }
 
 func applyPacketFeedPlans(ctx context.Context, store *sqlite.Store, eventID string, plans []packetFeedPlan) error {
+	changes := make([]packetissuance.Change, 0, len(plans))
+	for _, plan := range plans {
+		if plan.after != nil {
+			changes = append(changes, packetissuance.Change{RegistrationID: plan.change.RegistrationID, Before: plan.before.Value, After: *plan.after})
+		}
+	}
+	clubs, err := packetClubProjection(ctx, store, eventID, changes)
+	if err != nil {
+		return err
+	}
 	for _, plan := range plans {
 		if plan.after == nil {
 			if !plan.before.Found || plan.before.Deleted {
@@ -340,7 +350,7 @@ func applyPacketFeedPlans(ctx context.Context, store *sqlite.Store, eventID stri
 			return err
 		}
 	}
-	return nil
+	return applyPacketClubs(ctx, store, eventID, clubs)
 }
 
 func mergePacketFeedChange(current sqlite.PacketRegistrationRecord, change packetissuance.FeedChange) (*packetissuance.Registration, string) {

@@ -120,6 +120,7 @@ type Member struct {
 	City                   *string
 	Team                   *string
 	Status                 MemberStatus
+	Club                   *string // primary display affiliation; independent of canonical packet Person
 
 	// Derived locally on recount; export values are informational only.
 	StartTimeMs  *int64

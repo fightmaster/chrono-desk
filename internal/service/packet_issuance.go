@@ -133,6 +133,10 @@ func (r *PacketIssuanceReceiver) receiveOne(ctx context.Context, store *sqlite.S
 		}
 		decision, code, changes := packetMergeDecision(current, operation, txStore, ctx)
 		if decision == "applied" {
+			clubs, err := packetClubProjection(ctx, txStore, connection.EventID, changes)
+			if err != nil {
+				return err
+			}
 			for _, change := range changes {
 				existingMember, err := txStore.GetMember(ctx, change.RegistrationID)
 				if err != nil {
@@ -154,6 +158,9 @@ func (r *PacketIssuanceReceiver) receiveOne(ctx context.Context, store *sqlite.S
 				if err := txStore.PutPacketRegistration(ctx, change.After, []string{operation.OperationID}, categoryID); err != nil {
 					return err
 				}
+			}
+			if err := applyPacketClubs(ctx, txStore, connection.EventID, clubs); err != nil {
+				return err
 			}
 		}
 		return r.persist(ctx, txStore, operation, hash, decision, code, changes, known, &receipt)

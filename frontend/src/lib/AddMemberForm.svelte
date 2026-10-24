@@ -13,7 +13,7 @@
   let f = blank()
 
   function blank() {
-    return {race_id: defaultRaceId, last_name: '', first_name: '', number: '', epc: '', gender: '', dob: '', category_id: ''}
+    return {race_id: defaultRaceId, last_name: '', first_name: '', number: '', epc: '', gender: '', dob: '', category_id: '', club: '', team: ''}
   }
   $: if (!f.race_id && defaultRaceId) f.race_id = defaultRaceId
 
@@ -41,6 +41,8 @@
         gender: f.gender || null,
         dob: f.dob || null,
         category_id: f.category_id || null,
+        club: f.club.trim() || null,
+        team: f.team.trim() || null,
       }))
       f = blank()
       open = false
@@ -56,6 +58,8 @@
     <div class="grid">
       <div class="field"><span>Фамилия</span><input class="input" bind:value={f.last_name}/></div>
       <div class="field"><span>Имя</span><input class="input" bind:value={f.first_name}/></div>
+      <div class="field"><span>Клуб</span><input class="input" bind:value={f.club}/></div>
+      <div class="field"><span>Команда</span><input class="input" bind:value={f.team}/></div>
       <div class="field"><span>Номер</span><input class="input mono" type="number" bind:value={f.number}/></div>
       <div class="field"><span>Метка (EPC)</span><input class="input mono" bind:value={f.epc} placeholder="E280…"/></div>
       <div class="field"><span>Пол</span>

@@ -31,7 +31,7 @@
         <div class="grid row">
           <span class="mono dim when">{fmtDateTime(c.changed_at)}</span>
           <span class="what"><span class="dim">{entityNames[c.entity] ?? c.entity} </span><span class="mono ref">{c.entity_id}</span></span>
-          <span class="mono dim field">{c.field}</span>
+          <span class="mono dim field">{c.field === 'club' ? 'Клуб' : c.field}</span>
           <span class="mono amber-text val">{c.old_value}</span>
           <span class="mono amber-text val">{c.new_value}</span>
         </div>

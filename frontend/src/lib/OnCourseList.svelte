@@ -7,7 +7,7 @@
   $: rows = progress?.on_course || []
   $: shown = rows.filter(row => {
     const q = query.trim().toLowerCase()
-    return !q || `${row.last_name ?? ''} ${row.first_name ?? ''}`.toLowerCase().includes(q) || String(row.number ?? '').includes(q)
+    return !q || `${row.last_name ?? ''} ${row.first_name ?? ''} ${row.club ?? ''}`.toLowerCase().includes(q) || String(row.number ?? '').includes(q)
   })
 </script>
 
@@ -15,7 +15,7 @@
   <p class="faint note">Здесь участники с наступившим стартом, без финиша и без DNS, DNF или DSQ. При общем старте ожидаем всех зарегистрированных: если человек не стартовал, отметьте DNS в его карточке.</p>
   {#if progress}
     <label class="search">Поиск участника
-      <input class="input" type="search" bind:value={query} placeholder="Фамилия или номер"/>
+      <input class="input" type="search" bind:value={query} placeholder="Фамилия, номер или клуб"/>
     </label>
     <div class="roster" role="list" aria-label="Ожидаемые финишёры">
       <div class="head"><span>Номер</span><span>Участник</span><span>Группа</span><span>Старт</span></div>
@@ -23,7 +23,7 @@
         <div role="listitem">
           <button class="person" on:click={() => dispatch('openMember', row.member_id)}>
             <span class="mono bib">{row.number ?? '—'}</span>
-            <span>{row.last_name} {row.first_name}</span>
+            <span>{row.last_name} {row.first_name}{#if row.club}<small class="faint" style="display:block">{row.club}</small>{/if}</span>
             <span class="faint">{row.category_name ?? '—'}</span>
             <span class="mono faint">{fmtTime(row.start_time_ms)}</span>
           </button>

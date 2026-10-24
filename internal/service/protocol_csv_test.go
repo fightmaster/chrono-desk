@@ -34,7 +34,7 @@ func TestBuildProtocolCSV(t *testing.T) {
 	members := []domain.Member{
 		{ID: "m1", EventID: "ev1", RaceID: "r1", Number: ptr(101), FirstName: "Иван", LastName: "Петров",
 			Gender: sptr("male"), CategoryID: sptr("cat1"), DOB: &dob,
-			StartTimeMs: &start, FinishTimeMs: &winFinish, CleanTime: &clean, Team: sptr("=unsafe")},
+			StartTimeMs: &start, FinishTimeMs: &winFinish, CleanTime: &clean, Team: sptr("=unsafe"), Club: sptr("=club")},
 		{ID: "m2", EventID: "ev1", RaceID: "r1", Number: ptr(102), FirstName: "Пётр", LastName: "Сидоров",
 			Gender: sptr("male"), CategoryID: sptr("cat1"),
 			StartTimeMs: &start, FinishTimeMs: &secondFinish, CleanTime: &clean},
@@ -66,6 +66,9 @@ func TestBuildProtocolCSV(t *testing.T) {
 	}
 	if rows[1][0] != "1" || rows[1][4] != "Петров" || rows[1][12] != "00:30:00" || rows[1][13] != "" {
 		t.Fatalf("winner row=%v", rows[1])
+	}
+	if rows[1][15] != "'=club" || rows[0][15] != "Клуб" {
+		t.Fatalf("Club column missing or unsafe: %v", rows[1])
 	}
 	if rows[1][6] != "01.05.1990" || rows[1][7] != "М" || rows[1][8] != "M18-39" || rows[1][9] != "'=unsafe" {
 		t.Fatalf("winner metadata=%v", rows[1])

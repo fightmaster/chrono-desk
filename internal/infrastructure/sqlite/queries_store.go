@@ -50,7 +50,8 @@ func (s *Store) GetRace(ctx context.Context, raceID string) (domain.Race, error)
 func (s *Store) ListMembersByRace(ctx context.Context, raceID string) ([]domain.Member, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
-			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time, start_time_source, COALESCE(start_observation_id,''), chip_start_time_ms, chip_start_source, COALESCE(chip_start_observation_id,'')
+			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time, start_time_source, COALESCE(start_observation_id,''), chip_start_time_ms, chip_start_source, COALESCE(chip_start_observation_id,''),
+            (SELECT club FROM member_club_metadata c WHERE c.member_id=members.id AND c.event_id=members.event_id)
 		FROM members WHERE race_id = ? ORDER BY id`, raceID)
 	if err != nil {
 		return nil, fmt.Errorf("list members: %w", err)
@@ -63,7 +64,7 @@ func (s *Store) ListMembersByRace(ctx context.Context, raceID string) ([]domain.
 		var status int
 		if err := rows.Scan(&m.ID, &m.EventID, &m.RaceID, &m.CategoryID, &m.Number, &m.EPC, &m.RFID,
 			&m.FirstName, &m.LastName, &m.Gender, &m.DOB, &m.City, &m.Team, &status,
-			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime, &m.StartTimeSource, &m.StartObservationID, &m.ChipStartTimeMs, &m.ChipStartSource, &m.ChipStartObservationID); err != nil {
+			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime, &m.StartTimeSource, &m.StartObservationID, &m.ChipStartTimeMs, &m.ChipStartSource, &m.ChipStartObservationID, &m.Club); err != nil {
 			return nil, err
 		}
 		m.Status = domain.MemberStatus(status)
@@ -169,11 +170,12 @@ func (s *Store) GetMember(ctx context.Context, memberID string) (domain.Member, 
 	var status int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
-			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time, start_time_source, COALESCE(start_observation_id,''), chip_start_time_ms, chip_start_source, COALESCE(chip_start_observation_id,'')
+			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time, start_time_source, COALESCE(start_observation_id,''), chip_start_time_ms, chip_start_source, COALESCE(chip_start_observation_id,''),
+            (SELECT club FROM member_club_metadata c WHERE c.member_id=members.id AND c.event_id=members.event_id)
 		FROM members WHERE id = ?`, memberID).
 		Scan(&m.ID, &m.EventID, &m.RaceID, &m.CategoryID, &m.Number, &m.EPC, &m.RFID,
 			&m.FirstName, &m.LastName, &m.Gender, &m.DOB, &m.City, &m.Team, &status,
-			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime, &m.StartTimeSource, &m.StartObservationID, &m.ChipStartTimeMs, &m.ChipStartSource, &m.ChipStartObservationID)
+			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime, &m.StartTimeSource, &m.StartObservationID, &m.ChipStartTimeMs, &m.ChipStartSource, &m.ChipStartObservationID, &m.Club)
 	if err != nil {
 		return domain.Member{}, fmt.Errorf("get member %s: %w", memberID, err)
 	}
@@ -205,6 +207,7 @@ func (s *Store) memberValueTaken(ctx context.Context, query, field, eventID stri
 
 // MemberRow is the slim JSON shape for the searchable members list.
 type MemberRow struct {
+	Club          *string `json:"club"`
 	ID            string  `json:"id"`
 	RaceID        string  `json:"race_id"`
 	Number        *int64  `json:"number"`
@@ -223,7 +226,8 @@ func (s *Store) ListMembersByEvent(ctx context.Context, eventID string) ([]Membe
 		SELECT m.id, m.race_id, m.number, m.first_name, m.last_name, m.epc, m.category_id, m.status,
 		       CASE WHEN p.registration_id IS NULL OR p.deleted=1 THEN 0 ELSE 1 END,
 		       COALESCE(json_extract(p.value_json, '$.reserve'), 0),
-		       COALESCE(json_extract(p.value_json, '$.issued'), 0)
+		       COALESCE(json_extract(p.value_json, '$.issued'), 0),
+            (SELECT club FROM member_club_metadata c WHERE c.member_id=m.id AND c.event_id=m.event_id)
 		FROM members m
 		LEFT JOIN packet_issuance_registrations p ON p.event_id=m.event_id AND p.registration_id=m.id
 		WHERE m.event_id = ? ORDER BY m.last_name, m.first_name, m.id`, eventID)
@@ -236,7 +240,7 @@ func (s *Store) ListMembersByEvent(ctx context.Context, eventID string) ([]Membe
 	for rows.Next() {
 		var m MemberRow
 		if err := rows.Scan(&m.ID, &m.RaceID, &m.Number, &m.FirstName, &m.LastName, &m.EPC, &m.CategoryID,
-			&m.Status, &m.PacketTracked, &m.Reserve, &m.Issued); err != nil {
+			&m.Status, &m.PacketTracked, &m.Reserve, &m.Issued, &m.Club); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -292,7 +296,8 @@ func (s *Store) ListLaps(ctx context.Context) ([]domain.Lap, error) {
 func (s *Store) ListMembersFullByEvent(ctx context.Context, eventID string) ([]domain.Member, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
-			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time, start_time_source, COALESCE(start_observation_id,''), chip_start_time_ms, chip_start_source, COALESCE(chip_start_observation_id,'')
+			gender, dob, city, team, status, start_time_ms, finish_time_ms, clean_time, start_time_source, COALESCE(start_observation_id,''), chip_start_time_ms, chip_start_source, COALESCE(chip_start_observation_id,''),
+            (SELECT club FROM member_club_metadata c WHERE c.member_id=members.id AND c.event_id=members.event_id)
 		FROM members WHERE event_id = ? ORDER BY id`, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("list event members full: %w", err)
@@ -305,7 +310,7 @@ func (s *Store) ListMembersFullByEvent(ctx context.Context, eventID string) ([]d
 		var status int
 		if err := rows.Scan(&m.ID, &m.EventID, &m.RaceID, &m.CategoryID, &m.Number, &m.EPC, &m.RFID,
 			&m.FirstName, &m.LastName, &m.Gender, &m.DOB, &m.City, &m.Team, &status,
-			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime, &m.StartTimeSource, &m.StartObservationID, &m.ChipStartTimeMs, &m.ChipStartSource, &m.ChipStartObservationID); err != nil {
+			&m.StartTimeMs, &m.FinishTimeMs, &m.CleanTime, &m.StartTimeSource, &m.StartObservationID, &m.ChipStartTimeMs, &m.ChipStartSource, &m.ChipStartObservationID, &m.Club); err != nil {
 			return nil, err
 		}
 		m.Status = domain.MemberStatus(status)

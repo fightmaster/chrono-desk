@@ -109,6 +109,7 @@ func (s *Store) ListManualResultsForMembers(ctx context.Context, eventID string,
 // ManualResultDetail is a judge entry joined with the participant, for the
 // review/undo list on the live screen.
 type ManualResultDetail struct {
+	Club      *string `json:"club"`
 	ID        int64   `json:"id"`
 	MemberID  string  `json:"member_id"`
 	Number    *int64  `json:"number"`
@@ -121,7 +122,8 @@ type ManualResultDetail struct {
 // ListManualResultsDetailed returns judge entries with participant name/number
 // and the member's derived clean time, newest first.
 func (s *Store) ListManualResultsDetailed(ctx context.Context, eventID, raceID string) ([]ManualResultDetail, error) {
-	query := `SELECT r.id, r.member_id, m.number, m.first_name, m.last_name, r.time_ms, m.clean_time
+	query := `SELECT r.id, r.member_id, m.number, m.first_name, m.last_name, r.time_ms, m.clean_time,
+        (SELECT club FROM member_club_metadata mc WHERE mc.member_id=m.id AND mc.event_id=m.event_id)
 		FROM results r
 		JOIN members m ON m.id = r.member_id
 		WHERE r.event_id = ? AND r.rfid_log_id IS NULL AND r.checkpoint_id IS NULL`
@@ -141,7 +143,7 @@ func (s *Store) ListManualResultsDetailed(ctx context.Context, eventID, raceID s
 	out := []ManualResultDetail{}
 	for rows.Next() {
 		var d ManualResultDetail
-		if err := rows.Scan(&d.ID, &d.MemberID, &d.Number, &d.FirstName, &d.LastName, &d.TimeMs, &d.CleanTime); err != nil {
+		if err := rows.Scan(&d.ID, &d.MemberID, &d.Number, &d.FirstName, &d.LastName, &d.TimeMs, &d.CleanTime, &d.Club); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -181,6 +183,7 @@ func (s *Store) DeleteManualResult(ctx context.Context, eventID string, resultID
 // resolved to. Manual judge finishes share this shape so they appear inline in
 // the feed (Manual=true, ResultID set) instead of a separate list.
 type LivePass struct {
+	Club           *string `json:"club"`
 	LogID          string  `json:"log_id"`
 	TimeMs         int64   `json:"time_ms"`
 	EPC            string  `json:"epc"`
@@ -209,13 +212,14 @@ func (s *Store) ListRecentPasses(ctx context.Context, eventID string, limit int)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT log_id, time_ms, epc, board, disabled_at,
 		       member_id, number, first_name, last_name, race_id,
-		       checkpoint_name, checkpoint_type, result_id, manual
+		       checkpoint_name, checkpoint_type, result_id, manual, club
 		FROM (
 			SELECT l.id AS log_id, l.time_ms AS time_ms, l.epc AS epc, l.board AS board,
 			       l.disabled_at AS disabled_at, m.id AS member_id, m.number AS number,
 			       m.first_name AS first_name, m.last_name AS last_name, m.race_id AS race_id,
 			       c.name AS checkpoint_name, c.type AS checkpoint_type,
-			       NULL AS result_id, 0 AS manual
+			       NULL AS result_id, 0 AS manual,
+                   (SELECT club FROM member_club_metadata mc WHERE mc.member_id=m.id AND mc.event_id=m.event_id) AS club
 			FROM rfid_logs l
 			LEFT JOIN members m ON m.event_id = l.event_id AND m.epc = l.epc
 			LEFT JOIN results r ON r.rfid_log_id = l.id
@@ -227,7 +231,8 @@ func (s *Store) ListRecentPasses(ctx context.Context, eventID string, limit int)
 		UNION ALL
 		SELECT 'manual:' || r.id, r.time_ms, '', '', NULL,
 		       m.id, m.number, m.first_name, m.last_name, m.race_id,
-		       NULL, NULL, r.id, 1
+		       NULL, NULL, r.id, 1,
+               (SELECT club FROM member_club_metadata mc WHERE mc.member_id=m.id AND mc.event_id=m.event_id)
 		FROM results r
 		JOIN members m ON m.id = r.member_id
 		WHERE r.event_id = ? AND r.rfid_log_id IS NULL AND r.checkpoint_id IS NULL
@@ -245,7 +250,7 @@ func (s *Store) ListRecentPasses(ctx context.Context, eventID string, limit int)
 		)
 		if err := rows.Scan(&p.LogID, &p.TimeMs, &p.EPC, &p.Board, &p.DisabledAt,
 			&p.MemberID, &p.Number, &p.FirstName, &p.LastName, &p.RaceID,
-			&p.CheckpointName, &p.CheckpointType, &p.ResultID, &manual); err != nil {
+			&p.CheckpointName, &p.CheckpointType, &p.ResultID, &manual, &p.Club); err != nil {
 			return nil, err
 		}
 		p.Manual = manual == 1

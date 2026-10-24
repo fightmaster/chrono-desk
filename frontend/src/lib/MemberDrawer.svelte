@@ -383,7 +383,7 @@
                 {#each bindMatches as m (m.id)}
                   <button class="match" on:click={() => bindNumber(m)}>
                     <span class="mono num">{m.number ?? '—'}</span>
-                    <span class="mname">{m.last_name ?? ''} {m.first_name ?? ''}</span>
+                    <span class="mname">{m.last_name ?? ''} {m.first_name ?? ''}{#if m.club}<small class="dim"> · {m.club}</small>{/if}</span>
                   </button>
                 {/each}
               </div>
@@ -437,6 +437,10 @@
         <select class="input" value={member.gender ?? ''} on:change={e => edit('gender', e.target.value || null)}>
           <option value="">—</option><option value="male">М</option><option value="female">Ж</option>
         </select></div>
+      <div class="field"><span>Клуб</span>
+        <input class="input" value={member.club ?? ''} on:change={e => edit('club', e.target.value || null)}/></div>
+      <div class="field"><span>Команда</span>
+        <input class="input" value={member.team ?? ''} on:change={e => edit('team', e.target.value || null)}/></div>
       <div class="field"><span>Дата рождения</span>
         <input class="input mono" type="date" value={member.dob ?? ''} on:change={e => edit('dob', e.target.value || null)}/></div>
       <div class="field"><span>Номер</span>

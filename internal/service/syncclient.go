@@ -53,6 +53,7 @@ func newSyncHTTPClient() *http.Client {
 type SyncCapabilities struct {
 	AssignedStartDualTimeVersion     int   `json:"assigned_start_dual_time_version"`
 	CheckpointWindowSelectionVersion int   `json:"checkpoint_window_selection_version"`
+	ClubAffiliationVersion           int   `json:"club_affiliation_version"`
 	PushSchemaVersions               []int `json:"push_schema_versions"`
 	PreferredPushSchemaVersion       int   `json:"preferred_push_schema_version"`
 	ChangeFeedSchemaVersions         []int `json:"change_feed_schema_versions"`
@@ -131,6 +132,9 @@ func PushSync(ctx context.Context, baseURL, token, eventID string, payload []byt
 	}
 	if header.AssignedStartDualTimeVersion > capabilities.AssignedStartDualTimeVersion {
 		return SyncPushResponse{}, fmt.Errorf("сайт не поддерживает раздельные назначенный и chip старты; обновите сервер")
+	}
+	if payloadHasClub(payload) && capabilities.ClubAffiliationVersion < 2 {
+		return SyncPushResponse{}, fmt.Errorf("сайт не поддерживает сохранение клуба; обновите сайт перед отправкой")
 	}
 	url, err := syncURL(baseURL, eventID)
 	if err != nil {
@@ -293,4 +297,27 @@ func summaryError(body []byte) string {
 		s = s[:300]
 	}
 	return s
+}
+
+func payloadHasClub(payload []byte) bool {
+	var document struct {
+		Members []map[string]json.RawMessage `json:"new_members"`
+		Edits   []struct {
+			Fields map[string]json.RawMessage `json:"fields"`
+		} `json:"member_edits"`
+	}
+	if json.Unmarshal(payload, &document) != nil {
+		return false
+	}
+	for _, member := range document.Members {
+		if _, ok := member["club"]; ok {
+			return true
+		}
+	}
+	for _, edit := range document.Edits {
+		if _, ok := edit.Fields["club"]; ok {
+			return true
+		}
+	}
+	return false
 }

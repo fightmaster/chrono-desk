@@ -93,6 +93,10 @@ func ResolvePacketConflict(ctx context.Context, events *EventService, eventID, o
 		if !applyProposal {
 			changes = reversePacketChanges(changes)
 		} else {
+			clubs, err := packetClubProjection(ctx, txStore, eventID, changes)
+			if err != nil {
+				return err
+			}
 			for _, change := range changes {
 				member, err := txStore.GetMember(ctx, change.RegistrationID)
 				if err != nil {
@@ -108,6 +112,9 @@ func ResolvePacketConflict(ctx context.Context, events *EventService, eventID, o
 				if err := txStore.PutPacketRegistration(ctx, change.After, []string{resolutionID}, categoryID); err != nil {
 					return err
 				}
+			}
+			if err := applyPacketClubs(ctx, txStore, eventID, clubs); err != nil {
+				return err
 			}
 		}
 		now := time.Now().UTC()

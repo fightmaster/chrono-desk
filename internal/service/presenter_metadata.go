@@ -36,8 +36,9 @@ func (s *EventService) RefreshPresenterClubs(ctx context.Context, eventID string
 			ID string `json:"id"`
 		} `json:"event"`
 		Members []struct {
-			ID   string          `json:"id"`
-			Club json.RawMessage `json:"club"`
+			ID           string          `json:"id"`
+			Club         json.RawMessage `json:"club"`
+			ClubPersonID json.RawMessage `json:"club_person_id"`
 		} `json:"members"`
 	}
 	if err := json.Unmarshal(body, &document); err != nil {
@@ -47,6 +48,7 @@ func (s *EventService) RefreshPresenterClubs(ctx context.Context, eventID string
 		return stats, fmt.Errorf("неподдерживаемые данные клуба или другое событие")
 	}
 	clubs := make(map[string]*string)
+	owners := map[string]*string{}
 	seen := make(map[string]bool)
 	for _, member := range document.Members {
 		if member.ID == "" || seen[member.ID] {
@@ -60,9 +62,16 @@ func (s *EventService) RefreshPresenterClubs(ctx context.Context, eventID string
 		if err != nil {
 			return stats, err
 		}
+		if len(member.ClubPersonID) > 0 {
+			var owner *string
+			if err := json.Unmarshal(member.ClubPersonID, &owner); err != nil {
+				return stats, fmt.Errorf("неверный владелец клуба")
+			}
+			owners[member.ID] = owner
+		}
 		clubs[member.ID] = club
 	}
 	stats.Provided = len(clubs)
-	stats.Updated, err = store.ApplyMemberClubs(ctx, eventID, clubs)
+	stats.Updated, err = store.ApplyBoundMemberClubs(ctx, eventID, clubs, owners)
 	return stats, err
 }

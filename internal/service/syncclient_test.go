@@ -188,3 +188,33 @@ func TestCapabilitiesExposeChangeFeedSupport(t *testing.T) {
 		t.Fatalf("capabilities = %+v", capabilities)
 	}
 }
+
+func TestClubPushRequiresCapabilityBeforePostingAndKeepsLegacyPayloadCompatible(t *testing.T) {
+	version := 0
+	posts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/capabilities") {
+			if version == 2 {
+				io.WriteString(w, `{"push_schema_versions":[3],"club_affiliation_version":2}`)
+			} else {
+				io.WriteString(w, `{"push_schema_versions":[3]}`)
+			}
+			return
+		}
+		posts++
+		io.WriteString(w, `{"member_edits":1}`)
+	}))
+	defer server.Close()
+	payload := []byte(`{"schema_version":3,"member_edits":[{"fields":{"club":null}}]}`)
+	if _, err := PushSync(context.Background(), server.URL, "token", "event", payload); err == nil || posts != 0 {
+		t.Fatal("Club sent to incompatible site", err, posts)
+	}
+	version = 2
+	if _, err := PushSync(context.Background(), server.URL, "token", "event", payload); err != nil || posts != 1 {
+		t.Fatal("compatible Club push failed", err, posts)
+	}
+	version = 0
+	if _, err := PushSync(context.Background(), server.URL, "token", "event", []byte(`{"schema_version":3,"member_edits":[]}`)); err != nil || posts != 2 {
+		t.Fatal("old payload stopped working", err, posts)
+	}
+}

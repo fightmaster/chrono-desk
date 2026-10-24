@@ -79,6 +79,7 @@ export function memberMatches(m, q) {
   return (m.last_name && m.last_name.toLowerCase().includes(q)) ||
     (m.first_name && m.first_name.toLowerCase().includes(q)) ||
     (m.number !== null && m.number !== undefined && String(m.number).includes(q)) ||
+    (m.club && m.club.toLowerCase().includes(q)) ||
     (m.epc && m.epc.toLowerCase().includes(q))
 }
 

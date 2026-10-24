@@ -25,7 +25,7 @@ const (
 // Fields that round-trip to run5, mirroring the edit whitelist in edits.go.
 var (
 	syncEventFields      = set("use_race_date_for_age")
-	syncMemberFields     = set("status", "number", "epc", "category_id", "first_name", "last_name", "gender", "dob", "team", "city", "start_time_ms", "race_id")
+	syncMemberFields     = set("status", "number", "epc", "category_id", "first_name", "last_name", "gender", "dob", "club", "team", "city", "start_time_ms", "race_id")
 	syncRaceFields       = set("timing_basis", "shift_assigned_starts", "started_at_ms", "name", "category_excludes_top_by_gender")
 	syncCheckpointFields = set("until_ms", "until_offset_seconds", "read_selection", "since_ms", "since_offset_seconds", "sleep_after_prev_seconds", "board", "sort", "type")
 )
@@ -36,10 +36,11 @@ type syncEventEdit struct {
 }
 
 type syncMemberRef struct {
-	MemberID *string `json:"member_id"` // run5 id (nil for local- members)
-	LocalID  *string `json:"local_id"`  // chrono-desk local- id (nil for site members)
-	Bib      *int64  `json:"bib"`
-	EPC      *string `json:"epc"`
+	ClubPersonID json.RawMessage `json:"club_person_id,omitempty"`
+	MemberID     *string         `json:"member_id"` // run5 id (nil for local- members)
+	LocalID      *string         `json:"local_id"`  // chrono-desk local- id (nil for site members)
+	Bib          *int64          `json:"bib"`
+	EPC          *string         `json:"epc"`
 }
 
 type syncRfidLog struct {
@@ -84,17 +85,18 @@ type syncRfidLogEdit struct {
 }
 
 type syncNewMember struct {
-	LocalID    string  `json:"local_id"`
-	RaceID     string  `json:"race_id"`
-	FirstName  string  `json:"first_name"`
-	LastName   string  `json:"last_name"`
-	Number     *int64  `json:"number"`
-	EPC        *string `json:"epc"`
-	Gender     *string `json:"gender"`
-	DOB        *string `json:"dob"`
-	CategoryID *string `json:"category_id"`
-	Team       *string `json:"team"`
-	City       *string `json:"city"`
+	Club       json.RawMessage `json:"club,omitempty"`
+	LocalID    string          `json:"local_id"`
+	RaceID     string          `json:"race_id"`
+	FirstName  string          `json:"first_name"`
+	LastName   string          `json:"last_name"`
+	Number     *int64          `json:"number"`
+	EPC        *string         `json:"epc"`
+	Gender     *string         `json:"gender"`
+	DOB        *string         `json:"dob"`
+	CategoryID *string         `json:"category_id"`
+	Team       *string         `json:"team"`
+	City       *string         `json:"city"`
 }
 
 type syncMemberEdit struct {
@@ -227,14 +229,33 @@ func buildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	for _, m := range members {
 		memberByID[m.ID] = m
 	}
+	var knownClubs map[string]*string
+	if schemaVersion != syncSchemaVersionV3 {
+		knownClubs, err = store.MemberClubs(ctx, eventID)
+		if err != nil {
+			return nil, SyncSummary{}, err
+		}
+	}
 	for _, m := range members {
 		if !strings.HasPrefix(m.ID, "local-") {
 			continue
 		}
+		if schemaVersion != syncSchemaVersionV3 {
+			if _, known := knownClubs[m.ID]; known && (m.Club != nil || m.Team != nil && strings.TrimSpace(*m.Team) != "") {
+				return nil, SyncSummary{}, fmt.Errorf("клуб участника требует безопасной схемы v3")
+			}
+		}
+		var club json.RawMessage
+		if schemaVersion == syncSchemaVersionV3 {
+			club, err = json.Marshal(m.Club)
+			if err != nil {
+				return nil, SyncSummary{}, err
+			}
+		}
 		p.NewMembers = append(p.NewMembers, syncNewMember{
 			LocalID: m.ID, RaceID: m.RaceID, FirstName: m.FirstName, LastName: m.LastName,
 			Number: m.Number, EPC: m.EPC, Gender: m.Gender, DOB: m.DOB,
-			CategoryID: m.CategoryID, Team: m.Team, City: m.City,
+			CategoryID: m.CategoryID, Team: m.Team, Club: club, City: m.City,
 		})
 	}
 	ref := func(memberID string) syncMemberRef {
@@ -282,6 +303,7 @@ func buildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 
 	// Journal: collapse to last value per (entity,id,field); split into
 	// new_members (_created on local-) and field edits.
+	clubChanges := map[string]sqlite.LocalChange{}
 	changes, err := store.ListLocalChanges(ctx)
 	if err != nil {
 		return nil, SyncSummary{}, err
@@ -312,6 +334,12 @@ func buildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 		// Field edits only for SITE members; local- ones ship in full as
 		// new_members (above), so an edit to them is redundant/unresolvable.
 		case c.Entity == "member" && syncMemberFields[c.Field] && !strings.HasPrefix(c.EntityID, "local-"):
+			if c.Field == "club" && schemaVersion != syncSchemaVersionV3 {
+				return nil, SyncSummary{}, fmt.Errorf("правка клуба требует безопасной схемы v3")
+			}
+			if c.Field == "club" {
+				clubChanges[c.EntityID] = c
+			}
 			putEdit(memberEdits, c.EntityID, c.Field, c.NewValue)
 		case c.Entity == "rfid_log" && c.Field == "disabled_at":
 			rfidLogEdits[c.EntityID] = json.RawMessage(c.NewValue)
@@ -399,7 +427,18 @@ func buildSyncPayload(ctx context.Context, store *sqlite.Store, eventID string, 
 	}
 
 	for _, id := range sortedKeys(memberEdits) {
-		p.MemberEdits = append(p.MemberEdits, syncMemberEdit{MemberRef: ref(id), Fields: memberEdits[id]})
+		reference := ref(id)
+		if change, ok := clubChanges[id]; ok {
+			matches, err := store.ClubChangeOwnerMatches(ctx, change)
+			if err != nil {
+				return nil, SyncSummary{}, err
+			}
+			if !matches {
+				return nil, SyncSummary{}, fmt.Errorf("владелец номера изменился; проверьте и повторно сохраните клуб участника")
+			}
+			reference.ClubPersonID = change.ClubPersonID
+		}
+		p.MemberEdits = append(p.MemberEdits, syncMemberEdit{MemberRef: reference, Fields: memberEdits[id]})
 	}
 	for _, id := range sortedKeys(eventEdits) {
 		p.EventEdits = append(p.EventEdits, syncEventEdit{EventID: id, Fields: eventEdits[id]})

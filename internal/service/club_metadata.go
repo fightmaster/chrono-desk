@@ -3,25 +3,22 @@ package service
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
+	"unicode/utf8"
+
+	"gitlab.com/fightmaster1/chrono-desk/internal/domain"
 )
 
 func decodeClubMetadata(raw json.RawMessage) (*string, error) {
 	var club *string
+	if !utf8.Valid(raw) {
+		return nil, fmt.Errorf("неверная кодировка клуба")
+	}
 	if err := json.Unmarshal(raw, &club); err != nil {
 		return nil, fmt.Errorf("неверное значение клуба")
 	}
-	if club == nil {
-		return nil, nil
+	value, err := domain.NormalizeClub(club)
+	if err != nil {
+		return nil, fmt.Errorf("название клуба: не более 255 байт без управляющих символов")
 	}
-	value := strings.TrimSpace(*club)
-	if len(value) > 255 {
-		return nil, fmt.Errorf("слишком длинное название клуба")
-	}
-	for _, r := range value {
-		if r <= 8 || r >= 14 && r <= 31 || r == 127 || r >= 0x202a && r <= 0x202e || r >= 0x2066 && r <= 0x2069 {
-			return nil, fmt.Errorf("недопустимый символ в названии клуба")
-		}
-	}
-	return &value, nil
+	return value, nil
 }

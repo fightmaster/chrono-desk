@@ -95,7 +95,7 @@ export function createFinishFeed({mount, onMeta, onTab, fetcher = fetch, interva
       club.textContent = row.club ? `Клуб: ${row.club}` : ''
       club.hidden = !row.club
       team.textContent = row.team ? `Команда: ${row.team}` : ''
-      team.hidden = !row.team
+      team.hidden = !row.team || row.team === row.club
       city.textContent = row.city || ''
       city.hidden = !row.city
       extra.hidden = !row.club && !row.team && !row.city

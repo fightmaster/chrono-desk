@@ -57,6 +57,12 @@ func TestPresenterClubRefreshIsMetadataOnlyAndAbsencePreservesIt(t *testing.T) {
 		t.Fatal("wrong bounded metadata update count", stats)
 	}
 	after, _ := store.ListMembersFullByEvent(ctx, "ev-100")
+	for i := range after {
+		if after[i].ID == "mem-1" && (after[i].Club == nil || *after[i].Club != "Running club") {
+			t.Fatal("Club not exposed to member readers")
+		}
+		after[i].Club = before[i].Club // Compare every protected registration/timing field separately from new affiliation.
+	}
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("metadata refresh rewrote members")
 	}
@@ -109,6 +115,12 @@ func TestClubMetadataRoundTripsWithoutChangingPacketPersonState(t *testing.T) {
 	}
 	rows := document["members"].([]any)
 	rows[0].(map[string]any)["club"] = "Independent club"
+	rows[0].(map[string]any)["club_person_id"] = "person-1"
+	canonical := `{"id":"mem-1","eventId":"ev-100","raceId":"race-10k","person":{"id":"person-1"}}`
+	if _, err = store.DB().Exec(`INSERT INTO packet_issuance_registrations(registration_id,event_id,value_json,heads_json,deleted) VALUES('mem-1','ev-100',?,'[]',0)`, canonical); err != nil {
+		t.Fatal(err)
+	}
+
 	encoded, _ := json.Marshal(document)
 	export, err := ParseEventExport(bytes.NewReader(encoded))
 	if err != nil {

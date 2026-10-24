@@ -350,7 +350,7 @@
         <div class="cands">
           {#each found as m (m.id)}
             <button class="cand" on:click={() => manualFinish(m)}>
-              <span class="mono num">{m.number ?? '—'}</span> {m.last_name ?? ''} {m.first_name ?? ''}
+              <span class="mono num">{m.number ?? '—'}</span> {m.last_name ?? ''} {m.first_name ?? ''}{#if m.club}<small class="dim"> · {m.club}</small>{/if}
             </button>
           {/each}
         </div>
@@ -394,7 +394,7 @@
              on:keydown={e => activateRow(e, () => openRow(p))}>
           <span class="time mono">{fmtTime(p.time_ms)}</span>
           <span class="num mono">{p.number ?? ''}</span>
-          <span class="name">{#if p.member_id}{p.last_name ?? ''} {p.first_name ?? ''}{:else}<span class="epc mono">{p.epc}</span>{/if}</span>
+          <span class="name">{#if p.member_id}{p.last_name ?? ''} {p.first_name ?? ''}{#if p.club}<small class="dim"> · {p.club}</small>{/if}{:else}<span class="epc mono">{p.epc}</span>{/if}</span>
           <span class="st">{passLabel(p)}</span>
           {#if p.manual}
             <button class="del" on:click|stopPropagation={() => deleteManual(p)}>удалить</button>

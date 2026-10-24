@@ -192,14 +192,28 @@ reimport and upload do not apply a delta again. Unknown legacy start values
 require explicit classification before enabling dual mode. Raw times never move.
 
 
-### Optional Club display metadata (CHR-DESK-UI-002)
+### Primary Club affiliation (CHR-REG-001)
 
-`members[].club` is an optional string (up to255UTF-8bytes) or null, independent
-of `team`. Omission retains stored Club; explicit null clears it. Source and
-consumer keep it in a separate metadata table, preserving registration/timing
-ownership. Club can be imported for an existing member even when a packet scope
-makes the legacy registration fields non-authoritative. It never changes packet
-Person canonical JSON, causal heads or timing projection. Old exports/clients
-remain compatible; envelope schema-version selection is unchanged. JSON backups
-include known Club metadata. Canonical contract/rollout is in sibling chrono-docs
-`contracts/registration-display-metadata.md` (registration-display-metadata-v1).
+`members[].club` is an optional UTF-8 string up to255bytes or null, independent
+of Team. RUN5 stores Club in members/users; Desk exposes Member.Club across the
+native editor, results/passes/on-course/private API, LAN/public pages and CSV,
+while retaining its compatible normalized metadata table. Absence preserves;
+explicit null clears. A one-time local Team capture retains source/decision and
+never reinterprets subsequent Team edits. Legacy new-row creation alone may seed
+Club when the whole old payload lacks that field.
+
+For an active packet scope, import/refresh requires `club_person_id` matching
+current canonical Person under the same SQLite transaction. Missing/mismatching
+binding preserves known data. Generic Club edits capture this owner in a detached
+journal binding; stale-owner edits cannot be pushed or replayed onto a replacement.
+V3 pushes include `member_ref.club_person_id` and require receiver capability
+`club_affiliation_version:2`; old v2 pushes fail explicitly when Club would be lost.
+Non-packet events use event/member identity. Backups retain optional known Club
+and owner binding without changing canonical Person JSON/hashes, observations or
+cursors. Explicit packet moves transfer the source registration's own Club;
+replacement/release clears it. Derived feed projection is never echoed as a new
+local Club edit. CSV appends Club after existing columns.
+
+Contract/rollout: sibling chrono-docs/contracts/registration-display-metadata.md
+(registration-club-affiliation-v2). This is a source candidate; production and Mac
+rollout and the independent tablet issuance Club channel remain pending.

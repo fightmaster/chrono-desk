@@ -28,6 +28,7 @@ type RaceProgressCounts struct {
 }
 
 type OnCourseRow struct {
+	Club         *string `json:"club"`
 	MemberID     string  `json:"member_id"`
 	Number       *int64  `json:"number"`
 	FirstName    string  `json:"first_name"`
@@ -99,7 +100,7 @@ func buildRaceProgress(race domain.Race, members []domain.Member, ranked []ranki
 			}
 		}
 		row := OnCourseRow{MemberID: member.ID, Number: member.Number,
-			FirstName: member.FirstName, LastName: member.LastName, Gender: member.Gender,
+			FirstName: member.FirstName, LastName: member.LastName, Gender: member.Gender, Club: member.Club,
 			CategoryID: member.CategoryID, StartTimeMs: *start}
 		if member.CategoryID != nil {
 			if category, found := categories[*member.CategoryID]; found {

@@ -203,6 +203,7 @@ function selectTab(next) {
 
 const MEDALS = ['🥇', '🥈', '🥉']
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+function affiliation(r) { return [r.club, r.city].filter(Boolean).join(' · ') }
 const fullName = r => `${r.last_name ?? ''} ${r.first_name ?? ''}`.trim()
 const statusLabel = s => ({dns: 'DNS', dnf: 'DNF', dq: 'DSQ'}[s] ?? '')
 const timeOf = r => r.clean_time ? r.clean_time : ''
@@ -271,7 +272,7 @@ function filterRows(rows) {
 }
 
 function podiumRow(r, idx) {
-  const meta = [r.category_name, r.team || r.city].filter(Boolean).map(esc).join(' · ')
+  const meta = [r.category_name, affiliation(r)].filter(Boolean).map(esc).join(' · ')
   return `<div class="prow">
     <span class="medal m${idx + 1}">${idx + 1}</span>
     <span class="pname"><div class="nm">${esc(fullName(r))}${r.number != null ? ` <span class="cat">№${r.number}</span>` : ''}</div>${meta ? `<div class="meta">${meta}</div>` : ''}</span>
@@ -330,7 +331,7 @@ function renderProtocol(rows) {
       <td class="place">${r.gender_place ?? '—'}</td>
       <td class="place">${r.category_place ?? '—'}</td>
       <td class="num">${r.number != null ? r.number : ''}</td>
-      <td><span class="nm">${esc(fullName(r))}</span>${r.category_name ? `<div class="cat">${esc(r.category_name)}${r.team || r.city ? ' · ' + esc(r.team || r.city) : ''}</div>` : (r.team || r.city ? `<div class="cat">${esc(r.team || r.city)}</div>` : '')}</td>
+      <td><span class="nm">${esc(fullName(r))}</span>${r.category_name ? `<div class="cat">${esc(r.category_name)}${affiliation(r) ? ' · ' + esc(affiliation(r)) : ''}</div>` : (affiliation(r) ? `<div class="cat">${esc(affiliation(r))}</div>` : '')}</td>
       <td>${esc(genderMark(r))}</td>
       <td class="time">${r.status !== 'ok' ? `<span class="badge">${statusLabel(r.status)}</span>` : esc(timeOf(r))}</td>
     </tr>`).join('')
@@ -340,7 +341,7 @@ function renderProtocol(rows) {
       <div class="proto-top">
         <div>
           <div class="proto-name">${esc(fullName(r))}${r.number != null ? ` <span class="cat">№${r.number}</span>` : ''}</div>
-          <div class="proto-sub">${esc(r.category_name || 'Без группы')}${r.team || r.city ? ` · ${esc(r.team || r.city)}` : ''}</div>
+          <div class="proto-sub">${esc(r.category_name || 'Без группы')}${affiliation(r) ? ` · ${esc(affiliation(r))}` : ''}</div>
         </div>
         <div class="proto-time">${r.status !== 'ok' ? `<span class="badge">${statusLabel(r.status)}</span>` : esc(timeOf(r))}</div>
       </div>

@@ -19,7 +19,7 @@ import (
 // Очки stays empty offline because points tables are site-side configuration.
 var protocolHeaders = []string{
 	"Абс", "М/Ж", "Кат", "Номер", "Фамилия", "Имя", "Дата рождения",
-	"Пол", "Категория", "Команда", "Город", "Статус", "Время", "Отставание", "Очки",
+	"Пол", "Категория", "Команда", "Город", "Статус", "Время", "Отставание", "Очки", "Клуб",
 }
 
 var statusLabels = map[string]string{
@@ -78,6 +78,7 @@ func BuildProtocolCSV(ctx context.Context, store ProtocolStore, raceID string) (
 			cleanTimeCell(row),
 			gapCell(row, winnerCleanMs),
 			"", // Очки — site-side points config
+			safeSpreadsheetText(strOrEmpty(row.Club)),
 		}
 		if dual {
 			source := ""

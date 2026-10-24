@@ -2,25 +2,30 @@ package sqlite
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
 
 // LocalChange is one journal entry; values are JSON-encoded.
 type LocalChange struct {
-	ID        int64  `json:"id"`
-	Entity    string `json:"entity"`
-	EntityID  string `json:"entity_id"`
-	Field     string `json:"field"`
-	OldValue  string `json:"old_value"`
-	NewValue  string `json:"new_value"`
-	ChangedAt int64  `json:"changed_at"`
+	ClubPersonID json.RawMessage `json:"club_person_id,omitempty"`
+	ID           int64           `json:"id"`
+	Entity       string          `json:"entity"`
+	EntityID     string          `json:"entity_id"`
+	Field        string          `json:"field"`
+	OldValue     string          `json:"old_value"`
+	NewValue     string          `json:"new_value"`
+	ChangedAt    int64           `json:"changed_at"`
 }
 
 // UpdateEntityField writes one whitelisted field (the caller validates the
 // table/field against the edit whitelist) and returns the previous value as
 // driver-typed any. value must be nil, int64 or string.
 func (s *Store) UpdateEntityField(ctx context.Context, table, field, id string, value any) (old any, err error) {
+	if table == "members" && field == "club" {
+		return s.updateMemberClubField(ctx, id, value)
+	}
 	// table/field come from a compile-time whitelist, never from user input —
 	// safe to interpolate.
 	row := s.db.QueryRowContext(ctx,
@@ -50,12 +55,33 @@ func (s *Store) UpdateEntityField(ctx context.Context, table, field, id string, 
 }
 
 func (s *Store) InsertLocalChange(ctx context.Context, c LocalChange) error {
-	_, err := s.db.ExecContext(ctx, `
+	if c.Entity == "member" && c.Field == "club" {
+		return s.WithinTx(ctx, func(tx *Store) error {
+			binding, err := tx.ClubOwnerBinding(ctx, c.EntityID)
+			if err != nil {
+				return err
+			}
+			return tx.insertLocalChange(ctx, c, binding)
+		})
+	}
+	return s.insertLocalChange(ctx, c, nil)
+}
+
+func (s *Store) insertLocalChange(ctx context.Context, c LocalChange, binding json.RawMessage) error {
+	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO local_changes (entity, entity_id, field, old_value, new_value, changed_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		c.Entity, c.EntityID, c.Field, c.OldValue, c.NewValue, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("journal change: %w", err)
+	}
+	if len(binding) > 0 {
+		id, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		_, err = s.db.ExecContext(ctx, `INSERT INTO club_change_owners(change_id,person_json) VALUES(?,?)`, id, string(binding))
+		return err
 	}
 	return nil
 }
@@ -63,8 +89,8 @@ func (s *Store) InsertLocalChange(ctx context.Context, c LocalChange) error {
 // ListLocalChanges returns the journal, oldest first (replay order).
 func (s *Store) ListLocalChanges(ctx context.Context) ([]LocalChange, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, entity, entity_id, field, old_value, new_value, changed_at
-		FROM local_changes ORDER BY id`)
+		SELECT l.id, l.entity, l.entity_id, l.field, l.old_value, l.new_value, l.changed_at,o.person_json
+ FROM local_changes l LEFT JOIN club_change_owners o ON o.change_id=l.id ORDER BY l.id`)
 	if err != nil {
 		return nil, fmt.Errorf("list changes: %w", err)
 	}
@@ -73,8 +99,12 @@ func (s *Store) ListLocalChanges(ctx context.Context) ([]LocalChange, error) {
 	var changes []LocalChange
 	for rows.Next() {
 		var c LocalChange
-		if err := rows.Scan(&c.ID, &c.Entity, &c.EntityID, &c.Field, &c.OldValue, &c.NewValue, &c.ChangedAt); err != nil {
+		var owner *string
+		if err := rows.Scan(&c.ID, &c.Entity, &c.EntityID, &c.Field, &c.OldValue, &c.NewValue, &c.ChangedAt, &owner); err != nil {
 			return nil, err
+		}
+		if owner != nil {
+			c.ClubPersonID = json.RawMessage(*owner)
 		}
 		changes = append(changes, c)
 	}

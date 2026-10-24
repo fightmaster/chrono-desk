@@ -256,7 +256,7 @@ func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
 		"id": m.ID, "race_id": m.RaceID, "category_id": m.CategoryID,
 		"number": m.Number, "epc": m.EPC,
 		"first_name": m.FirstName, "last_name": m.LastName,
-		"gender": m.Gender, "dob": m.DOB, "team": m.Team, "city": m.City,
+		"gender": m.Gender, "dob": m.DOB, "club": m.Club, "team": m.Team, "city": m.City,
 	})
 }
 

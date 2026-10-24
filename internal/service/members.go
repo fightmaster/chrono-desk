@@ -20,16 +20,17 @@ import (
 
 // CreateMemberRequest is the registration form payload.
 type CreateMemberRequest struct {
-	RaceID     string  `json:"race_id"`
-	FirstName  string  `json:"first_name"`
-	LastName   string  `json:"last_name"`
-	Number     *int64  `json:"number"`
-	EPC        *string `json:"epc"`
-	Gender     *string `json:"gender"`
-	CategoryID *string `json:"category_id"`
-	DOB        *string `json:"dob"` // ISO date (YYYY-MM-DD), required (run5 parity)
-	Team       *string `json:"team"`
-	City       *string `json:"city"`
+	Club       json.RawMessage `json:"club,omitempty"`
+	RaceID     string          `json:"race_id"`
+	FirstName  string          `json:"first_name"`
+	LastName   string          `json:"last_name"`
+	Number     *int64          `json:"number"`
+	EPC        *string         `json:"epc"`
+	Gender     *string         `json:"gender"`
+	CategoryID *string         `json:"category_id"`
+	DOB        *string         `json:"dob"` // ISO date (YYYY-MM-DD), required (run5 parity)
+	Team       *string         `json:"team"`
+	City       *string         `json:"city"`
 }
 
 // CreateMember validates uniqueness of bib/EPC within the event, inserts the
@@ -45,6 +46,17 @@ func CreateMember(ctx context.Context, store *sqlite.Store, eventID string, req 
 	}
 	if _, err := time.Parse("2006-01-02", *req.DOB); err != nil {
 		return "", EditResult{}, fmt.Errorf("дата рождения должна быть в формате ГГГГ-ММ-ДД")
+	}
+	clubJSON := req.Club
+	if len(clubJSON) == 0 {
+		clubJSON, err = json.Marshal(req.Team) // Legacy creation only; never reinterpret an existing Team edit.
+		if err != nil {
+			return "", EditResult{}, err
+		}
+	}
+	club, err := decodeClubMetadata(clubJSON)
+	if err != nil {
+		return "", EditResult{}, err
 	}
 	memberID = "local-" + randomHex(8)
 	member := domain.Member{
@@ -94,6 +106,9 @@ func CreateMember(ctx context.Context, store *sqlite.Store, eventID string, req 
 			}
 		}
 		if err := txStore.UpsertMember(ctx, member); err != nil {
+			return err
+		}
+		if _, err := txStore.ApplyMemberClubs(ctx, eventID, map[string]*string{memberID: club}); err != nil {
 			return err
 		}
 		return txStore.InsertLocalChange(ctx, sqlite.LocalChange{

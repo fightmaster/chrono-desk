@@ -69,6 +69,7 @@ var editWhitelist = map[string]map[string]editableField{
 		"gender":        {table: "members", kind: kindText}, // "male" | "female" | null
 		"dob":           {table: "members", kind: kindText}, // ISO date; display-only
 		"team":          {table: "members", kind: kindText},
+		"club":          {table: "members", kind: kindText},
 		"city":          {table: "members", kind: kindText},
 		"start_time_ms": {table: "members", kind: kindInt, recountNeeded: true},
 		"race_id":       {table: "members", kind: kindText, recountNeeded: true},
@@ -513,6 +514,19 @@ func ReapplyLocalEdits(ctx context.Context, store editReplayStore) (applied int,
 		if len(c.Field) > 0 && c.Field[0] == '_' {
 			continue // other pseudo-fields (_created): audit/sync entries only
 		}
+		if c.Entity == "member" && c.Field == "club" {
+			if guard, ok := store.(interface {
+				ClubChangeOwnerMatches(context.Context, sqlite.LocalChange) (bool, error)
+			}); ok {
+				matches, err := guard.ClubChangeOwnerMatches(ctx, c)
+				if err != nil {
+					return applied, err
+				}
+				if !matches {
+					continue
+				}
+			}
+		}
 		spec, value, err := validateEdit(EditRequest{
 			Entity: c.Entity, EntityID: c.EntityID, Field: c.Field, Value: json.RawMessage(c.NewValue),
 		})
@@ -560,6 +574,17 @@ func validateEdit(req EditRequest) (editableField, any, error) {
 	}
 	if req.EntityID == "" {
 		return editableField{}, nil, fmt.Errorf("entity_id is required")
+	}
+
+	if req.Entity == "member" && req.Field == "club" {
+		club, err := decodeClubMetadata(req.Value)
+		if err != nil {
+			return editableField{}, nil, err
+		}
+		if club == nil {
+			return spec, nil, nil
+		}
+		return spec, *club, nil
 	}
 
 	var raw any

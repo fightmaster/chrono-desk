@@ -147,7 +147,10 @@ func (s *Store) ShiftMemberStarts(ctx context.Context, raceID string, deltaMs in
 }
 
 func (s *Store) UpsertMember(ctx context.Context, m domain.Member) error {
-	return upsertMember(ctx, s.db, m)
+	if m.Club == nil {
+		return upsertMember(ctx, s.db, m)
+	}
+	return s.WithinTx(ctx, func(tx *Store) error { return upsertMember(ctx, tx.db, m) })
 }
 
 // UpdateMemberFinish applies a judge-entered finish. A non-nil start is persisted
@@ -171,6 +174,11 @@ func (s *Store) UpdateMemberFinish(ctx context.Context, memberID string, start *
 }
 
 func upsertMember(ctx context.Context, ex execer, m domain.Member) error {
+	if m.Club != nil {
+		if _, err := domain.NormalizeClub(m.Club); err != nil {
+			return err
+		}
+	}
 	_, err := ex.ExecContext(ctx, `
 		INSERT INTO members (id, event_id, race_id, category_id, number, epc, rfid, first_name, last_name,
 			gender, dob, city, team, status, start_time_ms, start_time_source, start_observation_id,
@@ -190,6 +198,11 @@ func upsertMember(ctx context.Context, ex execer, m domain.Member) error {
 		m.Gender, m.DOB, m.City, m.Team, int(m.Status), m.StartTimeMs, importedStartSource(m), nullableObservation(m.StartObservationID), m.FinishTimeMs, m.CleanTime, m.StartProvenancePresent, m.StartProvenancePresent)
 	if err != nil {
 		return fmt.Errorf("upsert member %s: %w", m.ID, err)
+	}
+	// Nil means an older writer supplied no affiliation; explicit clears use ApplyMemberClubs.
+	if m.Club != nil {
+		_, err := applyMemberClubs(ctx, ex, m.EventID, map[string]*string{m.ID: m.Club})
+		return err
 	}
 	return nil
 }
@@ -228,6 +241,7 @@ func upsertRfidLogs(ctx context.Context, tx *sql.Tx, logs []domain.RfidLog) erro
 
 // EventImportData is a fully-parsed event export, ready to apply atomically.
 type EventImportData struct {
+	ClubOwners  map[string]*string
 	Clubs       map[string]*string
 	Event       domain.Event
 	Laps        []domain.Lap
@@ -296,6 +310,10 @@ func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) (bool, 
 			return packetScopeExists, err
 		}
 	}
+	clubs, err := importedMemberClubs(ctx, tx, d)
+	if err != nil {
+		return packetScopeExists, err
+	}
 	for _, m := range d.Members {
 		if packetScopeExists {
 			if err := updateImportedMemberTiming(ctx, tx, m); err != nil {
@@ -305,7 +323,7 @@ func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) (bool, 
 			return packetScopeExists, err
 		}
 	}
-	if _, err := applyMemberClubs(ctx, tx, d.Event.ID, d.Clubs); err != nil {
+	if _, err := applyMemberClubs(ctx, tx, d.Event.ID, clubs); err != nil {
 		return packetScopeExists, err
 	}
 	if err := upsertRfidLogs(ctx, tx, d.RfidLogs); err != nil {

@@ -31,6 +31,7 @@ type ProtocolRow struct {
 	CategoryPlace   *int    `json:"category_place"`
 	CleanTimeMs     *int64  `json:"clean_time_ms"`
 	CleanTime       *string `json:"clean_time"`
+	Club            *string `json:"club"`
 
 	// TimeLimited races only.
 	LastCheckpointName *string `json:"last_checkpoint_name,omitempty"`
@@ -130,6 +131,7 @@ func BuildProtocol(ctx context.Context, store ProtocolStore, raceID string) (Pro
 			Gender:        r.Member.Gender,
 			DOB:           r.Member.DOB,
 			Team:          r.Member.Team,
+			Club:          r.Member.Club,
 			City:          r.Member.City,
 			CategoryID:    r.Member.CategoryID,
 			Status:        r.Status,

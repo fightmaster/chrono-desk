@@ -99,7 +99,7 @@
     if (protocolCategory !== 'all' && categoryKey(r) !== protocolCategory) return false
     if (!protocolQuery.trim()) return true
     const q = protocolQuery.trim().toLowerCase()
-    return name(r).toLowerCase().includes(q) ||
+    return name(r).toLowerCase().includes(q) || (r.club && r.club.toLowerCase().includes(q)) ||
       (r.number != null && String(r.number).includes(q))
   }
 
@@ -252,7 +252,7 @@
             {#each list as r (r.member_id)}
               <div class="podium-row">
                 <span class="medal m{r.gender_place ?? r.place}">{r.gender_place ?? r.place}</span>
-                <span class="pname">{name(r)}</span>
+                <span class="pname">{name(r)}{#if r.club}<small class="dim sm" style="display:block">{r.club}</small>{/if}</span>
                 <span class="ptime mono dim">{r.clean_time ?? ''}</span>
               </div>
             {/each}
@@ -269,7 +269,7 @@
             {#each list as r (r.member_id)}
               <div class="g-row">
                 <span class="gplace mono faint">{r.category_place}</span>
-                <span class="pname">{name(r)}</span>
+                <span class="pname">{name(r)}{#if r.club}<small class="dim sm" style="display:block">{r.club}</small>{/if}</span>
                 <span class="ptime mono dim">{r.clean_time ?? ''}</span>
               </div>
             {/each}
@@ -310,7 +310,7 @@
               <span class="mono faint">{r.gender_place ?? '—'}</span>
               <span class="mono dim">{r.category_place ?? '—'}</span>
               <span class="mono num">{r.number ?? ''}</span>
-              <span class="pname">{name(r)}</span>
+              <span class="pname">{name(r)}{#if r.club}<small class="dim sm" style="display:block">{r.club}</small>{/if}</span>
               <span class="dim sm">{r.category_name ?? ''}</span>
               <span class="mono faint">{genderMark(r)}</span>
               <span class="mono ptime">

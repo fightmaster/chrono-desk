@@ -109,6 +109,7 @@ type exportMember struct {
 	FinishTime         *string         `json:"finish_time"`
 	CleanTime          *string         `json:"clean_time"`
 	Club               json.RawMessage `json:"club,omitempty"`
+	ClubPersonID       json.RawMessage `json:"club_person_id,omitempty"`
 }
 
 type exportRfidLog struct {
@@ -292,6 +293,16 @@ func buildImportData(export *EventExport) (sqlite.EventImportData, error) {
 		})
 	}
 	for _, m := range export.Members {
+		if len(m.ClubPersonID) > 0 {
+			var owner *string
+			if err := json.Unmarshal(m.ClubPersonID, &owner); err != nil {
+				return sqlite.EventImportData{}, fmt.Errorf("invalid Club owner: %w", err)
+			}
+			if d.ClubOwners == nil {
+				d.ClubOwners = map[string]*string{}
+			}
+			d.ClubOwners[m.ID] = owner
+		}
 		if len(m.Club) > 0 {
 			club, err := decodeClubMetadata(m.Club)
 			if err != nil {

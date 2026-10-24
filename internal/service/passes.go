@@ -45,6 +45,7 @@ type MemberPasses struct {
 // MemberRegistration is bundled with passes so the drawer's fields and timing
 // come from one coherent read, rather than two independently committed views.
 type MemberRegistration struct {
+	Club       *string `json:"club"`
 	ID         string  `json:"id"`
 	RaceID     string  `json:"race_id"`
 	CategoryID *string `json:"category_id"`
@@ -77,7 +78,7 @@ func loadMemberPasses(ctx context.Context, store *sqlite.Store, memberID string,
 	if err != nil {
 		return out, err
 	}
-	out.Registration = MemberRegistration{ID: member.ID, RaceID: member.RaceID, CategoryID: member.CategoryID, Number: member.Number, EPC: member.EPC, FirstName: member.FirstName, LastName: member.LastName, Gender: member.Gender, DOB: member.DOB, Team: member.Team, City: member.City}
+	out.Registration = MemberRegistration{ID: member.ID, RaceID: member.RaceID, CategoryID: member.CategoryID, Number: member.Number, EPC: member.EPC, FirstName: member.FirstName, LastName: member.LastName, Gender: member.Gender, DOB: member.DOB, Team: member.Team, Club: member.Club, City: member.City}
 	out.FirstName = member.FirstName
 	out.LastName = member.LastName
 	out.Number = member.Number

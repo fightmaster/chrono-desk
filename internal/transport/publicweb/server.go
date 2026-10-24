@@ -246,6 +246,7 @@ func (s *Server) handleProtocol(w http.ResponseWriter, r *http.Request) {
 // publicRow is a protocol line stripped of personal data: NO date of birth and
 // NO internal member/category ids — only what a spectator board needs.
 type publicRow struct {
+	Club          *string `json:"club"`
 	Number        *int64  `json:"number"`
 	FirstName     string  `json:"first_name"`
 	LastName      string  `json:"last_name"`
@@ -274,7 +275,7 @@ func toPublicProtocol(p service.ProtocolResponse) publicProtocol {
 	for _, r := range p.Rows {
 		rows = append(rows, publicRow{
 			Number: r.Number, FirstName: r.FirstName, LastName: r.LastName,
-			Gender: r.Gender, Team: r.Team, City: r.City,
+			Gender: r.Gender, Team: r.Team, Club: r.Club, City: r.City,
 			CategoryName: r.CategoryName, Status: r.Status,
 			Place: r.Place, GenderPlace: r.GenderPlace, CategoryPlace: r.CategoryPlace,
 			CleanTime: r.CleanTime, ElapsedMs: r.ElapsedMs,
