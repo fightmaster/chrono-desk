@@ -106,6 +106,9 @@ func TestDualReplayPersistsAssignedAndMeasuredSeparately(t *testing.T) {
 			t.Fatalf("dual stored member = %#v", m)
 		}
 	}
+	if _, err := ApplyEdit(ctx, store, EditRequest{Entity: "member", EntityID: "m", Field: "club", Value: json.RawMessage(`"Synthetic dual Club"`)}); err != nil {
+		t.Fatal(err)
+	}
 	raw, _, err := BuildEventExport(ctx, store, "dual")
 	if err != nil {
 		t.Fatal(err)
@@ -130,6 +133,9 @@ func TestDualReplayPersistsAssignedAndMeasuredSeparately(t *testing.T) {
 	}
 	if restored.StartTimeMs == nil || *restored.StartTimeMs != gun+1000 || restored.ChipStartTimeMs == nil || *restored.ChipStartTimeMs != gun+5000 {
 		t.Fatal("round trip conflated start inputs")
+	}
+	if restored.Club == nil || *restored.Club != "Synthetic dual Club" {
+		t.Fatal("schema5 round trip lost Club")
 	}
 	if err := applyManualFinish(ctx, store, "m", gun+130000); err != nil {
 		t.Fatal(err)

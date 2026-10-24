@@ -117,3 +117,11 @@ metadata from the same committed snapshot and retains the ten-row limit.
 Missing clubs previously discarded during import require a separately reviewed,
 identity-matched restoration from the authoritative source file. Updating the app
 alone cannot reconstruct those original values.
+
+
+Current-main compatibility (CHR-REG-001): presenter ranks use the selected gun/chip
+basis from the shared ranker. Derived chip-start corrections advance only the
+presenter eligibility revision, so cached gender/category places refresh without
+creating projection input work. Club changes still leave rank revisions alone.
+Regression coverage combines Club schema5 export/import with distinct assigned
+and measured starts and checks rank refresh after a chip-start correction.

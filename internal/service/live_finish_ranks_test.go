@@ -108,3 +108,47 @@ func TestOlderLiveFinishSnapshotDoesNotReplaceNewerCachedRanks(t *testing.T) {
 		t.Fatal("older snapshot evicted newer cache", cache.builds)
 	}
 }
+
+func TestLiveFinishRanksRefreshAfterDerivedChipStartCorrection(t *testing.T) {
+	store := newTestStore(t)
+	importFixture(t, store)
+	ctx := context.Background()
+	for _, query := range []string{
+		`UPDATE races SET timing_basis='chip',started_at_ms=1000,category_excludes_top_by_gender=0 WHERE id='race-10k'`,
+		`UPDATE members SET status=0,gender='male',category_id='cat-m18',start_time_ms=1000,start_time_source='manual',finish_time_ms=101000,chip_start_time_ms=1000,chip_start_source='observation',clean_time='00:01:40' WHERE id='mem-1'`,
+		`UPDATE members SET status=0,gender='male',category_id='cat-m18',start_time_ms=1000,start_time_source='manual',finish_time_ms=111000,chip_start_time_ms=21000,chip_start_source='observation',clean_time='00:01:30' WHERE id='mem-2'`,
+	} {
+		if _, err := store.DB().Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cache := liveFinishRankCache{}
+	load := func() map[string]liveFinishPlaces {
+		t.Helper()
+		race, err := store.GetRace(ctx, "race-10k")
+		if err != nil {
+			t.Fatal(err)
+		}
+		revision, err := store.LiveFinishRankRevision(ctx, "ev-100")
+		if err != nil {
+			t.Fatal(err)
+		}
+		places, err := cache.places(ctx, store, race, revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return places
+	}
+	if p := load()["mem-2"].Gender; p == nil || *p != 1 {
+		t.Fatal("chip ranking not selected", p)
+	}
+	if _, err := store.DB().Exec(`UPDATE members SET chip_start_time_ms=1000,chip_start_observation_id='corrected-start' WHERE id='mem-2'`); err != nil {
+		t.Fatal(err)
+	}
+	if p := load()["mem-2"].Gender; p == nil || *p != 2 {
+		t.Fatal("presenter retained stale chip place", p)
+	}
+	if cache.builds != 2 {
+		t.Fatal("chip correction did not refresh cache", cache.builds)
+	}
+}

@@ -20,6 +20,15 @@ func addLiveFinishEligibilityRevision(db *sql.DB) error {
  BEGIN
   INSERT INTO live_finish_eligibility_revisions(event_id,revision) VALUES(NEW.event_id,1)
   ON CONFLICT(event_id) DO UPDATE SET revision=revision+1;
+ END;
+ CREATE TRIGGER IF NOT EXISTS live_finish_chip_eligibility_v1
+ AFTER UPDATE OF chip_start_time_ms,chip_start_source,chip_start_observation_id ON members
+ WHEN OLD.chip_start_time_ms IS NOT NEW.chip_start_time_ms
+   OR OLD.chip_start_source IS NOT NEW.chip_start_source
+   OR OLD.chip_start_observation_id IS NOT NEW.chip_start_observation_id
+ BEGIN
+  INSERT INTO live_finish_eligibility_revisions(event_id,revision) VALUES(NEW.event_id,1)
+  ON CONFLICT(event_id) DO UPDATE SET revision=revision+1;
  END;`)
 	return err
 }
