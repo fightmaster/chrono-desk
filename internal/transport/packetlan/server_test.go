@@ -98,6 +98,56 @@ func TestPacketLANHTTPSExposesOnlyScopedIssuanceAndResumes(t *testing.T) {
 		t.Fatalf("bootstrap=%+v", bootstrap)
 	}
 
+	clubOperation := map[string]any{"schemaVersion": 1, "operationId": "99999999-9999-4999-8999-999999999999", "scopeId": bootstrap.ScopeID,
+		"originInstanceId": claim["originInstanceId"], "registrationId": bootstrap.Registrations[0].ID, "personId": bootstrap.Registrations[0].Person.ID, "club": "Synthetic Club"}
+	for attempt := 0; attempt < 2; attempt++ {
+		response = packetRequest(t, client, http.MethodPost, base+"/club-affiliations", clubOperation, credential, "https://www.run5.run")
+		var receipt service.PacketClubReceipt
+		if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&receipt) != nil || receipt.Outcome != "applied" || receipt.Known != (attempt == 1) {
+			response.Body.Close()
+			t.Fatalf("Club receipt: status=%d %+v", response.StatusCode, receipt)
+		}
+		response.Body.Close()
+	}
+	response = packetRequest(t, client, http.MethodGet, base+"/club-affiliations", nil, credential, "https://www.run5.run")
+	var clubs service.PacketClubSnapshot
+	if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&clubs) != nil || len(clubs.Affiliations) != 1 || *clubs.Affiliations[0].Club != "Synthetic Club" {
+		response.Body.Close()
+		t.Fatalf("Club read: %d %+v", response.StatusCode, clubs)
+	}
+	etag := response.Header.Get("ETag")
+	response.Body.Close()
+	conditional, err := http.NewRequest(http.MethodGet, base+"/club-affiliations", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conditional.Header.Set("Authorization", "Bearer "+credential)
+	conditional.Header.Set("Origin", "https://www.run5.run")
+	conditional.Header.Set("If-None-Match", etag)
+	response, err = client.Do(conditional)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if etag == "" || response.StatusCode != http.StatusNotModified || len(body) != 0 {
+		t.Fatal("metadata conditional download not empty", response.StatusCode)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		response = packetRequest(t, client, method, base+"/club-affiliations", clubOperation, "invalid", "https://www.run5.run")
+		if response.StatusCode != http.StatusUnauthorized {
+			response.Body.Close()
+			t.Fatalf("Club missing grant: %d", response.StatusCode)
+		}
+		response.Body.Close()
+	}
+	response = packetRequest(t, client, http.MethodGet, base+"/club-affiliations", nil, credential, "https://attacker.invalid")
+	if response.StatusCode != http.StatusForbidden {
+		response.Body.Close()
+		t.Fatalf("Club foreign origin: %d", response.StatusCode)
+	}
+	response.Body.Close()
+
 	response = packetRequest(t, client, http.MethodGet, base+"/feed?after=0&limit=100", nil, credential, "https://www.run5.run")
 	var page packetissuance.FeedPage
 	feedBody, _ := io.ReadAll(response.Body)

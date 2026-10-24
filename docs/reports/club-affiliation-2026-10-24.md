@@ -38,3 +38,20 @@ clean security acceptance. No production or active Mac event data changed.
 Remaining product scope belongs only to central chrono-docs/TODO.md CHR-REG-001:
 independent tablet issuance Club import/editor/channel and backup semantics,
 coordinated release proof, production backfill and actual Mac installation/readback.
+
+Detached tablet channel follow-up: existing LAN grants now authorize
+GET/POST club-affiliations with independent receipts and original connection
+provenance. No canonical bootstrap/descriptor/operation fields changed. Focused
+service and actual local HTTPS tests prove idempotence, changed-owner terminal
+conflict, rollback on receipt failure, scoped grant/origin rejection and empty304
+conditional reads. Packet Club projection uses linear-time source lookup and
+refuses to guess when multiple changed registrations share the same Person ID.
+No active Mac data or production runtime has been changed.
+
+Verification for this channel: full Go tests and race suites pass (service race
+203.991s), go build passes; final staticcheck/vet and strict Unicode Club decoder
+tests pass. Malformed lone surrogate escapes are rejected consistently with PHP
+and browser validation, while valid emoji and literal backslashes remain valid.
+The Desk-to-site causal metadata outbox is still required: do not treat successful
+LAN receipts as proof that an edited Club followed by an owner move reaches the
+site. Generic journal replay must not bind that old edit to the new owner.

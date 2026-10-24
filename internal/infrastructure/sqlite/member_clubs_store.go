@@ -15,7 +15,8 @@ func addMemberClubMetadata(db *sql.DB) error {
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS member_club_metadata (
   event_id TEXT NOT NULL,member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
   club TEXT,PRIMARY KEY(event_id,member_id));
- CREATE TABLE IF NOT EXISTS club_change_owners(change_id INTEGER PRIMARY KEY REFERENCES local_changes(id) ON DELETE CASCADE,person_json TEXT NOT NULL);`)
+ CREATE TABLE IF NOT EXISTS club_change_owners(change_id INTEGER PRIMARY KEY REFERENCES local_changes(id) ON DELETE CASCADE,person_json TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS packet_club_edit_receipts(operation_id TEXT PRIMARY KEY,connection_id TEXT NOT NULL,event_id TEXT NOT NULL,scope_id TEXT NOT NULL,origin_instance_id TEXT NOT NULL,content_hash TEXT NOT NULL,operation_json BLOB NOT NULL,receipt_json BLOB NOT NULL);`)
 	return err
 }
 
@@ -243,4 +244,25 @@ func (s *Store) PacketClubOwners(ctx context.Context, eventID string) (map[strin
 		result[id] = owner
 	}
 	return result, rows.Err()
+}
+
+type PacketClubEditReceipt struct {
+	OperationID, ConnectionID, EventID, ScopeID, OriginInstanceID, ContentHash string
+	OperationJSON, ReceiptJSON                                                 []byte
+}
+
+func (s *Store) FindPacketClubEditReceipt(ctx context.Context, id string) (*PacketClubEditReceipt, error) {
+	row := PacketClubEditReceipt{OperationID: id}
+	err := s.db.QueryRowContext(ctx, `SELECT connection_id,event_id,scope_id,origin_instance_id,content_hash,operation_json,receipt_json FROM packet_club_edit_receipts WHERE operation_id=?`, id).Scan(&row.ConnectionID, &row.EventID, &row.ScopeID, &row.OriginInstanceID, &row.ContentHash, &row.OperationJSON, &row.ReceiptJSON)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+func (s *Store) InsertPacketClubEditReceipt(ctx context.Context, row PacketClubEditReceipt) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO packet_club_edit_receipts(operation_id,connection_id,event_id,scope_id,origin_instance_id,content_hash,operation_json,receipt_json) VALUES(?,?,?,?,?,?,?,?)`, row.OperationID, row.ConnectionID, row.EventID, row.ScopeID, row.OriginInstanceID, row.ContentHash, row.OperationJSON, row.ReceiptJSON)
+	return err
 }

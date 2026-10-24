@@ -318,6 +318,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET "+apiPath+"/connections/{connectionID}/bootstrap", s.handleBootstrap)
 	mux.HandleFunc("POST "+apiPath+"/connections/{connectionID}/operations", s.handleOperations)
 	mux.HandleFunc("GET "+apiPath+"/connections/{connectionID}/feed", s.handleFeed)
+	mux.HandleFunc("GET "+apiPath+"/connections/{connectionID}/club-affiliations", s.handleClubAffiliations)
+	mux.HandleFunc("POST "+apiPath+"/connections/{connectionID}/club-affiliations", s.handleClubAffiliations)
 	return s.cors(mux)
 }
 
@@ -561,7 +563,7 @@ func (s *Server) cors(next http.Handler) http.Handler {
 				return
 			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, If-None-Match")
 			w.Header().Set("Access-Control-Max-Age", "600")
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -583,7 +585,8 @@ func validPreflightTarget(r *http.Request) bool {
 	if len(tail) != 2 {
 		return false
 	}
-	return (tail[1] == "claim" || tail[1] == "operations") && method == http.MethodPost ||
+	return tail[1] == "club-affiliations" && (method == http.MethodGet || method == http.MethodPost) ||
+		(tail[1] == "claim" || tail[1] == "operations") && method == http.MethodPost ||
 		(tail[1] == "bootstrap" || tail[1] == "feed") && method == http.MethodGet
 }
 
@@ -594,7 +597,7 @@ func validPreflight(r *http.Request) bool {
 	}
 	for _, header := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
 		header = strings.ToLower(strings.TrimSpace(header))
-		if header != "" && header != "authorization" && header != "content-type" && header != "accept" {
+		if header != "" && header != "authorization" && header != "content-type" && header != "accept" && header != "if-none-match" {
 			return false
 		}
 	}

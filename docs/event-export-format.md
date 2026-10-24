@@ -217,3 +217,10 @@ local Club edit. CSV appends Club after existing columns.
 Contract/rollout: sibling chrono-docs/contracts/registration-display-metadata.md
 (registration-club-affiliation-v2). This is a source candidate; production and Mac
 rollout and the independent tablet issuance Club channel remain pending.
+
+The private LAN issuance receiver also exposes detached GET/POST
+`connections/{id}/club-affiliations` under the existing grant (CHR-REG-001).
+DTOs and terminal receipts match the shared registration-display-metadata
+contract; these do not enter canonical Person JSON, hashes or packet feed.
+Receipts capture original origin/connection and survive lost replies. Read
+ETags permit empty304 after authenticating the request; HTTP remains no-store.

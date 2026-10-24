@@ -18,6 +18,18 @@ func packetClubProjection(ctx context.Context, store *sqlite.Store, eventID stri
 	if err != nil {
 		return nil, err
 	}
+	sources := map[string]string{}
+	for _, change := range changes {
+		if change.Before.Person == nil {
+			continue
+		}
+		personID := change.Before.Person.ID
+		if _, exists := sources[personID]; exists {
+			sources[personID] = ""
+		} else {
+			sources[personID] = change.RegistrationID
+		}
+	}
 	result := map[string]*string{}
 	for _, change := range changes {
 		if change.After.EventID != eventID {
@@ -35,11 +47,8 @@ func packetClubProjection(ctx context.Context, store *sqlite.Store, eventID stri
 			continue
 		}
 		result[change.RegistrationID] = nil // A new person never inherits the old owner's Club.
-		for _, source := range changes {
-			if source.RegistrationID != change.RegistrationID && source.Before.Person != nil && source.Before.Person.ID == after.ID {
-				result[change.RegistrationID] = existing[source.RegistrationID]
-				break
-			}
+		if source := sources[after.ID]; source != "" && source != change.RegistrationID {
+			result[change.RegistrationID] = existing[source]
 		}
 	}
 	return result, nil

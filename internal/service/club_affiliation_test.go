@@ -185,3 +185,16 @@ func TestClubProjectionMovesPersonHistoryAndClearsReplacementWithoutEchoEdits(t 
 		t.Fatal("derived feed projection echoed a new local edit", journal, err)
 	}
 }
+
+func TestClubJSONRejectsUnpairedSurrogatesWithoutRejectingLiteralEscapes(t *testing.T) {
+	for _, raw := range []string{`"\ud800"`, `"\udfff"`, `"\ud800x"`, `"\ud800\u0041"`} {
+		if _, err := decodeClubMetadata(json.RawMessage(raw)); err == nil {
+			t.Fatal("invalid UTF-16 accepted", raw)
+		}
+	}
+	for _, raw := range []string{`"Club \ud83c\udfc3"`, `"\\ud800"`, `null`} {
+		if _, err := decodeClubMetadata(json.RawMessage(raw)); err != nil {
+			t.Fatal("valid Unicode rejected", raw, err)
+		}
+	}
+}
