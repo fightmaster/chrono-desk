@@ -19,7 +19,7 @@ func TestSyncHTTPClientKeepsCredentialsOnExplicitHTTP1Endpoint(t *testing.T) {
 	if client.CheckRedirect == nil || !errors.Is(client.CheckRedirect(nil, nil), http.ErrUseLastResponse) {
 		t.Fatal("authenticated sync client must reject redirects")
 	}
-	transport, ok := client.Transport.(*http.Transport)
+	transport, ok := client.Transport.(*syncRetryTransport).base.(*http.Transport)
 	if !ok {
 		t.Fatalf("transport = %T", client.Transport)
 	}
@@ -48,7 +48,7 @@ func TestSyncHTTPClientNegotiatesHTTP1OverTLS(t *testing.T) {
 
 			client := newSyncHTTPClient()
 			defer client.CloseIdleConnections()
-			transport := client.Transport.(*http.Transport)
+			transport := client.Transport.(*syncRetryTransport).base.(*http.Transport)
 			if transport.TLSClientConfig == nil {
 				transport.TLSClientConfig = &tls.Config{}
 			}

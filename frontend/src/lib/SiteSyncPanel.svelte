@@ -1,4 +1,5 @@
 <script>
+  import { drainSync } from './drain-sync.js'
   import {createEventDispatcher} from 'svelte'
   import {call, fmtDateTime} from './api.js'
   import PacketIssuanceReview from './PacketIssuanceReview.svelte'
@@ -67,8 +68,13 @@
   async function push() {
     error = ''; result = null; pullResult = null
     busy = 'Отправка на сайт…'
+    const pushEventId = eventId
+    const pushOverwrite = overwrite
     try {
-      result = await call('POST', `/api/events/${eventId}/sync`, JSON.stringify({overwrite}))
+      result = await drainSync(
+        () => call('POST', `/api/events/${pushEventId}/sync`, JSON.stringify({overwrite: pushOverwrite})),
+        ({ observations, remaining }) => { busy = `Отправлено отметок: ${observations}, осталось: ${remaining}…` },
+      )
       await loadConfig()
     } catch (e) {
       error = `Отправка: ${e.message}`
@@ -260,6 +266,7 @@
 
   {#if result}
     <div class="result faint">
+      {#if result.has_more}<p>Осталось отметок: {result.remaining_observations}. Нажмите «Отправить на сайт», чтобы продолжить.</p>{/if}
       Отправлено — логи: <b>{result.sent?.rfid_logs ?? '—'}</b> ·
       правки логов: <b>{result.sent?.rfid_log_edits ?? 0}</b> ·
       ручные: <b>{result.sent?.manual_results ?? 0}</b> ·

@@ -422,3 +422,13 @@ func int64Chunks(values []int64, size int) [][]int64 {
 func placeholders(count int) string {
 	return strings.TrimRight(strings.Repeat("?,", count), ",")
 }
+
+// PendingObservationCount reports only this Desk's unacknowledged journal,
+// never raw rows pulled from another producer.
+func (s *Store) PendingObservationCount(ctx context.Context, eventID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM observation_outbox o
+        JOIN rfid_logs l ON l.id=o.observation_id
+        WHERE l.event_id=? AND o.state IN ('pending','sent')`, eventID).Scan(&count)
+	return count, err
+}

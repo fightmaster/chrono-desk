@@ -15,6 +15,8 @@ import (
 	"gitlab.com/fightmaster1/chrono-desk/internal/service"
 )
 
+const syncObservationBatchSize = 1000
+
 func (s *Server) handleGetSyncConfig(w http.ResponseWriter, r *http.Request) {
 	store, err := s.events.Open(r.PathValue("id"))
 	if err != nil {
@@ -99,7 +101,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	batch, err := store.PrepareObservationBatch(r.Context(), eventID, 20_000, time.Now())
+	batch, err := store.PrepareObservationBatch(r.Context(), eventID, syncObservationBatchSize, time.Now())
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -134,7 +136,13 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	remaining, err := store.PendingObservationCount(r.Context(), eventID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
+		"remaining_observations": remaining, "has_more": remaining > 0,
 		"sent": summary, "response": resp.Summary, "packet_issuance": packetResult,
 		"packet_issuance_feed": packetFeedResult,
 	})

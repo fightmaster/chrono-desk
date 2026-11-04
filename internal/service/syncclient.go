@@ -40,7 +40,7 @@ func newSyncHTTPClient() *http.Client {
 	}
 	transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
 	return &http.Client{
-		Transport: transport,
+		Transport: &syncRetryTransport{base: transport, wait: waitSyncRetry},
 		Timeout:   syncHTTPTimeout,
 		// Never forward X-SYNC-TOKEN or relay bearer credentials through an
 		// HTTP redirect. Receiver endpoints are explicit versioned contracts.
