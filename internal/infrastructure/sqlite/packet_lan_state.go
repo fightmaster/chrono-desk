@@ -118,7 +118,7 @@ func (s *packetRelayState) CreateLANInvitation(ctx context.Context, eventID, sco
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginTransaction(ctx, s.db, nil)
 	if err != nil {
 		return PacketLANInvitation{}, err
 	}
@@ -167,7 +167,7 @@ func (s *packetRelayState) ClaimLAN(ctx context.Context, connectionID, pairingCo
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginTransaction(ctx, s.db, nil)
 	if err != nil {
 		return PacketLANConnection{}, err
 	}
@@ -243,7 +243,7 @@ func (s *packetRelayState) RevokeLAN(ctx context.Context, eventID, connectionID,
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginTransaction(ctx, s.db, nil)
 	if err != nil {
 		return err
 	}

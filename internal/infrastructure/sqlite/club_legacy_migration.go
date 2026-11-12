@@ -10,7 +10,7 @@ import (
 
 // Capture once: later Team edits or modern explicit Club clears never become a fallback.
 func migrateLegacyClubAffiliation(db *sql.DB) error {
-	tx, err := db.Begin()
+	tx, err := beginTransaction(context.Background(), db, nil)
 	if err != nil {
 		return err
 	}

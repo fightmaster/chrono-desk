@@ -217,7 +217,7 @@ func (s *Store) PrepareObservationBatch(ctx context.Context, eventID string, lim
 	if limit <= 0 || limit > 20_000 {
 		return nil, fmt.Errorf("observation batch limit must be between 1 and 20000")
 	}
-	tx, err := s.root.BeginTx(ctx, nil)
+	tx, err := beginTransaction(ctx, s.root, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin observation batch: %w", err)
 	}

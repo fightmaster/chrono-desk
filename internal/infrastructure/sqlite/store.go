@@ -113,12 +113,12 @@ func (s *Store) WithinReadSnapshot(ctx context.Context, fn func(*Store) error) e
 	if reader == nil {
 		reader = s.root
 	}
-	tx, err := reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginTransaction(ctx, reader, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return fmt.Errorf("begin read snapshot: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // releases the read lease on every path
-	return fn(&Store{db: tx, root: reader, tx: tx})
+	return fn(&Store{db: tx, root: reader, tx: tx.Tx})
 }
 
 // WithinTx runs fn against a transaction-bound Store and commits only when fn
@@ -127,14 +127,14 @@ func (s *Store) WithinTx(ctx context.Context, fn func(*Store) error) error {
 	if s.tx != nil {
 		return fn(s)
 	}
-	tx, err := s.root.BeginTx(ctx, nil)
+	tx, err := beginTransaction(ctx, s.root, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after commit
 
 	txStore := &Store{
-		db: tx, root: s.root, tx: tx,
+		db: tx, root: s.root, tx: tx.Tx,
 		originInstanceID: s.originInstanceID, nextOriginSequence: s.nextOriginSequence,
 		finishChanges: s.finishChanges, finishDirty: new(bool),
 	}
@@ -201,7 +201,7 @@ func (s *Store) FirstEvent(ctx context.Context) (domain.Event, error) {
 // InsertRfidLogs inserts logs idempotently (INSERT OR IGNORE on the md5 id)
 // and reports how many rows were actually new.
 func (s *Store) InsertRfidLogs(ctx context.Context, logs []domain.RfidLog) (inserted int64, err error) {
-	tx, err := s.root.BeginTx(ctx, nil)
+	tx, err := beginTransaction(ctx, s.root, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin: %w", err)
 	}
@@ -240,7 +240,7 @@ func (s *Store) InsertOwnedRfidLogs(ctx context.Context, logs []domain.RfidLog) 
 	if strings.TrimSpace(s.originInstanceID) == "" || s.nextOriginSequence == nil {
 		return 0, fmt.Errorf("observation origin is not configured")
 	}
-	tx, err := s.root.BeginTx(ctx, nil)
+	tx, err := beginTransaction(ctx, s.root, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin: %w", err)
 	}

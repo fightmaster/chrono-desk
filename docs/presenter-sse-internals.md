@@ -11,6 +11,10 @@ transaction-bound Store holds one dirty flag shared by joined calls. Only its
 outer successful commit advances the store-lifetime `finishchange.Signal`.
 Standalone statements mark only after their successful autocommit.
 
+Failed commits discard their reserved connection before another writer can use
+it; see [SQLite transaction recovery](sqlite-transaction-recovery.md)
+(CHR-DESK-TX-001). A failed commit never advances the finish signal.
+
 | Path | Actual commit / notification boundary | Evidence |
 | --- | --- | --- |
 | Native RFID | Raw ownership insert commits first; `ProcessorRepo.WithTx` commits projection separately and then notifies only changed finish/member timing | `TestFinishStreamRealNativeAndSidecarACKWhileWriterBlocked`, `TestFinishStreamFailedProjectionNeverAnnouncesRawCommit` |

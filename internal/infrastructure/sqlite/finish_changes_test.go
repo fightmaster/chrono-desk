@@ -139,11 +139,7 @@ func TestFinishChangesIgnoreFailedCommitAndProcessorRollback(t *testing.T) {
 	if s.FinishChanges().Generation() != initial {
 		t.Fatal("failed commit notified")
 	}
-	// A deferred-FK commit failure leaves this driver's connection inside its
-	// transaction (existing behavior, tracked separately as CHR-DESK-TX-001).
-	// Test processor rollback independently rather than reuse that connection.
-	s = finishChangeFixture(t)
-	initial = s.FinishChanges().Generation()
+	// Reuse the same store: a failed COMMIT must not poison the next writer.
 	if err := NewProcessorRepo(s).WithTx(ctx, func(repo processor.TxRepository) (bool, error) {
 		return false, repo.UpdateMemberTimes(ctx, processor.Member{ID: "member", RaceID: "race"}, processor.Checkpoint{Type: 3}, 60000, "raw")
 	}); err != nil {

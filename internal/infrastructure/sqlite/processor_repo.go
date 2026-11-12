@@ -172,11 +172,12 @@ func (r *ProcessorRepo) WithTx(ctx context.Context, fn func(tx processor.TxRepos
 		return err
 	}
 
-	tx, err := r.store.root.BeginTx(ctx, nil)
+	tx, err := beginTransaction(ctx, r.store.root, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	txStore := &Store{db: tx, root: r.store.root, tx: tx, finishChanges: r.store.finishChanges, finishDirty: new(bool)}
+	defer tx.Rollback() //nolint:errcheck // also releases the lease after panic
+	txStore := &Store{db: tx, root: r.store.root, tx: tx.Tx, finishChanges: r.store.finishChanges, finishDirty: new(bool)}
 	commit, err := fn(&ProcessorRepo{store: txStore, db: tx})
 	if err != nil {
 		tx.Rollback() //nolint:errcheck

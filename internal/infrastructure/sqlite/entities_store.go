@@ -221,13 +221,13 @@ func upsertMember(ctx context.Context, ex execer, m domain.Member) error {
 
 // UpsertRfidLogs upserts logs in their own transaction (standalone callers).
 func (s *Store) UpsertRfidLogs(ctx context.Context, logs []domain.RfidLog) error {
-	tx, err := s.root.BeginTx(ctx, nil)
+	tx, err := beginTransaction(ctx, s.root, nil)
 	if err != nil {
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after commit
 
-	if err := upsertRfidLogs(ctx, tx, logs); err != nil {
+	if err := upsertRfidLogs(ctx, tx.Tx, logs); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -276,7 +276,7 @@ type EventImportData struct {
 // members → logs) to satisfy foreign keys. The local-edits replay runs after
 // this commits (it touches only the now-consistent imported rows).
 func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) (bool, error) {
-	tx, err := s.root.BeginTx(ctx, nil)
+	tx, err := beginTransaction(ctx, s.root, nil)
 	if err != nil {
 		return false, fmt.Errorf("begin import: %w", err)
 	}
@@ -322,13 +322,13 @@ func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) (bool, 
 			return packetScopeExists, err
 		}
 	}
-	clubs, err := importedMemberClubs(ctx, tx, d)
+	clubs, err := importedMemberClubs(ctx, tx.Tx, d)
 	if err != nil {
 		return packetScopeExists, err
 	}
 	for _, m := range d.Members {
 		if packetScopeExists {
-			if err := updateImportedMemberTiming(ctx, tx, m); err != nil {
+			if err := updateImportedMemberTiming(ctx, tx.Tx, m); err != nil {
 				return packetScopeExists, err
 			}
 		} else if err := upsertMember(ctx, tx, m); err != nil {
@@ -338,7 +338,7 @@ func (s *Store) ApplyEventImport(ctx context.Context, d EventImportData) (bool, 
 	if _, err := applyMemberClubs(ctx, tx, d.Event.ID, clubs); err != nil {
 		return packetScopeExists, err
 	}
-	if err := upsertRfidLogs(ctx, tx, d.RfidLogs); err != nil {
+	if err := upsertRfidLogs(ctx, tx.Tx, d.RfidLogs); err != nil {
 		return packetScopeExists, err
 	}
 	if err := tx.Commit(); err != nil {
